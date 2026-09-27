@@ -1,33 +1,65 @@
-import { useState, type FormEvent } from "react";
-import { useAll, useDb } from "jazz-tools/react";
-import { app } from "../schema.js";
+import { useAll, useDb, useJazzAuth } from "jazz-tools/react";
+import { useForm } from "react-hook-form";
+import { app } from "../bebop-generated-schema.js";
+
+const categories = ["announcement", "guide", "story"] as const;
+
+type PostFormValues = {
+  title: string;
+  body: string;
+  slug: string;
+  publishedAt: string;
+  published: boolean;
+  category: (typeof categories)[number];
+};
+
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 export function App() {
   const db = useDb();
-  const { data: posts } = useAll(app.posts);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-
-  function createPost(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const cleanTitle = title.trim();
-    if (!cleanTitle) return;
-
-    db.insert(app.posts, {
-      title: cleanTitle,
-      body: body.trim(),
+  const { logout } = useJazzAuth();
+  const { data: posts } = useAll(app.posts.select("*", "$createdAt", "$updatedAt"));
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<PostFormValues>({
+    defaultValues: {
+      title: "",
+      body: "",
+      slug: "",
+      publishedAt: "",
       published: false,
       category: "announcement",
+    },
+  });
+
+  function createPost(values: PostFormValues) {
+    const title = values.title.trim();
+    const body = values.body.trim();
+    const slug = values.slug.trim();
+
+    db.insert(app.posts, {
+      title,
+      published: values.published,
+      category: values.category,
+      ...(body ? { body } : {}),
+      ...(slug ? { slug } : {}),
+      ...(values.publishedAt
+        ? { publishedAt: new Date(`${values.publishedAt}T00:00:00`) }
+        : {}),
     });
-    setTitle("");
-    setBody("");
+    reset();
   }
 
   return (
     <main className="shell">
       <header className="topbar">
         <a className="wordmark" href="#top" aria-label="Bebop home">bebop<span>♪</span></a>
-        <div className="local-badge"><i /> Local playground</div>
+        <div className="account-actions">
+          <div className="local-badge"><i /> Signed in</div>
+          <button className="signout-button" type="button" onClick={() => void logout()}>Sign out</button>
+        </div>
       </header>
 
       <section className="intro" id="top">
@@ -37,24 +69,50 @@ export function App() {
       </section>
 
       <section className="workspace" aria-label="Posts playground">
-        <form className="composer" onSubmit={createPost}>
+        <form className="composer" onSubmit={handleSubmit(createPost)}>
           <div className="section-label"><span>01</span> NEW POST</div>
+
           <label htmlFor="post-title">Title</label>
           <input
             id="post-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            {...register("title", {
+              validate: (value) => value.trim().length > 0 || "Enter a title.",
+            })}
             placeholder="A thought worth sharing…"
-            required
+            aria-invalid={Boolean(errors.title)}
           />
+          {errors.title && <p className="field-error" role="alert">{errors.title.message}</p>}
+
+          <label htmlFor="post-slug">Slug <span className="optional">OPTIONAL</span></label>
+          <input
+            id="post-slug"
+            {...register("slug")}
+            placeholder="a-thought-worth-sharing"
+          />
+
+          <label htmlFor="post-category">Category</label>
+          <select id="post-category" {...register("category")}>
+            {categories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+
+          <label htmlFor="post-published-at">Publish date <span className="optional">OPTIONAL</span></label>
+          <input id="post-published-at" type="date" {...register("publishedAt")} />
+
+          <label className="checkbox-field" htmlFor="post-published">
+            <input id="post-published" type="checkbox" {...register("published")} />
+            Publish immediately
+          </label>
+
           <label htmlFor="post-body">Body <span className="optional">OPTIONAL</span></label>
           <textarea
             id="post-body"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
+            {...register("body")}
             placeholder="Add a little more detail…"
             rows={4}
           />
+
           <button className="create-button" type="submit">Create post <span>↗</span></button>
           <p className="form-note">Writes save instantly in this browser.</p>
         </form>
@@ -85,7 +143,16 @@ export function App() {
                     <span className="category">{post.category ?? "uncategorized"}</span>
                   </div>
                   <h3>{post.title}</h3>
+                  {post.slug && <p className="post-slug">/{post.slug}</p>}
                   {post.body && <p className="post-body">{post.body}</p>}
+                  {post.publishedAt && (
+                    <p className="post-publish-date">
+                      Publish date: <time dateTime={post.publishedAt.toISOString()}>{dateFormatter.format(post.publishedAt)}</time>
+                    </p>
+                  )}
+                  <p className="post-timestamps">
+                    Created {dateTimeFormatter.format(post.$createdAt)} · Updated {dateTimeFormatter.format(post.$updatedAt)}
+                  </p>
                   <div className="post-actions">
                     <button
                       type="button"

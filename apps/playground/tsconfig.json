@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src", "scripts", "bebop.config.ts", "vite.config.ts", "schema.ts", "permissions.ts"]
+  "include": ["src", "scripts", "bebop.config.ts", "auth-options.ts", "auth-generate.ts", "auth.ts", "vite.config.ts", "schema.ts", "bebop-generated-schema.ts", "permissions.ts", "schema-better-auth/**/*.ts"]
 }

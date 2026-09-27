@@ -30,9 +30,17 @@ export type FieldDefinition =
 export type Fields = Record<string, FieldDefinition>;
 export type CollectionDefinition<TFields extends Fields = Fields> = {
   fields: TFields;
+  /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
+  timestamps?: boolean;
+};
+export type BetterAuthDefinition = {
+  provider: "better-auth";
+  /** Path to the Better Auth CLI configuration, relative to the Bebop config. */
+  generateConfig?: string;
 };
 export type BebopConfig = {
   collections: Record<string, CollectionDefinition>;
+  auth?: BetterAuthDefinition;
 };
 
 export function text(options: FieldOptions = {}): TextField {
@@ -78,4 +86,10 @@ export function collection<const TFields extends Fields>(
 
 export function defineConfig<const T extends BebopConfig>(config: T): T {
   return config;
+}
+
+export function betterAuth(
+  options: Omit<BetterAuthDefinition, "provider"> = {},
+): BetterAuthDefinition {
+  return { provider: "better-auth", ...options };
 }

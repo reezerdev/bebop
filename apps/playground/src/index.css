@@ -16,7 +16,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; background: #e9eee6; padding: 2px 6px; border-radius: 4px; }
 
@@ -25,6 +25,9 @@ code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; back
 .wordmark { color: var(--ink); text-decoration: none; font-size: 25px; font-weight: 700; letter-spacing: -1.8px; }
 .wordmark span { color: #d28a56; font-size: 16px; vertical-align: top; margin-left: 2px; }
 .local-badge { color: #5d675e; display: flex; align-items: center; gap: 9px; font: 11px "DM Mono", monospace; letter-spacing: .04em; }
+.account-actions { display: flex; align-items: center; gap: 18px; }
+.signout-button { background: transparent; border: 0; color: var(--green); font-size: 11px; padding: 7px 0; }
+.signout-button:hover { text-decoration: underline; }
 .local-badge i, .status i { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: #86a578; }
 .intro { padding: 72px 0 48px; max-width: 620px; }
 .eyebrow, .section-label, .storage-label, .footer span:last-child { font: 10px "DM Mono", monospace; letter-spacing: .12em; color: #879086; }
@@ -37,10 +40,15 @@ code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; back
 .section-label span { color: #c1885a; margin-right: 10px; }
 .composer label { display: block; margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 .optional { margin-left: 6px; color: #9b9d94; font: 9px "DM Mono", monospace; letter-spacing: .08em; }
-.composer input, .composer textarea { width: 100%; border: 1px solid #dedfd6; border-radius: 5px; background: var(--paper); outline: none; color: var(--ink); padding: 13px 14px; margin-bottom: 20px; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.composer input:not([type="checkbox"]), .composer textarea, .composer select { width: 100%; border: 1px solid #dedfd6; border-radius: 5px; background: var(--paper); outline: none; color: var(--ink); padding: 13px 14px; margin-bottom: 20px; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.composer select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #748073 50%), linear-gradient(135deg, #748073 50%, transparent 50%); background-position: calc(100% - 17px) 19px, calc(100% - 12px) 19px; background-size: 5px 5px; background-repeat: no-repeat; text-transform: capitalize; }
 .composer textarea { resize: vertical; min-height: 112px; line-height: 1.55; }
-.composer input:focus, .composer textarea:focus { border-color: #8ba38d; box-shadow: 0 0 0 3px #dfe8dd; }
+.composer input:not([type="checkbox"]):focus, .composer textarea:focus, .composer select:focus { border-color: #8ba38d; box-shadow: 0 0 0 3px #dfe8dd; }
 .composer input::placeholder, .composer textarea::placeholder { color: #a5a89f; }
+.composer [aria-invalid="true"] { border-color: #bb7468; }
+.field-error { margin: -12px 0 16px; color: #a14c43; font-size: 11px; }
+.composer .checkbox-field { display: flex; align-items: center; gap: 9px; margin: 0 0 22px; font-weight: 500; cursor: pointer; }
+.checkbox-field input { width: 15px; height: 15px; margin: 0; accent-color: var(--green); }
 .create-button { width: 100%; background: var(--green); border: 0; color: white; padding: 13px 15px; border-radius: 5px; font-weight: 600; font-size: 12px; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: background .15s, transform .15s; }
 .create-button:hover { background: #315b42; transform: translateY(-1px); }
 .create-button span { font-size: 16px; font-weight: 400; }
@@ -63,13 +71,34 @@ code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; back
 .status-live i { background: #6d9a72; }
 .category { color: #8e9289; font: 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
 .post-card h3 { margin: 13px 0 5px; font-family: "Playfair Display", serif; font-size: 20px; font-weight: 500; }
+.post-slug { margin: 0 0 8px; color: #879086; font: 10px "DM Mono", monospace; }
 .post-body { margin: 0; font-size: 12px; color: #747a70; line-height: 1.6; white-space: pre-wrap; }
+.post-publish-date { margin: 10px 0 0; color: #69736a; font-size: 10px; }
+.post-timestamps { margin: 11px 0 0; color: #9b9e95; font: 9px "DM Mono", monospace; }
 .post-actions { border-top: 1px solid #eeede7; margin-top: 15px; padding-top: 10px; display: flex; gap: 16px; }
 .post-actions button { border: 0; padding: 2px 0; color: var(--green); background: transparent; font-size: 10px; font-weight: 600; }
 .post-actions button:hover { text-decoration: underline; }
 .post-actions .delete-action { color: #a77468; }
 .footer { border-top: 1px solid var(--line); min-height: 64px; display: flex; justify-content: space-between; align-items: center; color: #92968d; font-size: 10px; }
 .footer span:last-child { font-size: 9px; }
+
+.auth-shell { max-width: 520px; min-height: 100vh; padding: 0 30px 70px; margin: 0 auto; }
+.auth-shell > .wordmark { display: inline-block; margin-top: 31px; }
+.auth-card { margin-top: clamp(70px, 15vh, 140px); background: var(--paper); border: 1px solid #e4e3db; border-radius: 7px; padding: 38px 42px 31px; }
+.auth-card .eyebrow { margin: 0 0 17px; }
+.auth-card h1 { margin: 0 0 10px; font: 500 35px/1.1 "Playfair Display", serif; letter-spacing: -.6px; }
+.auth-copy { color: #737b72; font-size: 13px; line-height: 1.6; margin: 0 0 28px; }
+.auth-form label { display: block; margin: 0 0 7px; font-size: 12px; font-weight: 600; }
+.auth-form input { width: 100%; border: 1px solid #dedfd6; border-radius: 5px; background: #fffefa; color: var(--ink); outline: none; padding: 12px 13px; margin: 0 0 18px; font-size: 13px; }
+.auth-form input:focus { border-color: #8ba38d; box-shadow: 0 0 0 3px #dfe8dd; }
+.auth-form .create-button { margin-top: 3px; }
+.create-button:disabled { opacity: .65; cursor: wait; transform: none; }
+.auth-error { color: #a14c43; background: #f8e9e4; border-radius: 4px; padding: 9px 11px; font-size: 12px; line-height: 1.5; }
+.auth-switch { margin: 21px 0 0; color: #7d837a; text-align: center; font-size: 12px; }
+.auth-switch button { border: 0; background: transparent; color: var(--green); padding: 0; font-weight: 600; }
+.auth-switch button:hover { text-decoration: underline; }
+.session-message { margin-top: 100px; color: #737b72; font-size: 14px; }
+.retry-button { max-width: 200px; }
 
 @media (max-width: 760px) {
   .shell { padding: 0 22px; }
@@ -84,6 +113,10 @@ code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; back
 @media (max-width: 440px) {
   .shell { padding: 0 16px; }
   .local-badge { font-size: 9px; }
+  .account-actions { gap: 11px; }
+  .signout-button { font-size: 10px; }
   .lede { font-size: 13px; }
   .footer { gap: 15px; font-size: 9px; }
+  .auth-shell { padding: 0 16px 40px; }
+  .auth-card { padding: 30px 23px 26px; }
 }

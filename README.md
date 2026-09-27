@@ -20,9 +20,13 @@ pnpm install
 pnpm dev
 ```
 
-The root scripts use Turborepo to run workspace tasks. Vite starts a local Jazz development server and deploys the generated schema and permissions there. The app uses a local-first account, so you can create posts without credentials or a Jazz Cloud connection.
+The root scripts use Turborepo to run workspace tasks. Vite starts a local Jazz development server and deploys the generated schema and permissions there.
 
-Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change the collection. `pnpm dev` generates the schema before starting Vite and watches the config file, so edits regenerate the Jazz schema and permissions automatically. The Jazz Vite plugin starts the local Jazz server and picks up those generated files.
+Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change the collection. `pnpm dev` generates the schema before starting Vite and watches the config files, so edits regenerate the Jazz schema and permissions automatically. The Jazz Vite plugin starts the local Jazz server and picks up those generated files.
+
+The playground includes email and password authentication through Better Auth, using Jazz as its database adapter. Add `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET` to `apps/playground/.env`; use [`apps/playground/.env.example`](./apps/playground/.env.example) as a template and generate a secret with `openssl rand -base64 32`. Then run `pnpm generate` to generate Better Auth's Jazz tables, and start the app with `pnpm dev`. Sign-up and sign-in open the corresponding Jazz account. Better Auth tables get deny-by-default client permissions; the playground's post permissions remain open for experimentation.
+
+When enabling Better Auth in another Bebop config, install compatible `better-auth` and `auth` CLI packages, add `auth: betterAuth()` to the config, and provide an `auth-generate.ts` using `jazzAdapter` as in [`apps/playground/auth-generate.ts`](./apps/playground/auth-generate.ts). `bebop generate` runs the Better Auth schema generator before compiling the merged Jazz schema and permissions. `bebop dev` also watches `auth-options.ts` and the selected generator config. Runtime route and client wiring depend on the framework; the playground's [`auth.ts`](./apps/playground/auth.ts), [`vite.config.ts`](./apps/playground/vite.config.ts), and [`auth-client.ts`](./apps/playground/auth-client.ts) show the Vite and React setup.
 
 You can also run the CLI commands directly in the playground workspace:
 
@@ -33,8 +37,10 @@ pnpm --filter @bebop/playground exec bebop validate
 
 `bebop generate` supports `--config <path>` and `--out-dir <path>`. `bebop dev` accepts a custom server command after `--`; without one, it starts Vite on `127.0.0.1`.
 
-Run the app's production type check and bundle with `pnpm build`.
+The Better Auth CLI requires Node.js 22.12 or newer. The workspace declares that version range.
 
-The generated permissions allow every operation for this local playground. Review and replace those grants before adding a sync server or deploying.
+The generated permissions allow every operation on posts in this local playground. Better Auth tables are denied to client sessions. Review and replace the post grants before deploying.
 
 See the [implementation plan](./docs/implementation-plan.md) for the roadmap.
+
+The playground production type check and bundle can be run with `pnpm build`.

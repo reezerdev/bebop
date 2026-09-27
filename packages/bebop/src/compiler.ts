@@ -32,7 +32,12 @@ export function compileSchema(config: BebopConfig): string {
     return `  ${JSON.stringify(collectionName)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
   });
 
-  return `// Generated from bebop.config.ts. Edit that file, then run bebop generate.\nimport { schema as s } from "jazz-tools";\n\nconst schema = {\n${tables.join(",\n")}\n} as const;\n\ntype AppSchema = s.Schema<typeof schema>;\nexport const app: s.App<AppSchema> = s.defineApp(schema);\n`;
+  const authImport = config.auth
+    ? 'import { schema as betterAuthSchema } from "./schema-better-auth/schema.js";\n'
+    : "";
+  const entries = [...(config.auth ? ["  ...betterAuthSchema"] : []), ...tables];
+
+  return `// Generated in bebop-generated-schema.ts from bebop.config.ts. Edit that file, then run bebop generate.\nimport { schema as s } from "jazz-tools";\n${authImport}\nconst schema = {\n${entries.join(",\n")}\n} as const;\n\ntype AppSchema = s.Schema<typeof schema>;\nexport const app: s.App<AppSchema> = s.defineApp(schema);\n`;
 }
 
 export function compilePermissions(config: BebopConfig): string {
@@ -46,7 +51,12 @@ export function compilePermissions(config: BebopConfig): string {
     )
     .join("\n");
 
-  return `// Generated for the local playground. Review every grant before syncing or deploying.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./schema.js";\n\nexport default s.definePermissions(app, ({ policy }) => {\n${grants}\n});\n`;
+  const authImport = config.auth
+    ? 'import { permissions as betterAuthPermissions } from "./schema-better-auth/schema.js";\n'
+    : "";
+  const appPermissions = `const appPermissions = s.definePermissions(app, ({ policy }) => {\n${grants}\n});`;
+
+  return `// Generated for the local playground. Review every grant before syncing or deploying.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}\n${appPermissions}\n${config.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
 }
 
 function compileFieldType(field: Exclude<FieldDefinition, { kind: "relation" }>): string {
@@ -75,13 +85,29 @@ function validateConfig(config: BebopConfig): void {
 
   const collectionNames = Object.keys(config.collections);
 
+  if (config.auth && config.auth.provider !== "better-auth") {
+    throw new Error(`Unsupported authentication provider "${config.auth.provider}".`);
+  }
+
   for (const [collectionName, definition] of Object.entries(config.collections)) {
     if (!namePattern.test(collectionName)) {
       throw new Error(`Invalid collection name "${collectionName}". Use letters, numbers, and underscores.`);
     }
 
+    if (config.auth && collectionName.startsWith("better_auth_")) {
+      throw new Error(
+        `Collection name "${collectionName}" uses the reserved Better Auth table prefix "better_auth_".`,
+      );
+    }
+
     if (!definition.fields || Object.keys(definition.fields).length === 0) {
       throw new Error(`Collection "${collectionName}" must define at least one field.`);
+    }
+
+    if (definition.timestamps === false) {
+      throw new Error(
+        `Collection "${collectionName}" cannot disable timestamps: Jazz records $createdAt and $updatedAt as built-in metadata.`,
+      );
     }
 
     const storedNames = new Set<string>(["id"]);

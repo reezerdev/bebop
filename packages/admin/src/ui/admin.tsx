@@ -7,13 +7,13 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   FilePlus2,
   LogOut,
   Menu,
-  Pencil,
   Plus,
   Search,
   Trash2,
@@ -66,7 +66,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-const pageSize = 10;
+const defaultPageSize = 10;
 const filterAllValue = "__bebop_filter_all__";
 
 function getTable(app: object, collectionSlug: string): AdminTable | undefined {
@@ -260,7 +260,7 @@ function PageTitle({
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
         {eyebrow && <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">{eyebrow}</p>}
-        <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="font-heading text-3xl font-semibold uppercase tracking-wider">{title}</h1>
         {description && <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}
@@ -273,7 +273,7 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
 
   return (
     <section>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Collections</h1>
+      <h1 className="mb-6 font-heading text-3xl font-semibold uppercase tracking-wider">Collections</h1>
       <div className="admin-collection-grid">
         {collections.map((collection) => (
           <article key={collection.slug} className="admin-collection-card">
@@ -307,9 +307,15 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
     direction: "asc",
   });
   const [page, setPage] = useState(1);
-  const [pendingDelete, setPendingDelete] = useState<AdminRecord | null>(null);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => collection.defaultColumns.length
+    ? [...collection.defaultColumns]
+    : collection.fields.slice(0, 4).map((field) => field.name));
+  const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
   const rows = data ?? [];
-  const columns = collection.defaultColumns.length ? collection.defaultColumns : collection.fields.slice(0, 4).map((field) => field.name);
+  const allColumns = collection.fields.map((field) => field.name);
+  const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const filterFields = collection.fields.filter((field) => field.kind === "boolean" || field.kind === "select");
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -338,8 +344,25 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
   }, [collection, filterFields, filters, rows, search, sort]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice((Math.min(page, pageCount) - 1) * pageSize, Math.min(page, pageCount) * pageSize);
+  const allPageSelected = pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.id));
+  const selectedRows = rows.filter((row) => selectedIds.has(row.id));
+  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
+  const searchField = titleField ?? fieldByName(collection, collection.listSearchableFields[0] ?? "");
+  const searchLabel = searchField?.label ?? "Name";
+  const titleColumn = titleField && columns.includes(titleField.name) ? titleField.name : columns[0];
 
   useEffect(() => setPage(1), [search, filters]);
+
+  useEffect(() => {
+    const defaults = collection.defaultColumns.length
+      ? [...collection.defaultColumns]
+      : collection.fields.slice(0, 4).map((field) => field.name);
+    setVisibleColumns(defaults);
+    setSort({ field: defaults[0] ?? "id", direction: "asc" });
+    setSelectedIds(new Set());
+    setPage(1);
+    setPageSize(defaultPageSize);
+  }, [collection]);
 
   function toggleSort(field: string) {
     setSort((current) => ({
@@ -348,126 +371,173 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
     }));
   }
 
-  function deleteRow(row: AdminRecord) {
-    setPendingDelete(row);
+  function toggleRowSelection(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
-  const pendingTitleField = pendingDelete && collection.useAsTitle
-    ? fieldByName(collection, collection.useAsTitle)
-    : undefined;
-  const pendingTitle = pendingDelete
-    ? String(pendingTitleField ? valueFor(pendingTitleField, pendingDelete) ?? pendingDelete.id : pendingDelete.id)
+  function togglePageSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allPageSelected) pageRows.forEach((row) => next.delete(row.id));
+      else pageRows.forEach((row) => next.add(row.id));
+      return next;
+    });
+  }
+
+  const pendingTitle = pendingDelete?.length === 1
+    ? String(titleField ? valueFor(titleField, pendingDelete[0]) ?? pendingDelete[0].id : pendingDelete[0].id)
     : "";
+  const rangeStart = filteredRows.length ? (Math.min(page, pageCount) - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, filteredRows.length);
 
   return (
     <div>
-      <PageTitle
-        eyebrow="COLLECTION"
-        title={collection.label}
-        description={`${rows.length} ${rows.length === 1 ? "document" : "documents"} in this collection.`}
-        action={<Button onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create new</Button>}
-      />
-      <Card className="overflow-hidden">
-        <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center">
-          <div className="relative min-w-0 flex-1 md:max-w-sm">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${collection.label.toLocaleLowerCase()}...`} className="pl-9" aria-label={`Search ${collection.label}`} />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {filterFields.map((field) => (
-              <Select
-                key={field.name}
-                value={filters[field.name] || filterAllValue}
-                onValueChange={(value) => setFilters((current) => ({
-                  ...current,
-                  [field.name]: value === filterAllValue ? "" : value ?? "",
-                }))}
-              >
-                <SelectTrigger className="min-w-32" aria-label={`Filter by ${field.label}`}>
-                  <SelectValue placeholder={`All ${field.label.toLocaleLowerCase()}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={filterAllValue}>All {field.label.toLocaleLowerCase()}</SelectItem>
-                  {field.kind === "boolean" ? (
-                    <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></>
-                  ) : field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            ))}
-          </div>
+      <div className="admin-list-heading">
+        <h1 className="font-heading text-3xl font-semibold uppercase tracking-wider">{collection.label}</h1>
+        <Button variant="secondary" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>
+      </div>
+      <div className="admin-table-toolbar">
+        <div className="relative min-w-0 flex-1">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="pl-10 focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {selectedRows.length > 0 && <Button variant="destructive" onClick={() => setPendingDelete(selectedRows)}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
+          <details className="admin-table-menu">
+            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
+            <div className="admin-table-menu-content">
+              <p className="admin-table-menu-label">Visible columns</p>
+              {allColumns.map((column) => {
+                const field = fieldByName(collection, column);
+                const checked = visibleColumns.includes(column);
+                return (
+                  <label key={column} className="admin-menu-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={checked && visibleColumns.length === 1}
+                      onChange={() => setVisibleColumns((current) => checked ? current.filter((name) => name !== column) : [...current, column])}
+                    />
+                    <span>{field?.label ?? humanize(column)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+          {filterFields.length > 0 && <details className="admin-table-menu">
+            <summary className="admin-table-menu-trigger">Filters <ChevronDown size={15} /></summary>
+            <div className="admin-table-menu-content admin-filter-menu">
+              {filterFields.map((field) => (
+                <label key={field.name} className="admin-filter-field">
+                  <span>{field.label}</span>
+                  <Select
+                    value={filters[field.name] || filterAllValue}
+                    onValueChange={(value) => setFilters((current) => ({
+                      ...current,
+                      [field.name]: value === filterAllValue ? "" : value ?? "",
+                    }))}
+                  >
+                    <SelectTrigger className="w-full" aria-label={`Filter by ${field.label}`}>
+                      <SelectValue placeholder={`All ${field.label.toLocaleLowerCase()}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={filterAllValue}>All {field.label.toLocaleLowerCase()}</SelectItem>
+                      {field.kind === "boolean" ? (
+                        <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></>
+                      ) : field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+              ))}
+            </div>
+          </details>}
+        </div>
+      </div>
         {error ? (
-          <div className="p-10 text-center text-sm text-destructive">Could not load this collection: {error.message}</div>
+          <div className="py-12 text-center text-sm text-destructive">Could not load this collection: {error.message}</div>
         ) : isLoading ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">Loading documents…</div>
+          <div className="py-12 text-center text-sm text-muted-foreground">Loading documents…</div>
         ) : filteredRows.length === 0 ? (
-          <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-            <span className="mb-3 rounded-full bg-secondary p-3 text-primary"><FolderKanban size={20} /></span>
-            <h2 className="font-medium">{rows.length ? "No matching documents" : "No documents yet"}</h2>
-            <p className="mt-1 max-w-sm text-sm text-muted-foreground">{rows.length ? "Try changing your search or filters." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
-            {!rows.length && <Button className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create new</Button>}
+          <div className="py-16 text-center">
+            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide">{rows.length ? "No matching documents" : "No documents yet"}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{rows.length ? "Try changing your search or filters." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
+            {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
-          <>
+          <div className="admin-table-section">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <input type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} onChange={togglePageSelection} />
+                  </TableHead>
                   {columns.map((column) => {
                     const field = fieldByName(collection, column);
                     const active = sort.field === column;
                     const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
                     return (
                       <TableHead key={column}>
-                        <button className="inline-flex items-center gap-1.5 hover:text-foreground" onClick={() => toggleSort(column)}>
+                        <button className="admin-sort-button" onClick={() => toggleSort(column)}>
                           {field?.label ?? humanize(column)}<SortIcon size={13} />
                         </button>
                       </TableHead>
                     );
                   })}
                   {collection.timestamps && <TableHead>Updated</TableHead>}
-                  <TableHead className="w-20 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageRows.map((row) => {
-                  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
-                  return (
-                    <TableRow key={row.id}>
-                      {columns.map((column, index) => {
-                        const field = fieldByName(collection, column);
-                        const value = field ? valueFor(field, row) : row[column];
-                        return (
-                          <TableCell key={column} className={index === 0 ? "font-medium" : "text-muted-foreground"}>
-                            <Link to={`/admin/collections/${collection.slug}/${row.id}`} className="max-w-64 truncate hover:text-primary hover:underline">
+                {pageRows.map((row, rowIndex) => (
+                  <TableRow key={row.id} className={rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}>
+                    <TableCell className="w-12">
+                      <input
+                        type="checkbox"
+                        className="admin-checkbox"
+                        aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`}
+                        checked={selectedIds.has(row.id)}
+                        onChange={() => toggleRowSelection(row.id)}
+                      />
+                    </TableCell>
+                    {columns.map((column) => {
+                      const field = fieldByName(collection, column);
+                      const value = field ? valueFor(field, row) : row[column];
+                      const isTitle = titleColumn === column;
+                      return (
+                        <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
+                          {isTitle ? (
+                            <Link to={`/admin/collections/${collection.slug}/${row.id}`} className="underline underline-offset-2 hover:text-primary">
                               {formatCell(field, value, relationOptions)}
                             </Link>
-                            {index === 0 && titleField && titleField.name !== column && <span className="sr-only">{String(valueFor(titleField, row) ?? "")}</span>}
-                          </TableCell>
-                        );
-                      })}
-                      {collection.timestamps && <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(row.$updatedAt, true)}</TableCell>}
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" aria-label="Edit document" onClick={() => navigate(`/admin/collections/${collection.slug}/${row.id}`)}><Pencil size={15} /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete document" onClick={() => deleteRow(row)}><Trash2 size={15} /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                          ) : formatCell(field, value, relationOptions)}
+                        </TableCell>
+                      );
+                    })}
+                    {collection.timestamps && <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(row.$updatedAt, true)}</TableCell>}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
-            <div className="flex flex-col gap-3 border-t px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>Showing {filteredRows.length ? (Math.min(page, pageCount) - 1) * pageSize + 1 : 0}–{Math.min(page, pageCount) * pageSize} of {filteredRows.length}</span>
+            <div className="admin-table-pagination">
+              <span>{rangeStart}–{rangeEnd} of {filteredRows.length}</span>
               <div className="flex items-center justify-end gap-2">
-                <span>Page {Math.min(page, pageCount)} of {pageCount}</span>
-                <Button variant="outline" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={16} /></Button>
-                <Button variant="outline" size="icon" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></Button>
+                <span className="mr-1">Per Page:</span>
+                <Select value={String(pageSize)} onValueChange={(value) => { if (value) { setPageSize(Number(value)); setPage(1); } }}>
+                  <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50].map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={16} /></Button>
+                <Button variant="ghost" size="icon" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></Button>
               </div>
             </div>
-          </>
+          </div>
         )}
-      </Card>
       {pendingDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
@@ -478,24 +548,29 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
           <section
             role="alertdialog"
             aria-modal="true"
-            aria-labelledby="delete-document-title"
-            aria-describedby="delete-document-description"
-            className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl"
+            aria-labelledby="delete-documents-title"
+            aria-describedby="delete-documents-description"
+            className="w-full max-w-md rounded-none border bg-background p-6 shadow-xl"
           >
-            <h2 id="delete-document-title" className="text-lg font-semibold">Delete document?</h2>
-            <p id="delete-document-description" className="mt-2 text-sm text-muted-foreground">
-              Delete “{pendingTitle}”? This action cannot be undone.
+            <h2 id="delete-documents-title" className="font-heading text-lg font-semibold uppercase tracking-wide">Delete {pendingDelete.length === 1 ? "document" : "documents"}?</h2>
+            <p id="delete-documents-description" className="mt-2 text-sm text-muted-foreground">
+              {pendingDelete.length === 1 ? <>Delete “{pendingTitle}”?</> : `Delete ${pendingDelete.length} selected documents?`} This action cannot be undone.
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <Button variant="outline" autoFocus onClick={() => setPendingDelete(null)}>Cancel</Button>
               <Button
                 variant="destructive"
                 onClick={() => {
-                  if (table) db.delete(table, pendingDelete.id);
+                  if (table) pendingDelete.forEach((row) => db.delete(table, row.id));
+                  setSelectedIds((current) => {
+                    const next = new Set(current);
+                    pendingDelete.forEach((row) => next.delete(row.id));
+                    return next;
+                  });
                   setPendingDelete(null);
                 }}
               >
-                <Trash2 size={15} /> Delete document
+                <Trash2 size={15} /> Delete {pendingDelete.length === 1 ? "document" : "documents"}
               </Button>
             </div>
           </section>
@@ -556,7 +631,7 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
         <Button variant="outline" size="icon" aria-label="Back to collection" onClick={() => navigate(`/admin/collections/${collection.slug}`)}><ArrowLeft size={16} /></Button>
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground">{collection.label} / {id ? "Edit" : "Create"}</p>
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="truncate font-heading text-2xl font-semibold uppercase tracking-wider">{title}</h1>
         </div>
         {id && collection.timestamps && existing?.$updatedAt && <span className="hidden text-xs text-muted-foreground md:block">Updated {formatDate(existing.$updatedAt, true)}</span>}
       </div>
@@ -571,9 +646,9 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
               {collection.fields.map((field) => (
                 <div key={field.name} className="space-y-2">
                   {field.kind === "boolean" ? (
-                    <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3.5">
+                    <label className="flex cursor-pointer items-center gap-3 rounded-none border p-3.5">
                       <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
-                      <span className="text-sm font-medium">{field.label}</span>
+                      <span className="text-xs font-semibold tracking-wide uppercase">{field.label}</span>
                       {field.required && <span className="text-xs text-muted-foreground">Required</span>}
                     </label>
                   ) : (

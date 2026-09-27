@@ -1,4 +1,4 @@
-import { checkbox, collection, defineConfig, select, text } from "@bebop/core";
+import { defineConfig, collection, text, select, checkbox } from "@bebop/core";
 
 export default defineConfig({
   collections: {
@@ -6,6 +6,7 @@ export default defineConfig({
       fields: {
         title: text({ required: true }),
         body: text(),
+        slug: text(),
         published: checkbox(),
         category: select(["announcement", "guide", "story"] as const),
       },

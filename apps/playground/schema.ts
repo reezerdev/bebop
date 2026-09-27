@@ -3,14 +3,15 @@ import { schema as s } from "jazz-tools";
 
 const schema = {
   "posts": s.table(
-      {
-        "title": s.string(),
-        "body": s.string().optional(),
-        "published": s.boolean().optional(),
-        "category": s.enum("announcement", "guide", "story").optional()
-      },
-      {},
-    )
+    {
+      "title": s.string(),
+      "body": s.string().optional(),
+      "slug": s.string().optional(),
+      "published": s.boolean().optional(),
+      "category": s.enum("announcement", "guide", "story").optional()
+    },
+    {},
+  )
 } as const;
 
 type AppSchema = s.Schema<typeof schema>;

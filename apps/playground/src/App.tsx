@@ -5,6 +5,7 @@ import { BebopAdmin } from "@bebop/admin";
 import { authClient } from "../auth-client.ts";
 import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";
+import { PlaygroundPage } from "./PlaygroundPage.tsx";
 
 export function App() {
   const { logout } = useJazzAuth();
@@ -39,7 +40,8 @@ export function App() {
   const createDefaults = useMemo(() => ({ posts: { author: currentUserId } }), [currentUserId]);
 
   return <Routes>
+    <Route path="/" element={<PlaygroundPage logout={() => logout()} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
     <Route path="/admin/*" element={<BebopAdmin app={app} manifest={bebopAdminManifest} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />} />
-    <Route path="*" element={<Navigate to="/admin" replace />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;
 }

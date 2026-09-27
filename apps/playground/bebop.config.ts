@@ -21,23 +21,5 @@ export default defineConfig({
         category: select(["announcement", "guide", "story"] as const),
       },
     }),
-    legacyPosts: collection({
-      timestamps: true,
-      admin: {
-        label: "Legacy posts",
-        useAsTitle: "title",
-        defaultColumns: ["title", "author", "published", "category"],
-        listSearchableFields: ["title", "slug", "author"],
-      },
-      fields: {
-        title: text({ required: true }),
-        author: text({ required: true }),
-        body: text(),
-        slug: text(),
-        publishedAt: date(),
-        published: checkbox(),
-        category: select(["announcement", "guide", "story"] as const),
-      },
-    }),
   },
 });

@@ -21,7 +21,7 @@ pnpm install
 pnpm dev
 ```
 
-The root scripts use pnpm and Turborepo to run workspace tasks. The playground mounts Bebop's first-party admin package at `http://127.0.0.1:5173/admin`; it is an integration host, while the admin UI lives in `packages/admin`.
+The root scripts use pnpm and Turborepo to run workspace tasks. The playground app is at `http://127.0.0.1:5173/`; Bebop's first-party admin package is mounted separately at `http://127.0.0.1:5173/admin`. The playground is an integration host, while the admin UI lives in `packages/admin`.
 
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change collections and their admin list settings. `pnpm dev` builds and watches the admin package, generates the Jazz schema and admin manifest, then starts Vite. The Jazz Vite plugin starts the local Jazz server and picks up the generated schema and permissions.
 

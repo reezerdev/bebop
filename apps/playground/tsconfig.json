@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src", "scripts", "bebop.config.ts", "vite.config.ts", "schema.ts", "permissions.ts"]
+}

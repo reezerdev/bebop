@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  esbuild@0.27.7: true
+  esbuild@0.28.2: true
+  protobufjs@8.0.1: true

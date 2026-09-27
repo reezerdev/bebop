@@ -1,0 +1,89 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap");
+
+:root {
+  font-family: "DM Sans", sans-serif;
+  color: #1d2924;
+  background: #f4f3ed;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #1d2924;
+  --muted: #7d837a;
+  --line: #dfdfd5;
+  --green: #416e53;
+  --paper: #fbfaf6;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+code { font-family: "DM Mono", monospace; font-size: .85em; color: #416e53; background: #e9eee6; padding: 2px 6px; border-radius: 4px; }
+
+.shell { max-width: 1120px; padding: 0 44px; margin: 0 auto; }
+.topbar { height: 88px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.wordmark { color: var(--ink); text-decoration: none; font-size: 25px; font-weight: 700; letter-spacing: -1.8px; }
+.wordmark span { color: #d28a56; font-size: 16px; vertical-align: top; margin-left: 2px; }
+.local-badge { color: #5d675e; display: flex; align-items: center; gap: 9px; font: 11px "DM Mono", monospace; letter-spacing: .04em; }
+.local-badge i, .status i { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: #86a578; }
+.intro { padding: 72px 0 48px; max-width: 620px; }
+.eyebrow, .section-label, .storage-label, .footer span:last-child { font: 10px "DM Mono", monospace; letter-spacing: .12em; color: #879086; }
+.intro h1 { margin: 16px 0 15px; font-size: clamp(48px, 7vw, 76px); line-height: .98; letter-spacing: -4.6px; font-weight: 500; }
+.intro h1 em { font-family: "Playfair Display", serif; font-weight: 500; color: var(--green); letter-spacing: -3px; }
+.lede { max-width: 500px; color: #69736a; font-size: 15px; line-height: 1.75; margin: 0; }
+.workspace { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 64px; align-items: start; padding: 35px 0 68px; border-top: 1px solid var(--line); }
+.composer { padding: 4px 0 0; }
+.section-label { margin-bottom: 25px; }
+.section-label span { color: #c1885a; margin-right: 10px; }
+.composer label { display: block; margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.optional { margin-left: 6px; color: #9b9d94; font: 9px "DM Mono", monospace; letter-spacing: .08em; }
+.composer input, .composer textarea { width: 100%; border: 1px solid #dedfd6; border-radius: 5px; background: var(--paper); outline: none; color: var(--ink); padding: 13px 14px; margin-bottom: 20px; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.composer textarea { resize: vertical; min-height: 112px; line-height: 1.55; }
+.composer input:focus, .composer textarea:focus { border-color: #8ba38d; box-shadow: 0 0 0 3px #dfe8dd; }
+.composer input::placeholder, .composer textarea::placeholder { color: #a5a89f; }
+.create-button { width: 100%; background: var(--green); border: 0; color: white; padding: 13px 15px; border-radius: 5px; font-weight: 600; font-size: 12px; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: background .15s, transform .15s; }
+.create-button:hover { background: #315b42; transform: translateY(-1px); }
+.create-button span { font-size: 16px; font-weight: 400; }
+.form-note { color: #999d93; font: 10px "DM Mono", monospace; margin-top: 12px; }
+.list-heading { display: flex; align-items: flex-end; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 4px 0 17px; }
+.list-heading .section-label { margin-bottom: 13px; }
+.list-heading h2 { font-size: 25px; letter-spacing: -1px; font-weight: 500; margin: 0; }
+.count { color: #a0a49a; font: 11px "DM Mono", monospace; margin-left: 4px; vertical-align: middle; }
+.storage-label { font-size: 9px; padding-bottom: 4px; }
+.empty-state { min-height: 270px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #83897f; text-align: center; }
+.empty-icon { color: #bf8b5f; font-size: 21px; margin-bottom: 9px; }
+.empty-state p { color: #59635a; font-family: "Playfair Display", serif; font-size: 18px; margin: 0 0 5px; }
+.empty-state span:last-child { color: #9b9e95; font-size: 11px; }
+.posts { display: grid; gap: 12px; padding-top: 15px; }
+.post-card { background: var(--paper); border: 1px solid #e4e3db; border-radius: 6px; padding: 18px 20px 14px; animation: appear .25s ease both; }
+@keyframes appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.post-meta { display: flex; align-items: center; justify-content: space-between; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: #8e9289; font: 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
+.status i { width: 6px; height: 6px; background: #c7a06e; }
+.status-live i { background: #6d9a72; }
+.category { color: #8e9289; font: 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
+.post-card h3 { margin: 13px 0 5px; font-family: "Playfair Display", serif; font-size: 20px; font-weight: 500; }
+.post-body { margin: 0; font-size: 12px; color: #747a70; line-height: 1.6; white-space: pre-wrap; }
+.post-actions { border-top: 1px solid #eeede7; margin-top: 15px; padding-top: 10px; display: flex; gap: 16px; }
+.post-actions button { border: 0; padding: 2px 0; color: var(--green); background: transparent; font-size: 10px; font-weight: 600; }
+.post-actions button:hover { text-decoration: underline; }
+.post-actions .delete-action { color: #a77468; }
+.footer { border-top: 1px solid var(--line); min-height: 64px; display: flex; justify-content: space-between; align-items: center; color: #92968d; font-size: 10px; }
+.footer span:last-child { font-size: 9px; }
+
+@media (max-width: 760px) {
+  .shell { padding: 0 22px; }
+  .topbar { height: 70px; }
+  .intro { padding: 54px 0 35px; }
+  .intro h1 { letter-spacing: -3px; }
+  .intro h1 em { letter-spacing: -2px; }
+  .workspace { grid-template-columns: 1fr; gap: 46px; padding-top: 28px; }
+  .composer { max-width: 460px; }
+}
+
+@media (max-width: 440px) {
+  .shell { padding: 0 16px; }
+  .local-badge { font-size: 9px; }
+  .lede { font-size: 13px; }
+  .footer { gap: 15px; font-size: 9px; }
+}

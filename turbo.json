@@ -13,7 +13,6 @@
       "cache": false
     },
     "validate:schema": {
-      "dependsOn": ["generate"],
       "cache": false
     }
   }

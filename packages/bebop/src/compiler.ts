@@ -25,12 +25,14 @@ export function compileSchema(config: BebopConfig): string {
       );
     }
 
-    const relationObject = relations.length ? `\n      {\n        ${relations.join(",\n        ")}\n      }` : "{}";
+    const relationObject = relations.length
+      ? `{\n      ${relations.join(",\n      ")}\n    }`
+      : "{}";
 
-    return `  ${JSON.stringify(collectionName)}: s.table(\n      {\n        ${columns.join(",\n        ")}\n      },\n      ${relationObject},\n    )`;
+    return `  ${JSON.stringify(collectionName)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
   });
 
-  return `// Generated from bebop.config.ts. Edit that file, then run pnpm generate.\nimport { schema as s } from "jazz-tools";\n\nconst schema = {\n${tables.join(",\n")}\n} as const;\n\ntype AppSchema = s.Schema<typeof schema>;\nexport const app: s.App<AppSchema> = s.defineApp(schema);\n`;
+  return `// Generated from bebop.config.ts. Edit that file, then run bebop generate.\nimport { schema as s } from "jazz-tools";\n\nconst schema = {\n${tables.join(",\n")}\n} as const;\n\ntype AppSchema = s.Schema<typeof schema>;\nexport const app: s.App<AppSchema> = s.defineApp(schema);\n`;
 }
 
 export function compilePermissions(config: BebopConfig): string {

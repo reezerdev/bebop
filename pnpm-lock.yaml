@@ -185,6 +185,9 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@bebop/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -205,6 +208,15 @@ importers:
         version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(tsx@4.23.15)
 
   packages/bebop: {}
+
+  packages/cli:
+    dependencies:
+      '@bebop/core':
+        specifier: workspace:*
+        version: link:../bebop
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
 
 packages:
 

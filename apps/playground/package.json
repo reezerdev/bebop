@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "pnpm run generate && vite --host 127.0.0.1",
-    "generate": "tsx scripts/generate.ts",
-    "validate:schema": "jazz-tools validate",
+    "dev": "bebop dev -- vite --host 127.0.0.1",
+    "generate": "bebop generate",
+    "validate:schema": "bebop validate",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
@@ -17,6 +17,7 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@bebop/cli": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

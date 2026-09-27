@@ -1,0 +1,13 @@
+{
+  "name": "@bebop/cli",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "bebop": "./bin/bebop.mjs"
+  },
+  "dependencies": {
+    "@bebop/core": "workspace:*",
+    "tsx": "^4.23.15"
+  }
+}

@@ -22,12 +22,16 @@ pnpm dev
 
 The root scripts use Turborepo to run workspace tasks. Vite starts a local Jazz development server and deploys the generated schema and permissions there. The app uses a local-first account, so you can create posts without credentials or a Jazz Cloud connection.
 
-Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change the collection, then regenerate and validate the Jazz schema:
+Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change the collection. `pnpm dev` generates the schema before starting Vite and watches the config file, so edits regenerate the Jazz schema and permissions automatically. The Jazz Vite plugin starts the local Jazz server and picks up those generated files.
+
+You can also run the CLI commands directly in the playground workspace:
 
 ```sh
-pnpm generate
-pnpm validate:schema
+pnpm --filter @bebop/playground exec bebop generate
+pnpm --filter @bebop/playground exec bebop validate
 ```
+
+`bebop generate` supports `--config <path>` and `--out-dir <path>`. `bebop dev` accepts a custom server command after `--`; without one, it starts Vite on `127.0.0.1`.
 
 Run the app's production type check and bundle with `pnpm build`.
 

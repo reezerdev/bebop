@@ -1,4 +1,4 @@
-// Generated from bebop.config.ts. Edit that file, then run pnpm generate.
+// Generated from bebop.config.ts. Edit that file, then run bebop generate.
 import { schema as s } from "jazz-tools";
 
 const schema = {

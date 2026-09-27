@@ -1,8 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { betterAuth as jazzBetterAuth, JazzProvider, useJazzAuth } from "jazz-tools/react";
+import { BrowserRouter } from "react-router-dom";
 import { authClient } from "../auth-client.ts";
 import { App } from "./App.tsx";
+import "@bebop/admin/styles.css";
 import "./index.css";
 
 function AuthPanel() {
@@ -80,15 +82,17 @@ function JazzError({ retry, error }: { retry: () => Promise<void>; error?: Error
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <JazzProvider
-      appId={import.meta.env.VITE_JAZZ_APP_ID}
-      serverUrl={import.meta.env.VITE_JAZZ_SERVER_URL}
-      auth={jazzBetterAuth(authClient)}
-      signedOut={<AuthPanel />}
-      loading={<JazzLoading />}
-      error={(state) => <JazzError retry={state.retry} error={state.error} />}
-    >
-      <App />
-    </JazzProvider>
+    <BrowserRouter>
+      <JazzProvider
+        appId={import.meta.env.VITE_JAZZ_APP_ID}
+        serverUrl={import.meta.env.VITE_JAZZ_SERVER_URL}
+        auth={jazzBetterAuth(authClient)}
+        signedOut={<AuthPanel />}
+        loading={<JazzLoading />}
+        error={(state) => <JazzError retry={state.retry} error={state.error} />}
+      >
+        <App />
+      </JazzProvider>
+    </BrowserRouter>
   </React.StrictMode>,
 );

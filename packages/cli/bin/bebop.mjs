@@ -74,10 +74,10 @@ async function loadConfig(configPath) {
 }
 
 async function loadCompiler(configPath) {
-  const { compileSchema, compilePermissions } = await tsImport("@bebop/core", {
+  const { compileSchema, compilePermissions, compileAdminManifest } = await tsImport("@bebop/core", {
     parentURL: pathToFileURL(configPath).href,
   });
-  return { compileSchema, compilePermissions };
+  return { compileSchema, compilePermissions, compileAdminManifest };
 }
 
 async function writeIfChanged(filePath, content) {
@@ -100,12 +100,13 @@ async function writeIfChanged(filePath, content) {
 
 async function generate(paths, { quiet = false } = {}) {
   const config = await loadConfig(paths.configPath);
-  const { compileSchema, compilePermissions } = await loadCompiler(paths.configPath);
+  const { compileSchema, compilePermissions, compileAdminManifest } = await loadCompiler(paths.configPath);
 
   // Compile outputs before writing so invalid config keeps the last valid
   // generated schema and permissions available to the dev server.
   const schema = compileSchema(config);
   const permissions = compilePermissions(config);
+  const adminManifest = compileAdminManifest(config);
   await mkdir(paths.outputDirectory, { recursive: true });
 
   if (config.auth) await generateBetterAuthSchema(paths, config.auth);
@@ -122,6 +123,7 @@ async function generate(paths, { quiet = false } = {}) {
 
   const changed = await Promise.all([
     writeIfChanged(path.join(paths.outputDirectory, "bebop-generated-schema.ts"), schema),
+    writeIfChanged(path.join(paths.outputDirectory, "bebop-admin-manifest.ts"), adminManifest),
     writeIfChanged(path.join(paths.outputDirectory, "schema.ts"), jazzSchemaEntry),
     writeIfChanged(path.join(paths.outputDirectory, "permissions.ts"), permissions),
   ]);
@@ -129,7 +131,7 @@ async function generate(paths, { quiet = false } = {}) {
   if (!quiet) {
     const output = path.relative(process.cwd(), paths.outputDirectory) || ".";
     const action = changed.some(Boolean) ? "Generated" : "Up to date";
-    console.log(`${action} bebop-generated-schema.ts, Jazz schema.ts entry point, and permissions.ts in ${output}`);
+    console.log(`${action} bebop-generated-schema.ts, bebop-admin-manifest.ts, Jazz schema.ts entry point, and permissions.ts in ${output}`);
   }
   return config;
 }

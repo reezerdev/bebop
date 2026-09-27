@@ -8,5 +8,9 @@ const appPermissions = s.definePermissions(app, ({ policy }) => {
   policy.posts.allowInsert.always();
   policy.posts.allowUpdate.always();
   policy.posts.allowDelete.always();
+  policy.legacyPosts.allowRead.always();
+  policy.legacyPosts.allowInsert.always();
+  policy.legacyPosts.allowUpdate.always();
+  policy.legacyPosts.allowDelete.always();
 });
 export default { ...betterAuthPermissions, ...appPermissions };

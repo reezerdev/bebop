@@ -6,9 +6,10 @@ Bebop is a schema-driven CMS prototype compiled onto Jazz. This pnpm workspace s
 
 ```text
 apps/
-  playground/     React app and Bebop config
+  playground/     React host app and Bebop config
 packages/
   bebop/          Config DSL and Jazz schema compiler
+  admin/          First-party React admin UI and shadcn components
 docs/             Product and architecture notes
 examples/         Reserved for standalone examples
 ```
@@ -20,9 +21,11 @@ pnpm install
 pnpm dev
 ```
 
-The root scripts use Turborepo to run workspace tasks. Vite starts a local Jazz development server and deploys the generated schema and permissions there.
+The root scripts use pnpm and Turborepo to run workspace tasks. The playground mounts Bebop's first-party admin package at `http://127.0.0.1:5173/admin`; it is an integration host, while the admin UI lives in `packages/admin`.
 
-Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change the collection. `pnpm dev` generates the schema before starting Vite and watches the config files, so edits regenerate the Jazz schema and permissions automatically. The Jazz Vite plugin starts the local Jazz server and picks up those generated files.
+Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change collections and their admin list settings. `pnpm dev` builds and watches the admin package, generates the Jazz schema and admin manifest, then starts Vite. The Jazz Vite plugin starts the local Jazz server and picks up the generated schema and permissions.
+
+The admin package renders every collection and supported field kind from `bebop.config.ts`. Collection admin options include a label, title field, default columns, and searchable text fields. Its shadcn/ui components and compiled CSS are owned by `@bebop/admin`, so consuming apps do not need their own Tailwind setup. The host app provides the router, Jazz provider, authentication flow, and logout action.
 
 The playground includes email and password authentication through Better Auth, using Jazz as its database adapter. Add `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET` to `apps/playground/.env`; use [`apps/playground/.env.example`](./apps/playground/.env.example) as a template and generate a secret with `openssl rand -base64 32`. Then run `pnpm generate` to generate Better Auth's Jazz tables, and start the app with `pnpm dev`. Sign-up and sign-in open the corresponding Jazz account. Better Auth tables get deny-by-default client permissions; the playground's post permissions remain open for experimentation.
 

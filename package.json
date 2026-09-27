@@ -8,7 +8,7 @@
     "pnpm": "12.6.0"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@bebop/playground",
+    "dev": "pnpm --filter @bebop/admin build && turbo run dev --filter=@bebop/admin --filter=@bebop/playground",
     "build": "turbo run build",
     "generate": "turbo run generate --filter=@bebop/playground",
     "validate:schema": "turbo run validate:schema --filter=@bebop/playground"

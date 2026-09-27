@@ -11,12 +11,13 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@bebop/admin": "workspace:*",
     "@bebop/core": "workspace:*",
     "better-auth": "1.7.1",
     "jazz-tools": "2.0.0-alpha.57",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-hook-form": "^7.89.0"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@bebop/cli": "workspace:*",

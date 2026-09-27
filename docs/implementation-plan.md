@@ -4,11 +4,11 @@
 
 Build a TypeScript headless CMS whose collection configuration compiles to Jazz v2 tables, relations, and permissions. Bebop owns the developer-facing configuration, validation, lifecycle, and typed CRUD API; Jazz owns storage, queries, sync, and the final authorization decision for direct client operations.
 
-The first release is a useful headless CMS, demonstrated by a small example app. An admin interface is a later milestone.
+The first release is a useful CMS with a first-party admin interface, demonstrated by a small host app. The admin UI lives in `@bebop/admin`; the playground only integrates it.
 
 ## Ground rules
 
-1. **One schema source:** `bebop.config.ts` defines collections. Generated `bebop-generated-schema.ts`, Jazz's `schema.ts` entry point, `permissions.ts`, and admin metadata are outputs, never separately edited sources.
+1. **One schema source:** `bebop.config.ts` defines collections. Generated `bebop-generated-schema.ts`, `bebop-admin-manifest.ts`, Jazz's `schema.ts` entry point, and `permissions.ts` are outputs, never separately edited sources.
 2. **Compilable access:** use a declarative access DSL that can be translated to Jazz policies. Reject unsupported rules during generation. Do not accept arbitrary `({ user }) => boolean` functions as security rules.
 3. **Explicit write paths:**
    - `direct` collections use Jazz client writes and can work offline. Jazz schema and permissions are authoritative. Bebop SDK validation improves feedback but must not be presented as a server guarantee.
@@ -51,9 +51,10 @@ The exact helper names are provisional. The contract is the important part: coll
 | --- | --- | --- |
 | 0. Jazz feasibility spike | Pin one Jazz v2 alpha; build a minimal app with two related tables, row permissions, a local write, a rejected write, a backend request, and a schema change. | Confirm the supported DSL, type inference, durability waits, permission behavior, and migration workflow. Record any Jazz limitation that changes the design. |
 | 1. Config and compiler | Define collections and the first fields: text, number, integer, boolean, date, select, JSON, and single relation. Add config checks and deterministic generation of `bebop-generated-schema.ts`, Jazz's `schema.ts` entry point, `permissions.ts`, and a metadata manifest. | Example config generates valid Jazz artifacts; invalid relation targets, field names, or access expressions fail with useful diagnostics; generation is repeatable. |
-| 2. Typed headless API | Implement typed find/findById/create/update/delete, filtering, sort, and pagination over the generated Jazz app. Add direct-mode validation and a clear pending/accepted/rejected mutation result. | Type checks reject wrong collection fields; CRUD and relation queries work; offline direct writes reconcile or report authority rejection. |
-| 3. Security and command lifecycle | Compile a small access DSL for public, authenticated, owner, and row-field conditions. Add command-mode endpoint, authoritative validation, `beforeValidate`, `beforeChange`, `beforeDelete`, and durable effect dispatch. | Unauthorized read/write attempts fail in policy and API tests; direct writes to command collections fail; retries do not duplicate external effects. |
-| 4. Extensibility and release | Extend the starter `bebop` CLI with migration generation and plugin workflows. Add a minimal plugin contract for deterministic collection/field contributions and named hooks. Publish a runnable example and API documentation. | Two example plugins compose without collisions; a schema change produces a reviewed Jazz migration; a new developer can start and exercise the sample without editing generated files. |
+| 2. Admin UI package | Build `@bebop/admin` with shadcn/ui, a Payload-style dashboard, collection lists, and generated create/edit forms. Generate the admin manifest from config and mount the package at `/admin` in the playground. | Every supported field kind renders and persists; configured list columns/search fields work; the package ships its own CSS; direct `/admin` navigation works. |
+| 3. Typed headless API | Implement typed find/findById/create/update/delete, filtering, sort, and pagination over the generated Jazz app. Add direct-mode validation and a clear pending/accepted/rejected mutation result. | Type checks reject wrong collection fields; CRUD and relation queries work; offline direct writes reconcile or report authority rejection. |
+| 4. Security and command lifecycle | Compile a small access DSL for public, authenticated, owner, and row-field conditions. Add command-mode endpoint, authoritative validation, `beforeValidate`, `beforeChange`, `beforeDelete`, and durable effect dispatch. | Unauthorized read/write attempts fail in policy and API tests; direct writes to command collections fail; retries do not duplicate external effects. |
+| 5. Extensibility and release | Extend the starter `bebop` CLI with migration generation and plugin workflows. Add a minimal plugin contract for deterministic collection/field contributions and named hooks. Publish a runnable example and API documentation. | Two example plugins compose without collisions; a schema change produces a reviewed Jazz migration; a new developer can start and exercise the sample without editing generated files. |
 
 ### Stage 0 questions to settle before broad implementation
 
@@ -70,12 +71,13 @@ apps/
   playground/  React app and Bebop config; exercises the workspace package
 packages/
   bebop/       config DSL, field definitions, and first Jazz compiler
+  admin/       first-party React admin and shadcn/ui components
 docs/
   implementation-plan.md
 examples/      add standalone examples later
 ```
 
-Keep the initial implementation in one package while the public API is taking shape. Split out Jazz, server, CLI, and admin packages when their boundaries are useful. The playground is the first integration fixture; add `examples/` when there are separate examples to maintain.
+Keep the config/compiler and UI in separate packages. The admin package owns its UI and private Jazz adapter; the playground is an integration fixture. Add `examples/` when there are separate examples to maintain.
 
 ## Verification
 
@@ -86,7 +88,7 @@ Keep the initial implementation in one package while the public API is taking sh
 
 ## Outside the first release
 
-Admin UI, media, rich text, drafts/versioning, localization, webhooks as a generic plugin surface, collaborative editing, and field-level access. These can follow the same generated metadata and runtime contracts once the headless core is stable.
+Media, rich text, drafts/versioning, localization, webhooks as a generic plugin surface, collaborative editing, and field-level access. These can follow the same generated metadata and runtime contracts once the first admin release is stable.
 
 ## Current Jazz references
 

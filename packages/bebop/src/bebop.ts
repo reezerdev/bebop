@@ -28,10 +28,17 @@ export type FieldDefinition =
   | RelationField;
 
 export type Fields = Record<string, FieldDefinition>;
+export type CollectionAdminOptions = {
+  label?: string;
+  useAsTitle?: string;
+  defaultColumns?: readonly string[];
+  listSearchableFields?: readonly string[];
+};
 export type CollectionDefinition<TFields extends Fields = Fields> = {
   fields: TFields;
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
   timestamps?: boolean;
+  admin?: CollectionAdminOptions;
 };
 export type BetterAuthDefinition = {
   provider: "better-auth";

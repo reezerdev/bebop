@@ -1,5 +1,6 @@
 import { betterAuth as createBetterAuth } from "better-auth";
-import { toNodeHandler } from "better-auth/node";
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
 import { jazzAdapter } from "jazz-tools/better-auth-adapter";
 import { app } from "./bebop-generated-schema.js";
@@ -51,6 +52,29 @@ export async function createAuthServer(config: AuthServerConfig) {
 
   return {
     handler: toNodeHandler(auth.handler),
+    async listUsers(request: IncomingMessage, response: ServerResponse) {
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      if (request.method !== "GET") {
+        response.statusCode = 405;
+        response.setHeader("allow", "GET");
+        response.end(JSON.stringify({ message: "Method not allowed." }));
+        return;
+      }
+
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(request.headers),
+        query: { disableCookieCache: true },
+      });
+      if (!session) {
+        response.statusCode = 401;
+        response.end(JSON.stringify({ message: "Sign in to view authors." }));
+        return;
+      }
+
+      const users = await snapshot.client!.db.all(app.better_auth_user.select("id", "name"), { tier: "global" });
+      response.end(JSON.stringify(users.map(({ id, name }) => ({ id, name }))));
+    },
     close: () => jazzSession.close(),
   };
 }

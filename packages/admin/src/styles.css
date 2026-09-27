@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "./**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  --background: oklch(0.985 0.003 95);
+  --foreground: oklch(0.22 0.018 155);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.018 155);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.018 155);
+  --primary: oklch(0.43 0.08 153);
+  --primary-foreground: oklch(0.99 0.003 95);
+  --secondary: oklch(0.95 0.009 150);
+  --secondary-foreground: oklch(0.31 0.025 153);
+  --muted: oklch(0.96 0.006 145);
+  --muted-foreground: oklch(0.54 0.017 150);
+  --accent: oklch(0.95 0.018 145);
+  --accent-foreground: oklch(0.29 0.03 152);
+  --destructive: oklch(0.56 0.2 27);
+  --border: oklch(0.9 0.012 145);
+  --input: oklch(0.88 0.014 145);
+  --ring: oklch(0.65 0.08 150);
+  --radius: 0.625rem;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.17 0.012 155);
+  --foreground: oklch(0.96 0.006 145);
+  --card: oklch(0.2 0.014 155);
+  --card-foreground: oklch(0.96 0.006 145);
+  --popover: oklch(0.2 0.014 155);
+  --popover-foreground: oklch(0.96 0.006 145);
+  --primary: oklch(0.7 0.09 150);
+  --primary-foreground: oklch(0.19 0.02 155);
+  --secondary: oklch(0.27 0.016 155);
+  --secondary-foreground: oklch(0.94 0.006 145);
+  --muted: oklch(0.25 0.012 155);
+  --muted-foreground: oklch(0.7 0.012 150);
+  --accent: oklch(0.28 0.02 150);
+  --accent-foreground: oklch(0.94 0.006 145);
+  --destructive: oklch(0.62 0.18 27);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.62 0.08 150);
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-sans; }
+  button, a, input, select, textarea { @apply focus-visible:outline-none; }
+}
+
+.admin-sidebar {
+  @apply fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-[#17241f] text-white;
+}
+.admin-brand {
+  @apply flex h-16 shrink-0 items-center gap-2.5 border-b border-white/10 px-5 text-lg font-semibold tracking-tight text-white no-underline;
+}
+.admin-brand-mark {
+  @apply flex size-8 items-center justify-center rounded-lg bg-[#90b69a] text-base font-bold lowercase text-[#14221a];
+}
+.admin-brand-dot { @apply text-emerald-300; }
+.admin-sidebar-scroll { @apply flex-1 overflow-y-auto px-3 py-6; }
+.admin-nav-label { @apply mb-2 px-3 text-[10px] font-semibold tracking-[0.14em] text-white/40; }
+.admin-nav-link {
+  @apply mb-1 flex h-9 items-center gap-3 rounded-md px-3 text-[13px] text-white/65 no-underline transition-colors hover:bg-white/8 hover:text-white;
+}
+.admin-nav-active { @apply bg-white/10 font-medium text-white; }
+.admin-sidebar-footer { @apply flex items-center gap-3 border-t border-white/10 px-4 py-4; }
+.admin-avatar { @apply flex size-8 shrink-0 items-center justify-center rounded-full bg-[#d4e4d5] text-xs font-semibold text-[#254331]; }
+.admin-main { @apply min-h-svh pl-64; }
+.admin-topbar { @apply sticky top-0 z-20 flex h-16 items-center border-b bg-background/90 px-6 backdrop-blur; }
+.admin-breadcrumbs { @apply flex items-center gap-2 text-sm font-medium; }
+.admin-content { @apply mx-auto w-full max-w-[1440px] p-6 lg:p-9; }
+.admin-mobile-menu { @apply hidden; }
+.admin-mobile-backdrop { @apply hidden; }
+.admin-stat-card { @apply transition-shadow hover:shadow-md; }
+
+@media (max-width: 767px) {
+  .admin-sidebar { @apply -translate-x-full transition-transform duration-200; }
+  .admin-sidebar-open { @apply translate-x-0; }
+  .admin-mobile-backdrop { @apply fixed inset-0 z-30 block bg-black/30; }
+  .admin-main { @apply pl-0; }
+  .admin-topbar { @apply px-3; }
+  .admin-mobile-menu { @apply mr-2 inline-flex; }
+  .admin-content { @apply p-4; }
+}

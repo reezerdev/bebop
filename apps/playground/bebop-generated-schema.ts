@@ -7,6 +7,21 @@ const schema = {
   "posts": s.table(
     {
       "title": s.string(),
+      "authorId": s.uuid(),
+      "body": s.string().optional(),
+      "slug": s.string().optional(),
+      "publishedAt": s.timestamp().optional(),
+      "published": s.boolean().optional(),
+      "category": s.enum("announcement", "guide", "story").optional()
+    },
+    {
+      "author": s.rel("better_auth_user", "authorId")
+    },
+  ),
+  "legacyPosts": s.table(
+    {
+      "title": s.string(),
+      "author": s.string(),
       "body": s.string().optional(),
       "slug": s.string().optional(),
       "publishedAt": s.timestamp().optional(),

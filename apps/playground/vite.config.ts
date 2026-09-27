@@ -16,7 +16,9 @@ function betterAuthPlugin(): Plugin {
 
       server.middlewares.use((request, response, next) => {
         const requestPath = new URL(request.url ?? "/", "http://localhost").pathname;
-        if (requestPath !== "/api/auth" && !requestPath.startsWith("/api/auth/")) {
+        const isAuthRoute = requestPath === "/api/auth" || requestPath.startsWith("/api/auth/");
+        const isUsersRoute = requestPath === "/api/bebop/users";
+        if (!isAuthRoute && !isUsersRoute) {
           next();
           return;
         }
@@ -30,7 +32,7 @@ function betterAuthPlugin(): Plugin {
         );
 
         void authServerPromise
-          .then(({ handler }) => handler(request, response))
+          .then(({ handler, listUsers }) => isUsersRoute ? listUsers(request, response) : handler(request, response))
           .catch((error: unknown) => {
             console.error("[bebop auth] Could not serve Better Auth request:", error);
             if (!response.headersSent) {

@@ -29,10 +29,9 @@ export default defineConfig({
           "react-hook-form",
           "lucide-react",
           "class-variance-authority",
-          "clsx",
-          "tailwind-merge",
-          "@radix-ui/react-slot",
-        ].includes(id),
+          "cn",
+        ].includes(id) ||
+        id.startsWith("@base-ui/react/"),
     },
   },
 });

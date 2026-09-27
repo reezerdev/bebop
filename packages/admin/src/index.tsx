@@ -1,6 +1,7 @@
 import "./styles.css";
 
 export { BebopAdmin } from "./ui/admin.js";
+export type { BebopAdminUser } from "./ui/admin.js";
 export type {
   BebopAdminCollection,
   BebopAdminField,

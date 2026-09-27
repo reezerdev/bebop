@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { useAll, useDb } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
-import { useForm, type FieldValues, type UseFormRegister, type UseFormRegisterReturn } from "react-hook-form";
+import { Controller, useForm, type Control, type FieldValues, type RegisterOptions, type UseFormRegister } from "react-hook-form";
 import {
   ArrowDown,
   ArrowLeft,
@@ -9,9 +9,8 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   FilePlus2,
-  FolderKanban,
-  LayoutDashboard,
   LogOut,
   Menu,
   Pencil,
@@ -34,7 +33,7 @@ import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
 import { Input } from "../components/ui/input.js";
 import { Label } from "../components/ui/label.js";
-import { Select } from "../components/ui/select.js";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.js";
 import { Textarea } from "../components/ui/textarea.js";
 
@@ -48,9 +47,15 @@ type AdminDatabase = {
   delete: (table: unknown, id: string) => unknown;
 };
 
+export type BebopAdminUser = {
+  name?: string;
+  email?: string;
+};
+
 export type BebopAdminProps = {
   app: object;
   manifest: BebopAdminManifest;
+  user?: BebopAdminUser;
   createDefaults?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   relationOptions?: Readonly<Record<string, readonly { id: string; name: string }[]>>;
   onLogout?: () => void | Promise<void>;
@@ -62,6 +67,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const pageSize = 10;
+const filterAllValue = "__bebop_filter_all__";
 
 function getTable(app: object, collectionSlug: string): AdminTable | undefined {
   const table = (app as Record<string, unknown>)[collectionSlug];
@@ -108,7 +114,7 @@ function formatLabel(value: string): string {
 
 function formatCell(field: BebopAdminField | undefined, value: unknown, relationOptions?: BebopAdminProps["relationOptions"]): ReactNode {
   if (value === null || value === undefined || value === "") return <span className="text-muted-foreground">—</span>;
-  if (field?.kind === "boolean") return <Badge variant={value ? "success" : "muted"}>{value ? "Yes" : "No"}</Badge>;
+  if (field?.kind === "boolean") return <Badge variant={value ? "default" : "secondary"}>{value ? "Yes" : "No"}</Badge>;
   if (field?.kind === "date") return formatDate(value);
   if (field?.kind === "json") return <span className="font-mono text-xs">{JSON.stringify(value)}</span>;
   if (field?.kind === "relation") {
@@ -137,12 +143,12 @@ function useAdminRows(app: object, collectionSlug: string) {
   return { ...result, table };
 }
 
-export function BebopAdmin({ app, manifest, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
+export function BebopAdmin({ app, manifest, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
   const route = useRoutes([
     {
-      element: <AdminLayout manifest={manifest} onLogout={onLogout} />,
+      element: <AdminLayout manifest={manifest} user={user} onLogout={onLogout} />,
       children: [
-        { index: true, element: <DashboardPage app={app} manifest={manifest} /> },
+        { index: true, element: <DashboardPage manifest={manifest} /> },
         { path: "collections/:collectionSlug", element: <CollectionRoute app={app} manifest={manifest} relationOptions={relationOptions} /> },
         { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
         { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
@@ -156,71 +162,81 @@ export function BebopAdmin({ app, manifest, createDefaults, relationOptions, onL
 
 function AdminLayout({
   manifest,
+  user,
   onLogout,
 }: {
   manifest: BebopAdminManifest;
+  user?: BebopAdminProps["user"];
   onLogout?: BebopAdminProps["onLogout"];
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [collectionsOpen, setCollectionsOpen] = useState(true);
   const location = useLocation();
   const activeCollection = location.pathname.match(/\/collections\/([^/]+)/)?.[1];
   const currentCollection = activeCollection ? manifest.collections[activeCollection] : undefined;
+  const collections = Object.values(manifest.collections).sort((left, right) => left.label.localeCompare(right.label));
+  const userName = user?.name?.trim() || "Signed in";
+  const userEmail = user?.email?.trim() || "Email unavailable";
+  const avatarInitials = (user?.name?.trim() || user?.email?.trim() || "U")
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 
   return (
     <div className="bebop-admin min-h-svh bg-background text-foreground">
-      <aside className={`admin-sidebar ${mobileOpen ? "admin-sidebar-open" : ""}`}>
-        <Link to="/admin" className="admin-brand" aria-label="Bebop admin home">
-          <span className="admin-brand-mark">b</span>
-          <span>bebop<span className="admin-brand-dot">.</span></span>
-          <Badge variant="outline" className="ml-auto border-white/15 text-white/60">ADMIN</Badge>
-        </Link>
+      <aside className={`admin-sidebar ${sidebarCollapsed ? "admin-sidebar-hidden" : ""} ${mobileOpen ? "admin-sidebar-open" : ""}`}>
+        <div className="admin-sidebar-header">
+          <Button variant="outline" size="icon" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+            <ArrowLeft size={18} />
+          </Button>
+        </div>
         <div className="admin-sidebar-scroll">
-          <p className="admin-nav-label">WORKSPACE</p>
-          <NavLink to="/admin" end className={({ isActive }) => `admin-nav-link ${isActive ? "admin-nav-active" : ""}`} onClick={() => setMobileOpen(false)}>
-            <LayoutDashboard size={16} /> Overview
-          </NavLink>
-          <p className="admin-nav-label mt-8">COLLECTIONS</p>
-          {Object.values(manifest.collections).map((collection) => (
-            <NavLink
-              key={collection.slug}
-              to={`/admin/collections/${collection.slug}`}
-              className={({ isActive }) => `admin-nav-link ${isActive ? "admin-nav-active" : ""}`}
-              onClick={() => setMobileOpen(false)}
-            >
-              <FolderKanban size={16} />
-              <span className="truncate">{collection.label}</span>
-            </NavLink>
-          ))}
+          <button className="admin-nav-heading" aria-expanded={collectionsOpen} onClick={() => setCollectionsOpen((open) => !open)}>
+            <span>Collections</span><ChevronUp size={16} className={collectionsOpen ? "" : "rotate-180"} />
+          </button>
+          {collectionsOpen && <nav aria-label="Collections" className="admin-collection-nav">
+            {collections.map((collection) => (
+              <NavLink
+                key={collection.slug}
+                to={`/admin/collections/${collection.slug}`}
+                className={({ isActive }) => `admin-nav-link ${isActive ? "admin-nav-active" : ""}`}
+                onClick={() => setMobileOpen(false)}
+              >
+                <span className="truncate">{collection.label}</span>
+              </NavLink>
+            ))}
+          </nav>}
         </div>
         <div className="admin-sidebar-footer">
-          <div className="admin-avatar">B</div>
+          <div className="admin-avatar">{avatarInitials}</div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">Bebop workspace</p>
-            <p className="truncate text-xs text-white/45">Local-first admin</p>
+            <p className="truncate text-sm font-medium text-sidebar-foreground">{userName}</p>
+            <p className="truncate text-xs text-sidebar-foreground/60">{userEmail}</p>
           </div>
           {onLogout && (
-            <Button variant="ghost" size="icon" className="text-white/65 hover:bg-white/10 hover:text-white" aria-label="Sign out" onClick={() => void onLogout()}>
+            <Button variant="ghost" size="icon" className="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" aria-label="Sign out" onClick={() => void onLogout()}>
               <LogOut size={16} />
             </Button>
           )}
         </div>
       </aside>
       {mobileOpen && <button className="admin-mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
-      <div className="admin-main">
+      <div className={`admin-main ${sidebarCollapsed ? "admin-main-expanded" : ""}`}>
         <header className="admin-topbar">
           <Button variant="ghost" size="icon" className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu size={18} />
           </Button>
+          {sidebarCollapsed && <Button variant="outline" size="icon" className="admin-sidebar-expand" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}><ChevronRight size={18} /></Button>}
           <div className="admin-breadcrumbs">
-            <span>Admin</span>
-            {currentCollection && <><span className="text-muted-foreground">/</span><span>{currentCollection.label}</span></>}
+            <Link to="/admin" className="admin-brand-mark" aria-label="Bebop dashboard">b</Link>
+            <span className="admin-breadcrumb-divider">/</span>
+            <span>{currentCollection?.label ?? "Dashboard"}</span>
             {location.pathname.endsWith("/create") && <><span className="text-muted-foreground">/</span><span>New</span></>}
-            {location.pathname === "/admin" && <><span className="text-muted-foreground">/</span><span>Overview</span></>}
-          </div>
-          <div className="ml-auto hidden items-center gap-2 sm:flex">
-            <Badge variant="outline" className="gap-1.5 rounded-full px-3 py-1.5 font-normal text-muted-foreground">
-              <span className="size-1.5 rounded-full bg-emerald-500" /> Jazz connected
-            </Badge>
+            {activeCollection && !currentCollection && <span>Not found</span>}
           </div>
         </header>
         <main className="admin-content"><Outlet /></main>
@@ -252,60 +268,23 @@ function PageTitle({
   );
 }
 
-function DashboardPage({ app, manifest }: { app: object; manifest: BebopAdminManifest }) {
+function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
+  const collections = Object.values(manifest.collections).sort((left, right) => left.label.localeCompare(right.label));
+
   return (
-    <div>
-      <PageTitle eyebrow="BEBOP ADMIN" title="Good to have you back." description="Manage your collections and keep your content moving." />
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {Object.values(manifest.collections).map((collection) => (
-          <CollectionStat key={collection.slug} app={app} collection={collection} />
+    <section>
+      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Collections</h1>
+      <div className="admin-collection-grid">
+        {collections.map((collection) => (
+          <article key={collection.slug} className="admin-collection-card">
+            <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.label}</Link>
+            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.label}`}>
+              <Plus size={19} />
+            </Link>
+          </article>
         ))}
       </div>
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">Your collections</CardTitle>
-            <CardDescription className="mt-1">Content defined in your Bebop config.</CardDescription>
-          </div>
-          <FolderKanban className="text-muted-foreground" size={19} />
-        </CardHeader>
-        <CardContent className="grid gap-2 pt-0 sm:grid-cols-2">
-          {Object.values(manifest.collections).map((collection) => (
-            <Link key={collection.slug} to={`/admin/collections/${collection.slug}`} className="group flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent/60">
-              <div className="flex items-center gap-3">
-                <span className="rounded-md bg-secondary p-2 text-primary"><FolderKanban size={16} /></span>
-                <div>
-                  <p className="text-sm font-medium group-hover:text-primary">{collection.label}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">/{collection.slug}</p>
-                </div>
-              </div>
-              <ChevronRight size={16} className="text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function CollectionStat({ app, collection }: { app: object; collection: BebopAdminCollection }) {
-  const { data, isLoading } = useAdminRows(app, collection.slug);
-  const rows = data ?? [];
-  const publishedField = collection.fields.find((field) => field.kind === "boolean" && /published|active|enabled/i.test(field.name));
-  const publishedCount = publishedField ? rows.filter((row) => Boolean(row[publishedField.storageName])).length : null;
-  return (
-    <Card className="admin-stat-card">
-      <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
-        <CardDescription>{collection.label}</CardDescription>
-        <FolderKanban size={16} className="text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-semibold tracking-tight">{isLoading ? "…" : rows.length}</div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {publishedCount === null ? "Documents in this collection" : `${publishedCount} published · ${rows.length - publishedCount} drafts`}
-        </p>
-      </CardContent>
-    </Card>
+    </section>
   );
 }
 
@@ -398,15 +377,21 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
             {filterFields.map((field) => (
               <Select
                 key={field.name}
-                value={filters[field.name] ?? ""}
-                onChange={(event) => setFilters((current) => ({ ...current, [field.name]: event.target.value }))}
-                className="min-w-32"
-                aria-label={`Filter by ${field.label}`}
+                value={filters[field.name] || filterAllValue}
+                onValueChange={(value) => setFilters((current) => ({
+                  ...current,
+                  [field.name]: value === filterAllValue ? "" : value ?? "",
+                }))}
               >
-                <option value="">All {field.label.toLocaleLowerCase()}</option>
-                {field.kind === "boolean" ? (
-                  <><option value="true">Yes</option><option value="false">No</option></>
-                ) : field.options?.map((option) => <option key={option} value={option}>{formatLabel(option)}</option>)}
+                <SelectTrigger className="min-w-32" aria-label={`Filter by ${field.label}`}>
+                  <SelectValue placeholder={`All ${field.label.toLocaleLowerCase()}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={filterAllValue}>All {field.label.toLocaleLowerCase()}</SelectItem>
+                  {field.kind === "boolean" ? (
+                    <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></>
+                  ) : field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
+                </SelectContent>
               </Select>
             ))}
           </div>
@@ -587,7 +572,7 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
                 <div key={field.name} className="space-y-2">
                   {field.kind === "boolean" ? (
                     <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3.5">
-                      <input type="checkbox" className="size-4 accent-primary" {...register(field.name)} />
+                      <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
                       <span className="text-sm font-medium">{field.label}</span>
                       {field.required && <span className="text-xs text-muted-foreground">Required</span>}
                     </label>
@@ -596,7 +581,7 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
                       <Label htmlFor={`field-${field.name}`} className="flex items-center gap-1.5">
                         {field.label}{field.required && <span className="text-destructive">*</span>}
                       </Label>
-                  <FieldInput field={field} app={app} manifest={manifest} register={register} relationOptions={relationOptions} />
+                  <FieldInput field={field} app={app} manifest={manifest} register={register} control={form.control} relationOptions={relationOptions} />
                     </>
                   )}
                   {errors[field.name] && <p className="text-xs text-destructive" role="alert">{String(errors[field.name]?.message ?? "Invalid value")}</p>}
@@ -663,15 +648,17 @@ function FieldInput({
   app,
   manifest,
   register,
+  control,
   relationOptions,
 }: {
   field: BebopAdminField;
   app: object;
   manifest: BebopAdminManifest;
   register: UseFormRegister<FieldValues>;
+  control: Control<FieldValues>;
   relationOptions?: BebopAdminProps["relationOptions"];
 }) {
-  const registration = register(field.name, {
+  const rules: RegisterOptions<FieldValues, string> = {
     required: field.required ? `${field.label} is required.` : false,
     validate: (value) => {
       if (typeof value === "string" && value.trim() === "") return !field.required || `${field.label} is required.`;
@@ -682,19 +669,48 @@ function FieldInput({
       if (field.kind === "integer" && value !== "" && !Number.isInteger(Number(value))) return "Enter a whole number.";
       return true;
     },
-  });
-
+  };
   if (field.kind === "relation" && field.relationTo) {
-    return <RelationInput field={field} app={app} manifest={manifest} registration={registration} options={relationOptions?.[field.relationTo]} />;
+    return (
+      <Controller
+        control={control}
+        name={field.name}
+        rules={rules}
+        render={({ field: input }) => (
+          <RelationInput
+            field={field}
+            app={app}
+            manifest={manifest}
+            value={typeof input.value === "string" && input.value ? input.value : null}
+            onChange={input.onChange}
+            onBlur={input.onBlur}
+            inputRef={input.ref}
+            options={relationOptions?.[field.relationTo ?? ""]}
+          />
+        )}
+      />
+    );
   }
   if (field.kind === "select") {
     return (
-      <Select id={`field-${field.name}`} {...registration}>
-        <option value="">Select {field.label.toLocaleLowerCase()}</option>
-        {field.options?.map((option) => <option key={option} value={option}>{formatLabel(option)}</option>)}
-      </Select>
+      <Controller
+        control={control}
+        name={field.name}
+        rules={rules}
+        render={({ field: input }) => (
+          <Select value={typeof input.value === "string" && input.value ? input.value : null} onValueChange={input.onChange}>
+            <SelectTrigger id={`field-${field.name}`} ref={input.ref} onBlur={input.onBlur} className="w-full">
+              <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`} />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      />
     );
   }
+  const registration = register(field.name, rules);
   if (field.kind === "json") {
     return <Textarea id={`field-${field.name}`} rows={7} className="font-mono text-xs" placeholder="{}" {...registration} />;
   }
@@ -706,13 +722,19 @@ function RelationInput({
   field,
   app,
   manifest,
-  registration,
+  value,
+  onChange,
+  onBlur,
+  inputRef,
   options,
 }: {
   field: BebopAdminField;
   app: object;
   manifest: BebopAdminManifest;
-  registration: UseFormRegisterReturn;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  onBlur: () => void;
+  inputRef: (instance: HTMLButtonElement | null) => void;
   options?: readonly { id: string; name: string }[];
 }) {
   const relatedSlug = field.relationTo ?? "";
@@ -720,13 +742,17 @@ function RelationInput({
   const query = relatedTable ? getRowsQuery(relatedTable) : undefined;
   const { data, isLoading } = useAll<AdminRecord>(query);
   return (
-    <Select id={`field-${field.name}`} {...registration}>
-      <option value="">{isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}</option>
-      {options ? options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>) : (data ?? []).map((row) => {
-        const targetCollection = manifest.collections[relatedSlug];
-        const titleField = targetCollection?.useAsTitle ? targetCollection.fields.find((candidate) => candidate.name === targetCollection.useAsTitle) : undefined;
-        return <option key={row.id} value={row.id}>{String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}</option>;
-      })}
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full">
+        <SelectValue placeholder={isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`} />
+      </SelectTrigger>
+      <SelectContent>
+        {options ? options.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>) : (data ?? []).map((row) => {
+          const targetCollection = manifest.collections[relatedSlug];
+          const titleField = targetCollection?.useAsTitle ? targetCollection.fields.find((candidate) => candidate.name === targetCollection.useAsTitle) : undefined;
+          return <SelectItem key={row.id} value={row.id}>{String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}</SelectItem>;
+        })}
+      </SelectContent>
     </Select>
   );
 }
@@ -736,7 +762,7 @@ function NotFoundPage({ message = "We couldn’t find the page you’re looking 
     <div className="flex min-h-72 flex-col items-center justify-center text-center">
       <p className="text-sm font-medium">Page not found</p>
       <p className="mt-1 text-sm text-muted-foreground">{message}</p>
-      <Button asChild variant="outline" className="mt-5"><Link to="/admin">Back to overview</Link></Button>
+      <Button render={<Link to="/admin" />} variant="outline" className="mt-5">Back to overview</Button>
     </div>
   );
 }

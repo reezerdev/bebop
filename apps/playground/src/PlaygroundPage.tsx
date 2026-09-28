@@ -1,8 +1,9 @@
-import { useEffect } from "react";
-import { useAll, useDb } from "jazz-tools/react";
+import { useEffect, useState } from "react";
+import { useAll } from "jazz-tools/react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { app } from "../bebop-generated-schema.js";
+import type { createBebopClient } from "../bebop-generated-client.js";
 
 const categories = ["announcement", "guide", "story"] as const;
 
@@ -25,18 +26,20 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 export function PlaygroundPage({
+  client,
   logout,
   currentUserId,
   currentUserName,
   authors,
 }: {
+  client: ReturnType<typeof createBebopClient>;
   logout: () => void | Promise<void>;
   currentUserId: string;
   currentUserName: string;
   authors: readonly AuthorOption[];
 }) {
-  const db = useDb();
   const { data: posts } = useAll(app.posts.select("*", "$createdAt", "$updatedAt"));
+  const [mutationError, setMutationError] = useState<string>();
   const { register, handleSubmit, reset, setValue, formState: { errors, dirtyFields, isSubmitting } } = useForm<PostFormValues>({
     defaultValues: {
       title: "",
@@ -55,30 +58,55 @@ export function PlaygroundPage({
     }
   }, [currentUserId, dirtyFields.authorId, setValue]);
 
-  function createPost(values: PostFormValues) {
+  useEffect(() => client.onMutationError((event) => {
+    setMutationError(event.code === "permission_denied"
+      ? "Jazz rejected a write because this session does not have access."
+      : "Jazz could not sync a recent write. The local change may be reverted when sync finishes.");
+  }), [client]);
+
+  async function createPost(values: PostFormValues) {
     const title = values.title.trim();
     const body = values.body.trim();
     const slug = values.slug.trim();
-    db.insert(app.posts, {
-      title,
-      authorId: values.authorId,
-      published: values.published,
-      category: values.category,
-      ...(body ? { body } : {}),
-      ...(slug ? { slug } : {}),
-      ...(values.publishedAt
-        ? { publishedAt: new Date(`${values.publishedAt}T00:00:00`) }
-        : {}),
-    });
-    reset({
-      title: "",
-      authorId: currentUserId,
-      body: "",
-      slug: "",
-      publishedAt: "",
-      published: false,
-      category: "announcement",
-    });
+    setMutationError(undefined);
+    try {
+      await client.posts.create({
+        title,
+        authorId: values.authorId,
+        published: values.published,
+        category: values.category,
+        ...(body ? { body } : {}),
+        ...(slug ? { slug } : {}),
+        ...(values.publishedAt
+          ? { publishedAt: new Date(`${values.publishedAt}T00:00:00`) }
+          : {}),
+      });
+      reset({
+        title: "",
+        authorId: currentUserId,
+        body: "",
+        slug: "",
+        publishedAt: "",
+        published: false,
+        category: "announcement",
+      });
+    } catch (error) {
+      const localWriteApplied = error instanceof Error && "localWriteApplied" in error;
+      if (localWriteApplied) {
+        reset({
+          title: "",
+          authorId: currentUserId,
+          body: "",
+          slug: "",
+          publishedAt: "",
+          published: false,
+          category: "announcement",
+        });
+      }
+      setMutationError(error instanceof Error
+        ? `${error.message}${localWriteApplied ? " The post was created locally and may still sync." : ""}`
+        : "The post could not be created.");
+    }
   }
 
   const authorNames = new Map(authors.map((author) => [author.id, author.name]));
@@ -102,6 +130,7 @@ export function PlaygroundPage({
       </section>
 
       <section className="playground-workspace" aria-label="Posts playground">
+        {mutationError && <p className="playground-field-error" role="alert">{mutationError}</p>}
         <form className="playground-composer" onSubmit={handleSubmit(createPost)}>
           <div className="playground-section-label"><span>01</span> NEW POST</div>
 
@@ -188,11 +217,23 @@ export function PlaygroundPage({
                     <div className="playground-post-actions">
                       <button
                         type="button"
-                        onClick={() => db.update(app.posts, post.id, { published: !post.published })}
+                        onClick={() => {
+                          setMutationError(undefined);
+                          void client.posts.update(post.id, { published: !post.published })
+                            .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : "The post could not be updated."));
+                        }}
                       >
                         {post.published ? "Move to draft" : "Publish"}
                       </button>
-                      <button className="playground-delete-action" type="button" onClick={() => db.delete(app.posts, post.id)}>
+                      <button
+                        className="playground-delete-action"
+                        type="button"
+                        onClick={() => {
+                          setMutationError(undefined);
+                          void client.posts.delete(post.id)
+                            .catch((error: unknown) => setMutationError(error instanceof Error ? error.message : "The post could not be deleted."));
+                        }}
+                      >
                         Delete
                       </button>
                     </div>

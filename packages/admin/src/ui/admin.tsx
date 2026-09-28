@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { useAll, useDb } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
+import type { MutationErrorEvent, PermissionAdvice } from "jazz-tools";
 import { Controller, useForm, type Control, type FieldValues, type RegisterOptions, type UseFormRegister } from "react-hook-form";
 import {
   ArrowDown,
@@ -42,9 +43,20 @@ type AdminTable = QueryBuilder<AdminRecord> & {
   select: (...columns: string[]) => QueryBuilder<AdminRecord>;
 };
 type AdminDatabase = {
-  insert: (table: unknown, data: Record<string, unknown>) => unknown;
-  update: (table: unknown, id: string, data: Record<string, unknown>) => unknown;
-  delete: (table: unknown, id: string) => unknown;
+  canRead: (table: unknown, id: string) => Promise<PermissionAdvice>;
+  canInsert: (table: unknown, data: Record<string, unknown>) => Promise<PermissionAdvice>;
+  canUpdate: (table: unknown, id: string, data: Record<string, unknown>) => Promise<PermissionAdvice>;
+  canDelete: (table: unknown, id: string) => Promise<PermissionAdvice>;
+};
+
+export type BebopAdminClient = object & {
+  onMutationError: (listener: (event: MutationErrorEvent) => void) => () => void;
+};
+
+type CollectionMutations = {
+  create: (data: Record<string, unknown>) => Promise<unknown>;
+  update: (id: string, data: Record<string, unknown>) => Promise<unknown>;
+  delete: (id: string) => Promise<unknown>;
 };
 
 export type BebopAdminUser = {
@@ -54,6 +66,7 @@ export type BebopAdminUser = {
 
 export type BebopAdminProps = {
   app: object;
+  client: BebopAdminClient;
   manifest: BebopAdminManifest;
   user?: BebopAdminUser;
   createDefaults?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -72,6 +85,10 @@ const filterAllValue = "__bebop_filter_all__";
 function getTable(app: object, collectionSlug: string): AdminTable | undefined {
   const table = (app as Record<string, unknown>)[collectionSlug];
   return table ? table as AdminTable : undefined;
+}
+
+function getMutations(client: BebopAdminClient, collectionSlug: string): CollectionMutations | undefined {
+  return (client as Record<string, unknown>)[collectionSlug] as CollectionMutations | undefined;
 }
 
 function getRowsQuery(table: AdminTable, withTimestamps = false): QueryBuilder<AdminRecord> {
@@ -143,15 +160,79 @@ function useAdminRows(app: object, collectionSlug: string) {
   return { ...result, table };
 }
 
-export function BebopAdmin({ app, manifest, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
+function usePageRowPermissions(db: AdminDatabase, table: AdminTable | undefined, rows: readonly AdminRecord[]) {
+  const [permissions, setPermissions] = useState<Record<string, { update: PermissionAdvice; delete: PermissionAdvice }>>({});
+  const rowFingerprint = rows.map((row) => JSON.stringify(row)).join("\u0000");
+
+  useEffect(() => {
+    let active = true;
+    if (!table || rows.length === 0) {
+      setPermissions((current) => Object.keys(current).length ? {} : current);
+      return;
+    }
+    setPermissions(Object.fromEntries(rows.map((row) => [row.id, { update: "unknown", delete: "unknown" }])));
+    void Promise.all(rows.map(async (row) => {
+      try {
+        const [update, remove] = await Promise.all([
+          db.canUpdate(table, row.id, row),
+          db.canDelete(table, row.id),
+        ]);
+        return [row.id, { update, delete: remove }] as const;
+      } catch {
+        return [row.id, { update: "unknown", delete: "unknown" }] as const;
+      }
+    })).then((entries) => {
+      if (active) setPermissions(Object.fromEntries(entries));
+    });
+    return () => { active = false; };
+  }, [db, rowFingerprint, table]);
+
+  return permissions;
+}
+
+function useRowReadPermissions(db: AdminDatabase, table: AdminTable | undefined, rows: readonly AdminRecord[]) {
+  const [permissions, setPermissions] = useState<Record<string, PermissionAdvice>>({});
+  const rowFingerprint = rows.map((row) => JSON.stringify(row)).join("\u0000");
+
+  useEffect(() => {
+    let active = true;
+    if (!table || rows.length === 0) {
+      setPermissions((current) => Object.keys(current).length ? {} : current);
+      return;
+    }
+    setPermissions(Object.fromEntries(rows.map((row) => [row.id, "unknown"])));
+    void Promise.all(rows.map(async (row) => {
+      try {
+        return [row.id, await db.canRead(table, row.id)] as const;
+      } catch {
+        return [row.id, "unknown" as const] as const;
+      }
+    })).then((entries) => {
+      if (active) setPermissions(Object.fromEntries(entries));
+    });
+    return () => { active = false; };
+  }, [db, rowFingerprint, table]);
+
+  return permissions;
+}
+
+export function BebopAdmin({ app, client, manifest, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
+  const [mutationError, setMutationError] = useState<string>();
+
+  useEffect(() => client.onMutationError((event) => {
+    setMutationError(event.code === "permission_denied"
+      ? "Jazz rejected a write because the current session does not have access."
+      : "Jazz could not sync a recent write. The local change may be reverted when sync finishes.");
+  }), [client]);
+
   const route = useRoutes([
     {
-      element: <AdminLayout manifest={manifest} user={user} onLogout={onLogout} />,
+      element: <AdminLayout manifest={manifest} user={user} onLogout={onLogout} mutationError={mutationError} />,
       children: [
         { index: true, element: <DashboardPage manifest={manifest} /> },
-        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} manifest={manifest} relationOptions={relationOptions} /> },
-        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
-        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
+        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} /> },
+        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
+        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
         { path: "*", element: <NotFoundPage /> },
       ],
     },
@@ -164,10 +245,12 @@ function AdminLayout({
   manifest,
   user,
   onLogout,
+  mutationError,
 }: {
   manifest: BebopAdminManifest;
   user?: BebopAdminProps["user"];
   onLogout?: BebopAdminProps["onLogout"];
+  mutationError?: string;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -239,7 +322,10 @@ function AdminLayout({
             {activeCollection && !currentCollection && <span>Not found</span>}
           </div>
         </header>
-        <main className="admin-content"><Outlet /></main>
+        <main className="admin-content">
+          {mutationError && <div className="mb-5 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{mutationError}</div>}
+          <Outlet />
+        </main>
       </div>
     </div>
   );
@@ -288,14 +374,14 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
   );
 }
 
-function CollectionRoute({ app, manifest, relationOptions }: Pick<BebopAdminProps, "app" | "manifest" | "relationOptions">) {
+function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "relationOptions">) {
   const { collectionSlug = "" } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  return <CollectionList app={app} collection={collection} relationOptions={relationOptions} />;
+  return <CollectionList app={app} client={client} collection={collection} relationOptions={relationOptions} />;
 }
 
-function CollectionList({ app, collection, relationOptions }: { app: object; collection: BebopAdminCollection; relationOptions?: BebopAdminProps["relationOptions"] }) {
+function CollectionList({ app, client, collection, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
@@ -313,13 +399,18 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
     ? [...collection.defaultColumns]
     : collection.fields.slice(0, 4).map((field) => field.name));
   const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
+  const [deleteError, setDeleteError] = useState<string>();
+  const [operationError, setOperationError] = useState<string>();
   const rows = data ?? [];
+  const readPermissions = useRowReadPermissions(db, table, rows);
+  const readableRows = rows.filter((row) => readPermissions[row.id] === "allowed");
+  const hasUnconfirmedReadRows = rows.some((row) => readPermissions[row.id] === "unknown");
   const allColumns = collection.fields.map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const filterFields = collection.fields.filter((field) => field.kind === "boolean" || field.kind === "select");
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    const filtered = rows.filter((row) => {
+    const filtered = readableRows.filter((row) => {
       const matchesSearch = !query || collection.listSearchableFields.some((fieldName) => {
         const field = fieldByName(collection, fieldName);
         return String(field ? valueFor(field, row) ?? "" : row[fieldName] ?? "").toLocaleLowerCase().includes(query);
@@ -341,11 +432,13 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
       return sort.direction === "asc" ? result : -result;
     });
     return filtered;
-  }, [collection, filterFields, filters, rows, search, sort]);
+  }, [collection, filterFields, filters, readableRows, search, sort]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice((Math.min(page, pageCount) - 1) * pageSize, Math.min(page, pageCount) * pageSize);
-  const allPageSelected = pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.id));
-  const selectedRows = rows.filter((row) => selectedIds.has(row.id));
+  const rowPermissions = usePageRowPermissions(db, table, pageRows);
+  const deletablePageRows = pageRows.filter((row) => rowPermissions[row.id]?.delete !== "denied");
+  const allPageSelected = deletablePageRows.length > 0 && deletablePageRows.every((row) => selectedIds.has(row.id));
+  const selectedRows = readableRows.filter((row) => selectedIds.has(row.id));
   const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
   const searchField = titleField ?? fieldByName(collection, collection.listSearchableFields[0] ?? "");
   const searchLabel = searchField?.label ?? "Name";
@@ -383,8 +476,8 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
   function togglePageSelection() {
     setSelectedIds((current) => {
       const next = new Set(current);
-      if (allPageSelected) pageRows.forEach((row) => next.delete(row.id));
-      else pageRows.forEach((row) => next.add(row.id));
+      if (allPageSelected) deletablePageRows.forEach((row) => next.delete(row.id));
+      else deletablePageRows.forEach((row) => next.add(row.id));
       return next;
     });
   }
@@ -401,13 +494,15 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
         <h1 className="font-heading text-3xl font-semibold uppercase tracking-wider">{collection.label}</h1>
         <Button variant="secondary" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>
       </div>
+      {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
+      {hasUnconfirmedReadRows && <p className="mb-3 border px-4 py-3 text-sm text-muted-foreground" role="status">Jazz could not confirm read access for some documents. They remain hidden.</p>}
       <div className="admin-table-toolbar">
         <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="pl-10 focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {selectedRows.length > 0 && <Button variant="destructive" onClick={() => setPendingDelete(selectedRows)}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
+          {selectedRows.length > 0 && <Button variant="destructive" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedRows); }}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
           <details className="admin-table-menu">
             <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
             <div className="admin-table-menu-content">
@@ -464,8 +559,8 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
           <div className="py-12 text-center text-sm text-muted-foreground">Loading documents…</div>
         ) : filteredRows.length === 0 ? (
           <div className="py-16 text-center">
-            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide">{rows.length ? "No matching documents" : "No documents yet"}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{rows.length ? "Try changing your search or filters." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
+            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied or could not confirm read access for the available documents." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
             {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
@@ -474,7 +569,7 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
-                    <input type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} onChange={togglePageSelection} />
+                    <input type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} disabled={deletablePageRows.length === 0} onChange={togglePageSelection} />
                   </TableHead>
                   {columns.map((column) => {
                     const field = fieldByName(collection, column);
@@ -492,7 +587,9 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageRows.map((row, rowIndex) => (
+                {pageRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 2 : 1)} className="py-8 text-center text-sm text-muted-foreground">No readable documents on this page.</TableCell></TableRow>
+                ) : pageRows.map((row, rowIndex) => (
                   <TableRow key={row.id} className={rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}>
                     <TableCell className="w-12">
                       <input
@@ -500,6 +597,7 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
                         className="admin-checkbox"
                         aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`}
                         checked={selectedIds.has(row.id)}
+                        disabled={rowPermissions[row.id]?.delete === "denied"}
                         onChange={() => toggleRowSelection(row.id)}
                       />
                     </TableCell>
@@ -542,7 +640,7 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPendingDelete(null);
+            if (event.target === event.currentTarget) { setDeleteError(undefined); setPendingDelete(null); }
           }}
         >
           <section
@@ -556,18 +654,43 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
             <p id="delete-documents-description" className="mt-2 text-sm text-muted-foreground">
               {pendingDelete.length === 1 ? <>Delete “{pendingTitle}”?</> : `Delete ${pendingDelete.length} selected documents?`} This action cannot be undone.
             </p>
+            {deleteError && <p className="mt-3 text-sm text-destructive" role="alert">{deleteError}</p>}
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" autoFocus onClick={() => setPendingDelete(null)}>Cancel</Button>
+              <Button variant="outline" autoFocus onClick={() => { setDeleteError(undefined); setPendingDelete(null); }}>Cancel</Button>
               <Button
                 variant="destructive"
                 onClick={() => {
-                  if (table) pendingDelete.forEach((row) => db.delete(table, row.id));
-                  setSelectedIds((current) => {
-                    const next = new Set(current);
-                    pendingDelete.forEach((row) => next.delete(row.id));
-                    return next;
+                  void (async () => {
+                    const operations = getMutations(client, collection.slug);
+                    if (!table || !operations) return;
+                    const deletedIds: string[] = [];
+                    const clearDeletedSelection = () => setSelectedIds((current) => {
+                      const next = new Set(current);
+                      deletedIds.forEach((id) => next.delete(id));
+                      return next;
+                    });
+                    for (const row of pendingDelete) {
+                      try {
+                        const advice = await db.canDelete(table, row.id);
+                        if (advice === "denied") throw new Error("Your current session cannot delete one or more selected documents.");
+                        await operations.delete(row.id);
+                        deletedIds.push(row.id);
+                      } catch (error) {
+                        if (error instanceof Error && "localWriteApplied" in error) deletedIds.push(row.id);
+                        clearDeletedSelection();
+                        if (deletedIds.length) {
+                          setPendingDelete(null);
+                          setOperationError(`${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally before this operation stopped. ${error instanceof Error ? error.message : "The remaining documents could not be deleted."}`);
+                        } else {
+                          setDeleteError(error instanceof Error ? error.message : "The selected documents could not be deleted.");
+                        }
+                        return;
+                      }
+                    }
+                    clearDeletedSelection();
+                    setDeleteError(undefined);
+                    setPendingDelete(null);
                   });
-                  setPendingDelete(null);
                 }}
               >
                 <Trash2 size={15} /> Delete {pendingDelete.length === 1 ? "document" : "documents"}
@@ -580,20 +703,27 @@ function CollectionList({ app, collection, relationOptions }: { app: object; col
   );
 }
 
-function EditorRoute({ app, manifest, createDefaults, relationOptions }: Pick<BebopAdminProps, "app" | "manifest" | "createDefaults" | "relationOptions">) {
+function EditorRoute({ app, client, manifest, createDefaults, relationOptions }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "relationOptions">) {
   const { collectionSlug = "", id } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}`} app={app} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} relationOptions={relationOptions} />;
+  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} relationOptions={relationOptions} />;
 }
 
-function DocumentEditor({ app, manifest, collection, id, createDefaults, relationOptions }: { app: object; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; relationOptions?: BebopAdminProps["relationOptions"] }) {
+function DocumentEditor({ app, client, manifest, collection, id, createDefaults, relationOptions }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
   const db = useDb() as AdminDatabase;
   const { data, isLoading, error, table } = useAdminRows(app, collection.slug);
   const existing = id ? data?.find((row) => row.id === id) : undefined;
   const form = useForm<FieldValues>({ defaultValues: id ? {} : initialValues(collection, undefined, createDefaults) });
   const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting, dirtyFields } } = form;
+  const [permissionAdvice, setPermissionAdvice] = useState<PermissionAdvice>("unknown");
+  const [readAdvice, setReadAdvice] = useState<PermissionAdvice | "checking">(id ? "checking" : "allowed");
+  const [saveError, setSaveError] = useState<string>();
+  const [saveApplied, setSaveApplied] = useState(false);
+  const watchedValues = form.watch();
+  const serializedValues = useMemo(() => serializeValues(collection, watchedValues), [collection, watchedValues]);
+  const serializedValuesKey = JSON.stringify(serializedValues);
 
   useEffect(() => {
     if (existing) reset(initialValues(collection, existing));
@@ -609,16 +739,76 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
     }
   }, [collection, createDefaults, dirtyFields, id, setValue]);
 
+  useEffect(() => {
+    let active = true;
+    if (!id || !table) {
+      setReadAdvice("allowed");
+      return;
+    }
+    if (!existing) {
+      setReadAdvice("unknown");
+      return;
+    }
+    setReadAdvice("checking");
+    void db.canRead(table, id).then((advice) => {
+      if (active) setReadAdvice(advice);
+    }).catch(() => {
+      if (active) setReadAdvice("unknown");
+    });
+    return () => { active = false; };
+  }, [db, existing, id, table]);
+
+  useEffect(() => {
+    let active = true;
+    if (!table || (id && !existing)) {
+      setPermissionAdvice("unknown");
+      return;
+    }
+    setPermissionAdvice("unknown");
+    const check = id
+      ? db.canUpdate(table, id, serializedValues)
+      : db.canInsert(table, serializedValues);
+    void check.then((advice) => {
+      if (active) setPermissionAdvice(advice);
+    }).catch(() => {
+      if (active) setPermissionAdvice("unknown");
+    });
+    return () => { active = false; };
+  }, [db, existing, id, serializedValuesKey, table]);
+
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
   if (id && !existing) return <NotFoundPage message="This document may have been deleted or is no longer available." />;
+  if (id && readAdvice !== "allowed") return <div className="py-16 text-center text-sm text-muted-foreground" role={readAdvice === "denied" ? "alert" : "status"}>{readAdvice === "denied" ? "Your current session cannot read this document." : readAdvice === "checking" ? "Checking document access…" : "Jazz could not confirm read access. The document remains hidden."}</div>;
 
-  function save(values: FieldValues) {
+  async function save(values: FieldValues) {
     if (!table) return;
     const document = serializeValues(collection, values);
-    if (id) db.update(table, id, document);
-    else db.insert(table, document);
-    navigate(`/admin/collections/${collection.slug}`);
+    setSaveError(undefined);
+    const advice = id
+      ? await db.canUpdate(table, id, document)
+      : await db.canInsert(table, document);
+    setPermissionAdvice(advice);
+    if (advice === "denied") {
+      setSaveError("Your current session cannot save this document.");
+      return;
+    }
+    const operations = getMutations(client, collection.slug);
+    if (!operations) {
+      setSaveError("The Bebop mutation client is missing this collection.");
+      return;
+    }
+    try {
+      if (id) await operations.update(id, document);
+      else await operations.create(document);
+      navigate(`/admin/collections/${collection.slug}`);
+    } catch (mutationFailure) {
+      const localWriteApplied = mutationFailure instanceof Error && "localWriteApplied" in mutationFailure;
+      setSaveApplied(localWriteApplied);
+      setSaveError(localWriteApplied
+        ? `${(mutationFailure as Error).message} The local change was applied and may still sync.`
+        : mutationFailure instanceof Error ? mutationFailure.message : "The document could not be saved.");
+    }
   }
 
   const title = existing && collection.useAsTitle
@@ -637,38 +827,42 @@ function DocumentEditor({ app, manifest, collection, id, createDefaults, relatio
       </div>
       <form onSubmit={handleSubmit(save)}>
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Document fields</CardTitle>
-              <CardDescription>Changes save to your local Jazz database.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {collection.fields.map((field) => (
-                <div key={field.name} className="space-y-2">
-                  {field.kind === "boolean" ? (
-                    <label className="flex cursor-pointer items-center gap-3 rounded-none border p-3.5">
-                      <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
-                      <span className="text-xs font-semibold tracking-wide uppercase">{field.label}</span>
-                      {field.required && <span className="text-xs text-muted-foreground">Required</span>}
-                    </label>
-                  ) : (
-                    <>
-                      <Label htmlFor={`field-${field.name}`} className="flex items-center gap-1.5">
-                        {field.label}{field.required && <span className="text-destructive">*</span>}
-                      </Label>
-                  <FieldInput field={field} app={app} manifest={manifest} register={register} control={form.control} relationOptions={relationOptions} />
-                    </>
-                  )}
-                  {errors[field.name] && <p className="text-xs text-destructive" role="alert">{String(errors[field.name]?.message ?? "Invalid value")}</p>}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <fieldset disabled={Boolean(saveApplied || (id && permissionAdvice === "denied"))} className="contents">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Document fields</CardTitle>
+                <CardDescription>{saveApplied ? "The local write was applied. Jazz may still be syncing it." : id && permissionAdvice === "denied" ? "This document is read-only for your current session." : "Changes save to your local Jazz database."}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {collection.fields.map((field) => (
+                  <div key={field.name} className="space-y-2">
+                    {field.kind === "boolean" ? (
+                      <label className="flex cursor-pointer items-center gap-3 rounded-none border p-3.5">
+                        <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
+                        <span className="text-xs font-semibold tracking-wide uppercase">{field.label}</span>
+                        {field.required && <span className="text-xs text-muted-foreground">Required</span>}
+                      </label>
+                    ) : (
+                      <>
+                        <Label htmlFor={`field-${field.name}`} className="flex items-center gap-1.5">
+                          {field.label}{field.required && <span className="text-destructive">*</span>}
+                        </Label>
+                        <FieldInput field={field} app={app} manifest={manifest} register={register} control={form.control} relationOptions={relationOptions} />
+                      </>
+                    )}
+                    {errors[field.name] && <p className="text-xs text-destructive" role="alert">{String(errors[field.name]?.message ?? "Invalid value")}</p>}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </fieldset>
           <div className="space-y-4 xl:sticky xl:top-6">
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-base">Publish</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                <Button className="w-full" type="submit" disabled={isSubmitting}><FilePlus2 size={16} />{id ? "Save changes" : "Create document"}</Button>
+                <Button className="w-full" type="submit" disabled={isSubmitting || saveApplied || permissionAdvice === "denied"}><FilePlus2 size={16} />{saveApplied ? "Local write applied" : id ? "Save changes" : "Create document"}</Button>
+                {permissionAdvice === "denied" && <p className="text-xs text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
+                {saveError && <p className="text-xs text-destructive" role="alert">{saveError}</p>}
                 <Button className="w-full" variant="outline" type="button" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
               </CardContent>
             </Card>
@@ -816,13 +1010,16 @@ function RelationInput({
   const relatedTable = options ? undefined : getTable(app, relatedSlug);
   const query = relatedTable ? getRowsQuery(relatedTable) : undefined;
   const { data, isLoading } = useAll<AdminRecord>(query);
+  const db = useDb() as AdminDatabase;
+  const readPermissions = useRowReadPermissions(db, relatedTable, data ?? []);
+  const readableRelatedRows = (data ?? []).filter((row) => readPermissions[row.id] === "allowed");
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full">
         <SelectValue placeholder={isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`} />
       </SelectTrigger>
       <SelectContent>
-        {options ? options.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>) : (data ?? []).map((row) => {
+        {options ? options.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>) : readableRelatedRows.map((row) => {
           const targetCollection = manifest.collections[relatedSlug];
           const titleField = targetCollection?.useAsTitle ? targetCollection.fields.find((candidate) => candidate.name === targetCollection.useAsTitle) : undefined;
           return <SelectItem key={row.id} value={row.id}>{String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}</SelectItem>;

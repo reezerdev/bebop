@@ -286,7 +286,14 @@ importers:
         specifier: ^8.3.1
         version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
-  packages/bebop: {}
+  packages/bebop:
+    devDependencies:
+      jazz-tools:
+        specifier: 2.0.0-alpha.57
+        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
 
   packages/cli:
     dependencies:

@@ -5,6 +5,12 @@ export default defineConfig({
   collections: {
     posts: collection({
       timestamps: true,
+      access: {
+        read: () => ({}),
+        create: () => ({}),
+        update: () => ({}),
+        delete: () => ({}),
+      },
       admin: {
         label: "Posts",
         useAsTitle: "title",

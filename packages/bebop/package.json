@@ -8,5 +8,15 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     }
+  },
+  "peerDependencies": {
+    "jazz-tools": "2.0.0-alpha.57"
+  },
+  "devDependencies": {
+    "jazz-tools": "2.0.0-alpha.57",
+    "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts"
   }
 }

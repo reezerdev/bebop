@@ -59,7 +59,8 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "title",
         "notes"
-      ]
+      ],
+      "writeMode": "direct"
     }
   }
 } as const;

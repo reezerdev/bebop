@@ -92,6 +92,39 @@ export function MediaPreview({ client, collection, id, filename, mimeType, compa
   </div>;
 }
 
+export function PendingUploadPreview({ file, onClear }: { file: File; onClear: () => void }) {
+  const [preview, setPreview] = useState<{ file: File; url: string }>();
+  const isImage = file.type.startsWith("image/");
+
+  useEffect(() => {
+    if (!isImage) {
+      setPreview(undefined);
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setPreview({ file, url });
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
+
+  const previewUrl = preview?.file === file ? preview.url : undefined;
+  const size = `${Math.max(1, Math.ceil(file.size / 1024))} KB`;
+  const details = file.type ? `${size} — ${file.type}` : size;
+
+  return <div className="admin-upload-pending">
+    {isImage && previewUrl
+      ? <img className="admin-upload-pending-image" src={previewUrl} alt="" />
+      : <span className="admin-upload-pending-placeholder" aria-hidden="true"><FileText size={24} /></span>}
+    <div className="admin-upload-pending-details">
+      <span className="truncate" title={file.name}>{file.name}</span>
+      <span className="text-xs text-muted-foreground">{details}</span>
+    </div>
+    <div className="admin-upload-pending-actions">
+      <Button type="button" variant="ghost" size="icon" aria-label={`Remove selected file ${file.name}`} title="Remove selected file" onClick={onClear}><X size={16} /></Button>
+    </div>
+  </div>;
+}
+
 export function UploadFieldInput({ field, client, collection, value, onChange, onBlur, inputRef, onCreateNew, onChooseExisting, onEdit }: {
   field: BebopAdminStoredField;
   client: object;

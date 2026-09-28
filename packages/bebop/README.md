@@ -27,6 +27,32 @@ export default defineConfig({
 
 `@bebopdev/cli` reads this config to generate the Jazz schema, admin manifest, typed client, and direct/command permissions. The exported `createBebopClient` factory provides typed queries and lifecycle-aware create, update, and delete methods. See the [Local API guide](../../docs/local-api.md) for filters, search, pagination, and durability, and the [access control guide](../../docs/access-control.md) for direct and command writes. Lifecycle hooks in direct mode run in the client; use the `./server` handler and a host-supplied attributed writer for authoritative validation and hooks.
 
+## Permissions
+
+Use the collection's `permissions` object to build Jazz rules. Every operation must be granted explicitly; omitted operations are denied. `collection(...)` types the current row reference from the collection's fields. Updates can check the stored row with `whereOld` and the proposed row with `whereNew`; `collections.<slug>.exists.where(...)` expresses a cross-collection check.
+
+```ts
+collection({
+  slug: "tasks",
+  fields: [
+    { name: "workspace", type: "relationship", relationTo: "workspaces" },
+    { name: "author", type: "relationship", relationTo: "better_auth_user" },
+  ],
+  permissions: {
+    read: ({ rule, collections, session }) => rule.where((task) =>
+      collections.workspaceMemberships.exists.where({
+        workspaceId: task.workspaceId,
+        userId: session.claims.sub,
+        status: "active",
+      }),
+    ),
+    insert: ({ rule }) => rule.never(),
+  },
+});
+```
+
+For a public operation, use `rule.always()`. For authenticated-only behavior, use `session.where({ authMode: { in: ["external", "local-first"] } })`. The deprecated `access` option remains available for existing configs; do not combine it with `permissions`.
+
 ## Uploads
 
 Mark a collection as upload-enabled and point an upload field at it:

@@ -1,23 +1,33 @@
-import { defineConfig, betterAuth } from "@bebopdev/core";
+import { collection, defineConfig, betterAuth } from "@bebopdev/core";
 
 export default defineConfig({
   auth: betterAuth(),
   upload: { limits: { fileSize: 20 * 1024 * 1024 } },
   collections: [
-    {
+    collection({
       slug: "media",
       labels: { singular: "Media", plural: "Media" },
       upload: { mimeTypes: ["image/*"] },
       timestamps: true,
-      access: "public",
+      permissions: {
+        read: ({ rule }) => rule.always(),
+        insert: ({ rule }) => rule.always(),
+        update: ({ rule }) => rule.always(),
+        delete: ({ rule }) => rule.always(),
+      },
       admin: { useAsTitle: "filename", defaultColumns: ["filename", "mimeType", "filesize"] },
       fields: [{ name: "alt", type: "text" }],
-    },
-    {
+    }),
+    collection({
       slug: "workspaces",
       labels: { singular: "Workspace", plural: "Workspaces" },
       timestamps: true,
-      access: "public",
+      permissions: {
+        read: ({ rule }) => rule.always(),
+        insert: ({ rule }) => rule.always(),
+        update: ({ rule }) => rule.always(),
+        delete: ({ rule }) => rule.always(),
+      },
       admin: {
         useAsTitle: "name",
         defaultColumns: ["name", "slug"],
@@ -35,13 +45,18 @@ export default defineConfig({
           admin: { defaultColumns: ["user", "workspace", "role", "status"] },
         },
       ],
-    },
-    {
+    }),
+    collection({
       slug: "workspaceMemberships",
       labels: { singular: "Workspace Membership", plural: "Workspace Memberships" },
       timestamps: true,
-      access: "authenticated",
       writeMode: "command",
+      permissions: {
+        read: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+        insert: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+        update: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+        delete: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+      },
       admin: {
         useAsTitle: "user",
         defaultColumns: ["user", "workspace", "role", "status"],
@@ -61,12 +76,55 @@ export default defineConfig({
           { label: "Deactivated", value: "deactivated" },
         ] },
       ],
-    },
-    {
+    }),
+    collection({
       slug: "tasks",
       labels: { singular: "Task", plural: "Tasks" },
       timestamps: true,
-      access: "authenticated",
+      permissions: {
+        read: ({ rule, collections, session }) => rule.where((task) =>
+          collections.workspaceMemberships.exists.where({
+            workspaceId: task.workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+          }),
+        ),
+        insert: ({ rule, collections, session, allOf }) => rule.where((task) =>
+          allOf([
+            { authorId: session.claims.sub },
+            collections.workspaceMemberships.exists.where({
+              workspaceId: task.workspaceId,
+              userId: session.claims.sub,
+              status: "active",
+            }),
+          ]),
+        ),
+        update: ({ rule, collections, session, allOf, anyOf }) => rule
+          .whereOld((task) => allOf([
+            anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+            collections.workspaceMemberships.exists.where({
+              workspaceId: task.workspaceId,
+              userId: session.claims.sub,
+              status: "active",
+            }),
+          ]))
+          .whereNew((task) => allOf([
+            anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+            collections.workspaceMemberships.exists.where({
+              workspaceId: task.workspaceId,
+              userId: session.claims.sub,
+              status: "active",
+            }),
+          ])),
+        delete: ({ rule, collections, session, allOf }) => rule.where((task) => allOf([
+          { authorId: session.claims.sub },
+          collections.workspaceMemberships.exists.where({
+            workspaceId: task.workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+          }),
+        ])),
+      },
       admin: {
         useAsTitle: "name",
         defaultColumns: ["name", "workspace", "status", "assignee", "dueAt"],
@@ -96,6 +154,6 @@ export default defineConfig({
         { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
         { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
       ],
-    },
+    }),
   ],
 });

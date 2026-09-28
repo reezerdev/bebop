@@ -14,3 +14,5 @@ pnpm dev
 Open <http://127.0.0.1:5174/> for the playground and <http://127.0.0.1:5174/admin> for the admin UI. The `bebop dev` command generates the schema files from `bebop.config.ts` before starting Vite. Data is stored locally by Jazz; no database server, account, or environment variables are required.
 
 To change the example collection, edit `bebop.config.ts`. The admin uses its `labels`, `admin.useAsTitle`, and field settings to build the collection list and editor. Use `pnpm exec bebop generate` and `pnpm exec bebop validate` to generate and validate without starting the server.
+
+The Todo collection grants read, insert, update, and delete explicitly with Jazz's `rule.always()` builder. Remove an operation callback to deny that operation.

@@ -54,7 +54,7 @@ test("collection labels default from the slug and reject empty overrides", () =>
   })), /labels\.singular cannot be empty/);
 });
 
-test("permission generation compiles configured Jazz rules and leaves omitted operations denied", () => {
+test("permission generation compiles configured Jazz rules and defaults omitted operations to authenticated sessions", () => {
   const config = defineConfig({
     collections: [{
       slug: "posts",
@@ -70,13 +70,27 @@ test("permission generation compiles configured Jazz rules and leaves omitted op
   assert.match(permissions, /import bebopConfig from "\.\/config\.js"/);
   assert.match(permissions, /policy\.posts\.allowRead\.where/);
   assert.match(permissions, /policy\.posts\.allowInsert\.where/);
-  assert.match(permissions, /policy\.posts\.allowUpdate\.never\(\)/);
-  assert.match(permissions, /policy\.posts\.allowDelete\.never\(\)/);
+  assert.match(permissions, /policy\.posts\.allowUpdate\.where\(authenticatedSession\)/);
+  assert.match(permissions, /policy\.posts\.allowDelete\.where\(authenticatedSession\)/);
   assert.doesNotMatch(permissions, /\.always\(\)/);
   assert.equal(permissions, compilePermissions(config, "./config.js"));
 });
 
-test("omitted and empty access rules explicitly deny every operation", () => {
+test("boolean access callbacks compile to Jazz allow and deny expressions", () => {
+  const permissions = compilePermissions(defineConfig({ collections: [{
+    slug: "posts",
+    fields: [{ name: "title", type: "text" }],
+    access: {
+      read: () => true,
+      delete: () => false,
+    },
+  }] }));
+
+  assert.match(permissions, /typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
+  assert.match(permissions, /policy\.posts\.allowUpdate\.where\(authenticatedSession\)/);
+});
+
+test("omitted and empty access rules default every operation to authenticated sessions", () => {
   const config = defineConfig({
     collections: [
       { slug: "posts", fields: [{ name: "title", type: "text" }] },
@@ -87,11 +101,11 @@ test("omitted and empty access rules explicitly deny every operation", () => {
   const permissions = compilePermissions(config);
   for (const collection of ["posts", "privateNotes"]) {
     for (const operation of ["Read", "Insert", "Update", "Delete"]) {
-      assert.match(permissions, new RegExp(`policy\\.${collection}\\.allow${operation}\\.never\\(\\)`));
+      assert.match(permissions, new RegExp(`policy\\.${collection}\\.allow${operation}\\.where\\(authenticatedSession\\)`));
     }
   }
   assert.doesNotMatch(permissions, /\.always\(\)/);
-  assert.match(permissions, /Missing collection operations are explicitly denied/);
+  assert.match(permissions, /Unspecified access defaults to authenticated sessions/);
 });
 
 test("public access grants all operations without empty callbacks", () => {
@@ -146,6 +160,32 @@ test("command collections deny browser writes and retain a separate request auth
   }
   assert.match(artifacts.adminManifest, /"writeMode": "command"/);
   assert.equal(artifacts.authorizationPermissions, compileArtifacts(config).authorizationPermissions);
+});
+
+test("command collections inherit authenticated access while browser writes stay blocked", () => {
+  const artifacts = compileArtifacts(defineConfig({ collections: [{
+    slug: "memberships",
+    writeMode: "command",
+    fields: [{ name: "userId", type: "text", required: true }],
+  }] }));
+
+  assert.match(artifacts.permissions, /policy\.memberships\.allowRead\.where\(authenticatedSession\)/);
+  for (const operation of ["Insert", "Update", "Delete"]) {
+    assert.match(artifacts.permissions, new RegExp(`policy\\.memberships\\.allow${operation}\\.never\\(\\)`));
+    assert.match(artifacts.authorizationPermissions, new RegExp(`policy\\.memberships\\.allow${operation}\\.where\\(authenticatedSession\\)`));
+  }
+});
+
+test("command collection read callbacks can return booleans", () => {
+  const artifacts = compileArtifacts(defineConfig({ collections: [{
+    slug: "memberships",
+    writeMode: "command",
+    fields: [{ name: "userId", type: "text", required: true }],
+    access: { read: () => false },
+  }] }));
+
+  assert.match(artifacts.permissions, /return typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
+  assert.match(artifacts.authorizationPermissions, /return typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
 });
 
 test("text and numeric validation constraints are checked in the shared client", async () => {

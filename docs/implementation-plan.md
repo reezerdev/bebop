@@ -10,12 +10,14 @@ V1 is not a complete content publishing platform. It does not include drafts, re
 
 ### 1. Permissions and host integration
 
-- Preserve deny-by-default access when a collection has no rule.
-- Support `access: "authenticated"` for non-anonymous Jazz sessions and explicit `access: "public"` for open data.
-- Compile row-level operation callbacks to the pinned Jazz policy API. Missing operations remain denied.
+- Expose per-collection Jazz rule builders through `permissions.read`, `insert`, `update`, and `delete` callbacks.
+- Deny omitted operations when a collection uses the new `permissions` API; require explicit `rule.always()` grants for public operations and explicit session predicates for authenticated-only access.
+- Type the current collection's row reference and expose read-only cross-collection `collections.<slug>.exists.where(...)` helpers.
+- Support distinct update checks against the existing row (`whereOld`) and proposed row (`whereNew`).
+- Keep the older Payload-like `access` API as deprecated compatibility behavior while new configs migrate to `permissions`.
 - Use Jazz `can*` advice to guide admin screens, while keeping Jazz enforcement authoritative.
 - Document the separate host decision to allow entry to `/admin`.
-- Include a public demo policy, an authenticated demo, and a workspace-membership access example.
+- Include a public demo policy, authenticated command writes, and a workspace-membership rule example.
 
 ### 2. Direct and trusted writes
 
@@ -51,7 +53,7 @@ V1 is not a complete content publishing platform. It does not include drafts, re
 
 ## Acceptance
 
-- An omitted access rule produces no permission grants; `authenticated`, explicit `public`, and row-level rules compile to the expected Jazz policy.
+- New `permissions` rules compile to explicit Jazz grants; omitted operations deny, public and authenticated rules are explicit, and the deprecated `access` API remains compatible during migration.
 - Admin entry control remains a host decision, independent from collection access.
 - Direct writes remain local-first, with later global failures observable; command writes reject direct browser writes and enforce host session, access, validation, hooks, attribution, and global confirmation.
 - Built-in and custom validation produce useful field errors in admin/client flows and command writes cannot bypass them.

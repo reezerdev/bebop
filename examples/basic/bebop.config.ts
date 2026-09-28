@@ -1,10 +1,15 @@
-import { defineConfig } from "@bebopdev/core";
+import { collection, defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
-  collections: [{
+  collections: [collection({
     slug: "todos",
     labels: { singular: "Todo", plural: "Todos" },
-    access: "public",
+    permissions: {
+      read: ({ rule }) => rule.always(),
+      insert: ({ rule }) => rule.always(),
+      update: ({ rule }) => rule.always(),
+      delete: ({ rule }) => rule.always(),
+    },
     admin: {
       useAsTitle: "title",
       defaultColumns: ["title", "completed", "dueAt"],
@@ -16,5 +21,5 @@ export default defineConfig({
       { name: "completed", type: "checkbox", admin: { position: "sidebar" } },
       { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
     ],
-  }],
+  })],
 });

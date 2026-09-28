@@ -1,121 +1,123 @@
-# Access control and server writes
+# Collection permissions and server writes
 
-Bebop access rules compile to Jazz permission rules. Jazz is the authority for direct writes and reads. Admin permission checks are guidance for the interface; hiding a button does not secure an operation.
+Bebop's `permissions` option is a small, collection-scoped wrapper around Jazz's permission builders. Jazz enforces the generated rules for reads and writes. Permission checks in the admin guide the interface; they do not replace Jazz enforcement.
 
-## Access presets and defaults
+## Collection permission rules
 
-If `access` is omitted, Jazz denies every operation. An access object grants only the operations it defines. Use a preset when that matches the collection:
-
-```ts
-{
-  slug: "announcements",
-  access: "public", // Anyone may read, create, update, and delete.
-  fields: [{ name: "message", type: "text", required: true }],
-}
-
-{
-  slug: "supportNotes",
-  access: "authenticated", // Non-anonymous Jazz sessions may use all CRUD operations.
-  fields: [{ name: "body", type: "text", required: true }],
-}
-```
-
-You can define only the operations the app needs:
-
-```ts
-{
-  slug: "auditEntries",
-  fields: [
-    { name: "ownerId", type: "text", required: true },
-    { name: "body", type: "text", required: true },
-  ],
-  access: {
-    read: ({ session }) => ({ ownerId: session.user.account }),
-  },
-}
-```
-
-For ordinary row conditions, return a condition object using stored Jazz field names. For more involved policies, use the Jazz helpers supplied in the callback (`session`, `allOf`, `anyOf`, `exists`, and `isCreator`). The exact expression types come from the installed Jazz version.
-
-## Workspace membership rule
-
-This example assumes membership rows store the Jazz account ID in `userAccount`, the workspace relation in `workspaceId`, and active state in `status`. It gives workspace and task reads/edits to active members. The app should separately define which roles can create or delete tasks.
+Declare a callback for every operation the collection should allow. The operation names follow Jazz: `read`, `insert`, `update`, and `delete`. Any omitted operation is denied. An empty `permissions: {}` object denies all four operations.
 
 ```ts
 import { collection, defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
-  collections: [
-    collection({
-      slug: "workspaces",
-      fields: [{ name: "name", type: "text", required: true }],
-      access: {
-        read: ({ row, session, exists }) => exists("workspaceMemberships", {
-          workspaceId: row.id,
-          userAccount: session.user.account,
+  collections: [collection({
+    slug: "tasks",
+    fields: [
+      { name: "name", type: "text", required: true },
+      { name: "workspace", type: "relationship", relationTo: "workspaces" },
+      { name: "author", type: "relationship", relationTo: "better_auth_user", required: true },
+      { name: "assignee", type: "relationship", relationTo: "better_auth_user" },
+      { name: "status", type: "select", options: ["backlog", "todo", "done"] },
+    ],
+    permissions: {
+      read: ({ rule, collections, session }) => rule.where((task) =>
+        collections.workspaceMemberships.exists.where({
+          workspaceId: task.workspaceId,
+          userId: session.claims.sub,
           status: "active",
         }),
-        update: ({ row, session, exists }) => exists("workspaceMemberships", {
-          workspaceId: row.id,
-          userAccount: session.user.account,
+      ),
+      insert: ({ rule, collections, session, allOf }) => rule.where((newTask) =>
+        allOf([
+          { authorId: session.claims.sub },
+          collections.workspaceMemberships.exists.where({
+            workspaceId: newTask.workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+          }),
+        ]),
+      ),
+      update: ({ rule, collections, session, allOf, anyOf }) => rule
+        .whereOld((currentTask) => allOf([
+          anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+          collections.workspaceMemberships.exists.where({
+            workspaceId: currentTask.workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+          }),
+        ]))
+        .whereNew((updatedTask) => allOf([
+          anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+          collections.workspaceMemberships.exists.where({
+            workspaceId: updatedTask.workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+          }),
+        ])),
+      delete: ({ rule, collections, session, allOf }) => rule.where((task) => allOf([
+        { authorId: session.claims.sub },
+        collections.workspaceMemberships.exists.where({
+          workspaceId: task.workspaceId,
+          userId: session.claims.sub,
           status: "active",
         }),
-      },
-    }),
-    collection({
-      slug: "workspaceMemberships",
-      fields: [
-        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
-        { name: "userAccount", type: "text", required: true },
-        { name: "status", type: "select", options: ["active", "pending", "deactivated"] },
-      ],
-      access: {
-        read: ({ row, session }) => ({ userAccount: session.user.account }),
-      },
-    }),
-    collection({
-      slug: "tasks",
-      fields: [
-        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
-        { name: "title", type: "text", required: true },
-      ],
-      access: {
-        read: ({ row, session, exists }) => exists("workspaceMemberships", {
-          workspaceId: row.workspaceId,
-          userAccount: session.user.account,
-          status: "active",
-        }),
-        update: ({ row, session, exists }) => exists("workspaceMemberships", {
-          workspaceId: row.workspaceId,
-          userAccount: session.user.account,
-          status: "active",
-        }),
-      },
-    }),
-  ],
+      ])),
+    },
+  })],
 });
 ```
 
-Use the same identity namespace in the membership record and session comparison. For example, a Better Auth user ID is not automatically a Jazz account ID. The playground keeps Workspaces explicitly public and uses `access: "authenticated"` for Workspace Memberships and Tasks. Membership writes use command mode; Tasks stay direct and local-first. Treat these demo policies as examples, not production defaults.
+`collection(...)` preserves the collection's field types for the current row reference. The row callback receives Jazz's symbolic `RowContext`, not a loaded document:
 
-## Admin entry is a host decision
+- `read`: the existing row being considered for the result.
+- `insert`: the proposed new row.
+- `delete`: the existing row the caller wants to remove.
+- `update.whereOld`: the stored row before the change.
+- `update.whereNew`: the proposed row after the change.
 
-The host authenticates the person, decides whether they may enter `/admin`, and passes that result through `canAccessAdmin`. A role check for “support staff may use the admin” belongs there. Collection policies still determine which rows that person can read and change.
+These callbacks build a declarative policy; they do not run once per document as arbitrary JavaScript. Express comparisons with row conditions and Jazz helpers. For checks against another collection, `collections.<slug>.exists.where(...)` creates a read-only existence predicate; it does not grant permissions on that other collection. `allOf`, `anyOf`, `allowedTo`, `isCreator`, and `session` are the corresponding Jazz helpers. A condition such as `{ authorId: session.claims.sub }` compares the candidate row's stored field with a verified session claim.
 
-## Direct collections
+The playground's Better Auth integration uses `session.claims.sub` as the Better Auth user ID for its Task rules. An application must compare values from the same identity namespace; a Better Auth user ID is not automatically equal to a Jazz account ID. Use `session.user.account` only when the stored ownership field actually contains that Jazz account ID.
 
-Direct collections are local-first and can write while offline. Bebop field constraints and hooks run in the shared client and the admin, but arbitrary app code can bypass them by calling Jazz directly. Keep access control in Jazz policies. Use custom validation and hooks in direct mode for useful feedback and local transformations; do not use them as server-side security or as the only guarantee for external side effects.
+`rule.where(...)` checks one row condition. On update, use both `whereOld` and `whereNew` when access to the original and resulting row differs. For example, requiring an active membership in both checks prevents an update from moving a Task into a Workspace where the actor has no active membership.
+
+## Public and authenticated rules
+
+Use Jazz's `rule.always()` or `rule.never()` to grant or deny an operation unconditionally. Each grant is explicit:
 
 ```ts
-{
-  slug: "tasks",
-  access: "authenticated",
-  writeMode: "direct", // Default.
-  fields: [{ name: "title", type: "text", required: true, maxLength: 120 }],
+permissions: {
+  read: ({ rule }) => rule.always(),
+  insert: ({ rule }) => rule.always(),
+  update: ({ rule }) => rule.always(),
+  delete: ({ rule }) => rule.always(),
 }
 ```
 
-The client returns after the local write and after hook. Call `waitForGlobal()` when the caller needs the server result. Listen to `client.onMutationError(...)` to report later sync rejections; a successful local return is not a claim that Jazz accepted the write globally.
+For authenticated-only behavior, use Jazz's session condition:
+
+```ts
+permissions: {
+  read: ({ rule, session }) => rule.where(
+    session.where({ authMode: { in: ["external", "local-first"] } }),
+  ),
+  // Add insert, update, and delete callbacks explicitly when those operations are allowed.
+}
+```
+
+The playground grants public access to its demo Workspaces and Media, gives authenticated sessions access to Workspace Memberships, and scopes Task reads and writes through active Workspace membership. Membership writes use `writeMode: "command"`; the generated browser policy denies direct writes, while the server authorization policy retains the configured rules.
+
+The older `access` option remains supported for compatibility and is deprecated. It retains its authenticated default and legacy callback behavior. Do not set both `access` and `permissions` on one collection.
+
+## Admin entry is a host decision
+
+The host authenticates the person, decides whether they may enter `/admin`, and passes that result through `canAccessAdmin`. A support-role check for using the admin belongs there. Collection permissions separately decide which records that person can read and change.
+
+## Direct collections
+
+Direct collections are local-first and can write while offline. Bebop field constraints and hooks run in the shared client and the admin, but arbitrary app code can bypass them by calling Jazz directly. Keep authorization in Jazz `permissions`. Use direct-mode validation and hooks for useful feedback and local transformations; do not rely on them as the sole protection for external side effects.
+
+The client returns after the local write and after hook. Call `waitForGlobal()` when the caller needs the server result. Listen to `client.onMutationError(...)` to report later sync rejections; a successful local return does not mean Jazz accepted the write globally.
 
 ## Command collections
 
@@ -149,11 +151,9 @@ const handleBebop = createBebopHandler({
 export { handleBebop };
 ```
 
-`resolveHostActor` is host-specific pseudocode: Bebop does not own Better Auth cookies, CSRF rules, or server deployment. The `writeDb` must be created with Jazz backend authority and user attribution to the same verified actor used by `authorizationDb`. Keep it private to this handler. The handler checks access for the requested row/data, runs built-in and custom validation before and after `beforeChange`, writes, waits for Jazz global confirmation, and then runs the after hook. A response with `writeAccepted: true` means Jazz confirmed the mutation but an after hook failed.
+`resolveHostActor` is host-specific pseudocode: Bebop does not own Better Auth cookies, CSRF rules, or server deployment. The `writeDb` must be created with Jazz backend authority and user attribution to the same verified actor used by `authorizationDb`. Keep it private to this handler. The handler checks configured Jazz permissions, validates before and after `beforeChange`, performs the write, waits for global confirmation, then runs the after hook. A response with `writeAccepted: true` means Jazz confirmed the mutation but an after hook failed.
 
-The playground provides a concrete Better Auth host integration for `workspaceMemberships`. Its same-origin Vite route verifies the Better Auth cookie and Origin, requests a Better Auth JWT, verifies that token through Jazz's configured JWKS, and creates both the request-scoped authorization DB and the attributed writer from that verified request. The generated command permission bundle is loaded into the server-side Jazz session; the browser still receives `permissions.ts`, which denies direct membership writes. The generated client is configured with `createBebopFetchTransport` to send membership mutations to `/api/bebop/collections/...`.
-
-The generated client's optional `commandTransport` can use the provided same-origin helper:
+The playground provides a Better Auth host integration for `workspaceMemberships`. Its same-origin Vite route verifies the Better Auth cookie and Origin, requests a Better Auth JWT, verifies it through Jazz's configured JWKS, and creates request-scoped authorization and attributed writer DBs. The generated command permission bundle stays server-side; the browser receives `permissions.ts`, which denies direct Membership writes. The generated client uses `createBebopFetchTransport` to send those mutations to `/api/bebop/collections/...`.
 
 ```ts
 import { createBebopFetchTransport } from "@bebopdev/core";
@@ -163,4 +163,4 @@ const client = createBebopClient(db, {
 });
 ```
 
-The host maps that path to the handler. Other auth providers use the same core handler and implement `resolveSession` for their own session model. Command collections cannot enable uploads in this release.
+Command collections cannot enable uploads in this release.

@@ -31,13 +31,18 @@ To run the standalone example within this workspace, use `pnpm example`. `pnpm t
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts), then run `pnpm generate` or let `pnpm dev` regenerate the outputs:
 
 ```ts
-import { defineConfig } from "@bebopdev/core";
+import { collection, defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
-  collections: [{
+  collections: [collection({
     slug: "tasks",
     labels: { singular: "Task", plural: "Tasks" },
-    access: "authenticated",
+    permissions: {
+      read: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+      insert: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+      update: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+      delete: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+    },
     admin: {
       useAsTitle: "name",
       defaultColumns: ["name", "status"],
@@ -48,7 +53,7 @@ export default defineConfig({
       { name: "content", type: "text", admin: { input: "textarea" } },
       { name: "status", type: "select", options: ["todo", "done"] },
     ],
-  }],
+  })],
 });
 ```
 
@@ -58,7 +63,7 @@ Set `labels.singular` and `labels.plural` to control document and collection nam
 
 ## Access and writes
 
-Access is deny-by-default. Use `access: "authenticated"` for CRUD access to signed-in Jazz sessions and `access: "public"` when the collection is intentionally open. An access object grants only the operations it defines and can express row rules using Jazz helpers. The playground keeps Workspaces and Media explicitly public, while Workspace Memberships and Tasks require an authenticated session. Membership writes use the Better Auth command route; Tasks remain local-first direct writes. Production hosts should define their own row-level policies.
+Use `permissions` for Jazz-style, per-operation rules. Each callback receives a `rule` builder, typed `session`, and read-only `collections.<slug>.exists.where(...)` helpers. Inside `rule.where((row) => ...)`, `row` is a typed policy reference for the candidate row; update rules also expose `whereOld` and `whereNew`. Every operation must be granted explicitly; omitted operations are denied. The playground keeps Workspaces and Media public with explicit `rule.always()` grants, routes Membership writes through the Better Auth command handler, and limits Task access to active Workspace members. The older `access` option remains supported for compatibility and is deprecated.
 
 The host also decides whether a user may enter `/admin` and passes that result as `canAccessAdmin`. Admin entry and collection access are separate decisions.
 

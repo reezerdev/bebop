@@ -227,6 +227,9 @@
 .admin-editor-heading { @apply flex min-h-20 items-center justify-between gap-4 border-b border-border pb-4; }
 .admin-editor-heading h1 { @apply min-w-0 text-[32px] font-normal leading-tight tracking-tight; }
 .admin-editor-meta { @apply flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border py-3; }
+.admin-editor-modal .admin-editor-heading { @apply px-6 pt-4 lg:px-11; }
+.admin-editor-modal .admin-editor-meta { @apply px-6 lg:px-11; }
+.admin-editor-modal .admin-editor-main, .admin-editor-modal .admin-editor-side { @apply px-6 lg:px-11; }
 .admin-editor-dates { @apply flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]; }
 .admin-editor-actions { @apply ml-auto flex items-center gap-2; }
 .admin-editor-message { @apply border-b border-border py-3 text-[13px]; }
@@ -249,14 +252,19 @@
 .admin-upload-selected { @apply flex min-h-16 items-center gap-3 border border-border bg-muted/30 px-3 py-2 text-sm; }
 .admin-upload-selected-details { @apply flex min-w-0 flex-1 flex-col gap-1; }
 .admin-upload-selected-actions { @apply flex shrink-0 items-center gap-1; }
+.admin-upload-pending { @apply flex min-h-[124px] items-stretch gap-5 border border-border bg-muted/30; }
+.admin-upload-pending-image { @apply h-[124px] w-[120px] shrink-0 bg-white object-contain; }
+.admin-upload-pending-placeholder { @apply flex h-[124px] w-[120px] shrink-0 items-center justify-center bg-background text-muted-foreground; }
+.admin-upload-pending-details { @apply flex min-w-0 flex-1 flex-col justify-center gap-2 py-4 text-[13px]; }
+.admin-upload-pending-actions { @apply flex shrink-0 items-start p-3; }
 .admin-media-thumbnail { @apply size-10 shrink-0 border border-border bg-background object-contain; }
 .admin-media-thumbnail-placeholder { @apply flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground; }
 .admin-media-picker-row-button { @apply inline-flex min-w-0 items-center gap-3 text-left; }
 .admin-media-preview { @apply flex flex-col items-start gap-2; }
 .admin-media-preview img { @apply max-h-64 max-w-full border border-border object-contain; }
 .admin-media-download { @apply inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2; }
-.admin-media-modal-backdrop { @apply fixed inset-0 z-[60] overflow-hidden bg-black/70; }
-.admin-media-modal { @apply relative h-full w-full overflow-y-auto border border-border bg-background text-foreground shadow-2xl; }
+.admin-media-drawer { @apply rounded-none border-l border-border bg-background text-foreground shadow-2xl; }
+.admin-media-drawer-inner { @apply h-full min-h-0 overflow-y-auto; }
 .admin-media-picker { @apply relative min-h-full px-6 py-8 lg:px-15; }
 .admin-media-picker-close { @apply absolute right-4 top-4 z-10; }
 

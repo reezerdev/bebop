@@ -1,4 +1,9 @@
-import type { PermissionExpressionInput, RowContext, SessionContext } from "jazz-tools/permissions";
+import type {
+  AllowedToContext,
+  PermissionExpressionInput,
+  RowContext,
+  SessionContext,
+} from "jazz-tools/permissions";
 
 export type FieldOptions = {
   name: string;
@@ -110,6 +115,7 @@ export type CollectionDocument<TFields extends Fields> = StoredFields<TFields> &
 };
 
 type AccessCondition<TFields extends Fields> =
+  | boolean
   | Partial<Record<keyof StoredFields<TFields> | "id", unknown>>
   | PermissionExpressionInput;
 
@@ -131,6 +137,55 @@ export type CollectionAccess<TFields extends Fields> = Partial<{
   create: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
   update: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
   delete: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
+}>;
+
+type PermissionRow<TFields extends Fields> = RowContext<StoredFields<TFields> & { id: string }>;
+type PermissionWhere<TFields extends Fields> =
+  | Partial<Record<keyof StoredFields<TFields> | "id", unknown>>
+  | PermissionExpressionInput;
+type PermissionPredicate<TFields extends Fields> =
+  | PermissionWhere<TFields>
+  | ((row: PermissionRow<TFields>) => PermissionWhere<TFields>);
+
+export type CollectionPermissionRule<TFields extends Fields> = {
+  where(input: PermissionPredicate<TFields>): unknown;
+  always(): unknown;
+  never(): unknown;
+};
+
+export type CollectionUpdatePermissionRule<TFields extends Fields> = CollectionPermissionRule<TFields> & {
+  whereOld(input: PermissionPredicate<TFields>): CollectionUpdatePermissionRule<TFields>;
+  whereNew(input: PermissionPredicate<TFields>): CollectionUpdatePermissionRule<TFields>;
+};
+
+export type CollectionPermissionReference = {
+  exists: {
+    where(input: Record<string, unknown> | PermissionExpressionInput): PermissionExpressionInput;
+  };
+};
+
+export type CollectionPermissionContext<
+  TFields extends Fields,
+  TOperation extends "read" | "insert" | "update" | "delete" = "read" | "insert" | "update" | "delete",
+> = {
+  /** Jazz rule builder for this operation on this collection. */
+  rule: TOperation extends "update"
+    ? CollectionUpdatePermissionRule<TFields>
+    : CollectionPermissionRule<TFields>;
+  /** Read-only cross-collection exists helpers; these do not grant access to the referenced collection. */
+  collections: Readonly<Record<string, CollectionPermissionReference>>;
+  session: SessionContext;
+  allOf: typeof import("jazz-tools/permissions").allOf;
+  anyOf: typeof import("jazz-tools/permissions").anyOf;
+  allowedTo: AllowedToContext;
+  isCreator: PermissionExpressionInput;
+};
+
+export type CollectionPermissions<TFields extends Fields> = Partial<{
+  [TOperation in "read" | "insert" | "update" | "delete"]: BivariantCallback<
+    [context: CollectionPermissionContext<TFields, TOperation>],
+    void
+  >;
 }>;
 
 export type CollectionChangeContext<TFields extends Fields> = {
@@ -177,8 +232,10 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
   timestamps?: boolean;
   admin?: CollectionAdminOptions;
-  /** Jazz row-level access predicates. Omitted access denies every operation. */
+  /** @deprecated Use permissions for Jazz-style operation rules. */
   access?: "authenticated" | "public" | CollectionAccess<TFields>;
+  /** Jazz-style per-operation rules. Omitted operations are denied. */
+  permissions?: CollectionPermissions<TFields>;
   /** Direct writes are local-first. Command writes go through the host's trusted Bebop handler. */
   writeMode?: "direct" | "command";
   /** Client-side lifecycle callbacks run by the generated Bebop mutation client. */

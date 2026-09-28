@@ -16,7 +16,7 @@ The CLI compiles one config into `bebop-generated-schema.ts`, `bebop-admin-manif
 
 ## Access and host authentication
 
-Jazz permissions enforce collection and row access. Missing access rules deny operations. `access: "public"` explicitly grants all four CRUD operations; `access: "authenticated"` grants them to non-anonymous Jazz sessions; object rules specify each allowed operation. Missing operations in an object remain denied. The admin uses Jazz `can*` results to guide buttons and screens, while Jazz decides whether a write is accepted.
+Jazz permissions enforce collection and row access. The primary `permissions` API exposes a Jazz rule builder for each collection operation: `read`, `insert`, `update`, and `delete`. Every operation needs an explicit grant; omitted operations are denied. Typed row callbacks expose the row candidate, and updates can inspect both old and new values. `collections.<slug>.exists.where(...)` supports cross-collection predicates without granting access to that collection. The old `access` API remains available for compatibility and is deprecated. The admin uses Jazz `can*` results to guide buttons and screens, while Jazz decides whether a write is accepted.
 
 The host makes a separate decision about entering the admin and passes it as `canAccessAdmin`. That is not a collection permission and does not replace Jazz policies. See [access control and server writes](./access-control.md) for the direct and command modes and a workspace membership rule.
 

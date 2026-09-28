@@ -39,8 +39,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.js";
 import { Textarea } from "../components/ui/textarea.js";
 import { Toaster, useToastManager } from "../components/ui/toast.js";
+import { Drawer, DrawerContent, DrawerTitle } from "../components/ui/drawer.js";
 import { AdminPortalContainer } from "../lib/admin-portal.js";
-import { MediaPreview, UploadDropzone, UploadFieldInput, validateSelectedFile } from "./upload.js";
+import { MediaPreview, PendingUploadPreview, UploadDropzone, UploadFieldInput, validateSelectedFile } from "./upload.js";
 
 type AdminRecord = Record<string, unknown> & { id: string; $createdAt?: Date; $updatedAt?: Date };
 type AdminTable = QueryBuilder<AdminRecord> & {
@@ -1131,7 +1132,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   }
 
   return (
-    <div className="admin-editor">
+    <div className={`admin-editor ${modal ? "admin-editor-modal" : ""}`}>
       <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1>{modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>}</div>
       <form onSubmit={handleSubmit(save)}>
         <div className="admin-editor-meta">
@@ -1153,8 +1154,9 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
           <div className="admin-editor-main">
             {collection.upload && <div className="admin-editor-field">
               <Label className="text-[13px] font-normal">File {!id && <span className="text-destructive">*</span>}</Label>
-              {id && typeof existing?.filename === "string" && <MediaPreview client={client} collection={collection.slug} id={id} filename={existing.filename} mimeType={String(existing.mimeType ?? "")} />}
-              {selectedFile && <p className="text-sm">Selected: {selectedFile.name} ({Math.ceil(selectedFile.size / 1024)} KB)</p>}
+              {selectedFile
+                ? <PendingUploadPreview file={selectedFile} onClear={() => setSelectedFile(undefined)} />
+                : id && typeof existing?.filename === "string" && <MediaPreview client={client} collection={collection.slug} id={id} filename={existing.filename} mimeType={String(existing.mimeType ?? "")} />}
               <UploadDropzone onFile={(file) => { setFileError(validateSelectedFile(file, collection.upload)); setSelectedFile(validateSelectedFile(file, collection.upload) ? undefined : file); }}
                 accept={collection.upload.mimeTypes.join(",")} label={id ? "Replace file" : "Choose file"} error={fileError} />
             </div>}
@@ -1172,51 +1174,71 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             <h2 className="font-heading text-base font-semibold uppercase tracking-wide">{field.label}</h2>
             <p className="mt-2 text-sm text-muted-foreground">Save this {collection.labels.singular.toLocaleLowerCase()} before managing {manifest.collections[field.collection]?.labels.plural.toLocaleLowerCase() ?? field.label.toLocaleLowerCase()}.</p>
           </section>)}
-      {mediaDialog && (() => {
-        const mediaCollection = manifest.collections[mediaDialog.collectionSlug];
-        if (!mediaCollection) return null;
-        const closeMediaDialog = () => {
-          if (mediaDialog.mode === "create" && mediaDialog.returnToChoose) {
-            setMediaDialog({ mode: "choose", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug });
-          } else setMediaDialog(undefined);
-        };
-        const selectMedia = (mediaId: string) => {
-          setValue(mediaDialog.fieldName, mediaId, { shouldDirty: true, shouldValidate: true });
-          setMediaDialog(undefined);
-        };
-        return <div className="admin-media-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMediaDialog(); }}>
-          <section ref={mediaPortal} className="admin-media-modal" role="dialog" aria-modal="true" aria-label={mediaCollection.labels.plural} onMouseDown={(event) => event.stopPropagation()}>
-            <AdminPortalContainer.Provider value={mediaPortal}>
-              {mediaDialog.mode === "choose" ? <div className="admin-media-picker">
-                <Button type="button" className="admin-media-picker-close" variant="ghost" size="icon" aria-label="Close media picker" onClick={closeMediaDialog}><X size={20} /></Button>
-                <CollectionList
-                  app={app}
-                  client={client}
-                  collection={mediaCollection}
-                  manifest={manifest}
-                  relationOptions={relationOptions}
-                  selectMode
-                  onSelect={(row) => selectMedia(row.id)}
-                  onCreate={() => setMediaDialog({ mode: "create", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug, returnToChoose: true })}
-                />
-              </div> : <DocumentEditor
-                key={`${mediaDialog.mode}:${mediaDialog.mode === "edit" ? mediaDialog.id : "new"}`}
-                app={app}
-                client={client}
-                manifest={manifest}
-                collection={mediaCollection}
-                id={mediaDialog.mode === "edit" ? mediaDialog.id : undefined}
-                relationOptions={relationOptions}
-                modal={{
-                  initialFile: mediaDialog.mode === "create" ? mediaDialog.initialFile : undefined,
-                  onClose: closeMediaDialog,
-                  onComplete: selectMedia,
-                }}
-              />}
-            </AdminPortalContainer.Provider>
-          </section>
-        </div>;
-      })()}
+      <Drawer
+        open={Boolean(mediaDialog)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMediaDialog((current) => current?.mode === "create" && current.returnToChoose
+              ? { mode: "choose", fieldName: current.fieldName, collectionSlug: current.collectionSlug }
+              : undefined);
+          }
+        }}
+        swipeDirection="right"
+      >
+        <DrawerContent
+          className="admin-media-drawer bebop-admin"
+          style={{ width: "90vw", height: "100dvh", maxHeight: "100dvh", margin: 0 }}
+        >
+          <div ref={mediaPortal} className="admin-media-drawer-inner">
+            {mediaDialog && (() => {
+              const mediaCollection = manifest.collections[mediaDialog.collectionSlug];
+              if (!mediaCollection) return null;
+              const closeMediaDialog = () => {
+                if (mediaDialog.mode === "create" && mediaDialog.returnToChoose) {
+                  setMediaDialog({ mode: "choose", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug });
+                } else setMediaDialog(undefined);
+              };
+              const selectMedia = (mediaId: string) => {
+                setValue(mediaDialog.fieldName, mediaId, { shouldDirty: true, shouldValidate: true });
+                setMediaDialog(undefined);
+              };
+              return <>
+                <DrawerTitle className="sr-only">
+                  {mediaDialog.mode === "choose" ? `Choose ${mediaCollection.labels.plural}` : `${mediaDialog.mode === "create" ? "Create" : "Edit"} ${mediaCollection.labels.singular}`}
+                </DrawerTitle>
+                <AdminPortalContainer.Provider value={mediaPortal}>
+                  {mediaDialog.mode === "choose" ? <div className="admin-media-picker">
+                    <Button type="button" className="admin-media-picker-close" variant="ghost" size="icon" aria-label="Close media picker" onClick={closeMediaDialog}><X size={20} /></Button>
+                    <CollectionList
+                      app={app}
+                      client={client}
+                      collection={mediaCollection}
+                      manifest={manifest}
+                      relationOptions={relationOptions}
+                      selectMode
+                      onSelect={(row) => selectMedia(row.id)}
+                      onCreate={() => setMediaDialog({ mode: "create", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug, returnToChoose: true })}
+                    />
+                  </div> : <DocumentEditor
+                    key={`${mediaDialog.mode}:${mediaDialog.mode === "edit" ? mediaDialog.id : "new"}`}
+                    app={app}
+                    client={client}
+                    manifest={manifest}
+                    collection={mediaCollection}
+                    id={mediaDialog.mode === "edit" ? mediaDialog.id : undefined}
+                    relationOptions={relationOptions}
+                    modal={{
+                      initialFile: mediaDialog.mode === "create" ? mediaDialog.initialFile : undefined,
+                      onClose: closeMediaDialog,
+                      onComplete: selectMedia,
+                    }}
+                  />}
+                </AdminPortalContainer.Provider>
+              </>;
+            })()}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

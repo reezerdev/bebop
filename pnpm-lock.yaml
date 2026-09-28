@@ -225,11 +225,11 @@ importers:
   examples/basic:
     dependencies:
       '@bebopdev/admin':
-        specifier: workspace:*
-        version: link:../../packages/admin
+        specifier: 0.1.0-beta.0
+        version: 0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@bebopdev/core':
-        specifier: workspace:*
-        version: link:../../packages/bebop
+        specifier: 0.1.0-beta.0
+        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       jazz-tools:
         specifier: 2.0.0-alpha.57
         version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
@@ -244,8 +244,8 @@ importers:
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
       '@bebopdev/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
+        specifier: 0.1.0-beta.0
+        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -538,6 +538,24 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@bebopdev/admin@0.1.0-beta.0':
+    resolution: {integrity: sha512-iaBCBEZLRSKBN6++Zx8vFWknKrU9H8oWuVOlW2B0T15gM7Vc38UwXWsVvHpjxTPHDkAkfeP9D2/25979KJmQCg==}
+    peerDependencies:
+      jazz-tools: 2.0.0-alpha.57
+      react: '>=19'
+      react-dom: '>=19'
+      react-router-dom: '>=6'
+
+  '@bebopdev/cli@0.1.0-beta.0':
+    resolution: {integrity: sha512-A6hg6S+jfIH9+swShnbCH5NhZRYaOryBgAX8QYHfG2GIZnKtxCvBBc1xhpYzqjbjtXPNDuCWowsJzrMrWi7xDA==}
+    engines: {node: '>=22.12.0'}
+    hasBin: true
+
+  '@bebopdev/core@0.1.0-beta.0':
+    resolution: {integrity: sha512-jKJtG7hrcCwySChv8mwIlg6LT1r4Hi2LDQ4Hebz0vKVuXnEoAHGo0dMN4SXoaREH2xS/ofYZW4gtLpGgqeXGOA==}
+    peerDependencies:
+      jazz-tools: 2.0.0-alpha.57
 
   '@better-auth/core@1.7.1':
     resolution: {integrity: sha512-eZ9lqcnVLMZ3QtUByRo4VZqkB1ESyRddd9NfWjBdDPgh+jcwLScoIUAqhtHLR8zaSUJZah8OLGlkzObyPdUH7A==}
@@ -3388,6 +3406,35 @@ snapshots:
       use-sync-external-store: 1.7.0(react@19.3.0)
     optionalDependencies:
       '@types/react': 19.3.0
+
+  '@bebopdev/admin@0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@base-ui/react': 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@fontsource-variable/noto-sans': 5.3.0
+      '@fontsource-variable/playfair-display': 5.3.0
+      class-variance-authority: 0.7.1
+      cn: 0.4.0
+      jazz-tools: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      lucide-react: 0.468.0(react@19.3.0)
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+      react-hook-form: 7.89.0(@types/react@19.3.0)(react@19.3.0)
+      react-router-dom: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+    transitivePeerDependencies:
+      - '@date-fns/tz'
+      - '@types/react'
+      - date-fns
+
+  '@bebopdev/cli@0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
+    dependencies:
+      '@bebopdev/core': 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
+      tsx: 4.23.15
+    transitivePeerDependencies:
+      - jazz-tools
+
+  '@bebopdev/core@0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
+    dependencies:
+      jazz-tools: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
 
   '@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@opentelemetry/api@1.9.1)(better-call@1.4.0(zod@4.6.5))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)':
     dependencies:

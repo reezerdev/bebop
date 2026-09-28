@@ -34,7 +34,7 @@ try {
   await mkdir(path.dirname(consumerDirectory), { recursive: true });
   await cp(path.join(repositoryRoot, "examples/basic"), consumerDirectory, {
     recursive: true,
-    filter: (source) => !source.split(path.sep).some((part) => part === "node_modules" || part === ".env"),
+    filter: (source) => !source.split(path.sep).some((part) => part === "node_modules" || part === ".env" || part === "package-lock.json"),
   });
   await cp(path.join(repositoryRoot, "tsconfig.json"), path.join(temporaryRoot, "tsconfig.json"));
 

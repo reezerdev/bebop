@@ -1,20 +1,25 @@
 # Examples
 
+Each directory in `examples/` is a standalone app with its own `package.json` and npm lockfile. Copy one folder, or download the repository ZIP and use the example folder you want; install its published npm dependencies and run it without the Bebop workspace.
+
 ## Basic
 
-`basic/` is a small consumer app for trying Bebop before publishing packages to npm. It exercises `@bebopdev/core` configuration and generated client, `@bebopdev/cli` schema generation, and `@bebopdev/admin` in a separate React/Vite app.
+`basic/` is a small React/Vite app that demonstrates `@bebopdev/core`, the `bebop` CLI, and `@bebopdev/admin` together. It needs Node.js 22.12 or newer and does not require Better Auth credentials.
 
-The example is included in the pnpm workspace and uses `workspace:*`, so it tests the current local package code without requiring an npm account or registry release. It does not yet verify a packed tarball or a published semver install.
+From a downloaded copy of `examples/basic`:
 
-From the repository root:
+```sh
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5174/` for the playground or `http://127.0.0.1:5174/admin` for Bebop Admin. The app generates its Jazz schema on startup and saves data locally in the browser.
+
+To run the same example from the Bebop repository, use the root shortcut:
 
 ```sh
 pnpm install
-pnpm --filter @bebopdev/admin build
-pnpm --filter @bebopdev/example-basic generate
-pnpm --filter @bebopdev/example-basic dev
+pnpm example
 ```
 
-Open `http://127.0.0.1:5174/` for the consumer app or `http://127.0.0.1:5174/admin` for Bebop Admin. Jazz runs locally with its own app ID and database directory. The example starts with a local-first account and needs no Better Auth setup.
-
-`pnpm example` is a root shortcut for starting the app. `pnpm example:check` type-checks the consumer. Once package tarballs are buildable, this app can be used with `pnpm pack` tarballs by replacing the workspace dependency references with local `.tgz` files; after publication, replace them with registry versions.
+`pnpm example:check` type-checks the app against its published dependencies. `pnpm test:packages` checks the example against package tarballs built from the current source.

@@ -245,6 +245,32 @@ function useRowReadPermissions(db: AdminDatabase, table: AdminTable | undefined,
   return permissions;
 }
 
+type RelationOption = { id: string; name: string };
+
+function RelatedCollectionLabels({ app, client, collection, ids, onChange }: {
+  app: object;
+  client: BebopAdminClient;
+  collection: BebopAdminCollection;
+  ids: readonly string[];
+  onChange: (slug: string, options: readonly RelationOption[]) => void;
+}) {
+  const db = useDb() as AdminDatabase;
+  const table = getTable(app, collection.slug);
+  const query = ids.length
+    ? getMutations(client, collection.slug)?.query({ where: { id: { in: [...ids] } } })
+    : undefined;
+  const { data } = useAll<AdminRecord>(query);
+  const readPermissions = useRowReadPermissions(db, table, data ?? []);
+  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
+  const options = useMemo(() => (data ?? [])
+    .filter((row) => readPermissions[row.id] !== "denied")
+    .map((row) => ({ id: row.id, name: String(titleField ? valueFor(titleField, row) ?? row.id : row.id) })),
+  [data, readPermissions, titleField]);
+
+  useEffect(() => { onChange(collection.slug, options); }, [collection.slug, onChange, options]);
+  return null;
+}
+
 export function BebopAdmin({ app, client, manifest, canAccessAdmin, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
   const [mutationError, setMutationError] = useState<string>();
 
@@ -422,10 +448,10 @@ function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopA
   const { collectionSlug = "" } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  return <CollectionList key={collection.slug} app={app} client={client} collection={collection} relationOptions={relationOptions} />;
+  return <CollectionList key={collection.slug} app={app} client={client} collection={collection} manifest={manifest} relationOptions={relationOptions} />;
 }
 
-function CollectionList({ app, client, collection, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; relationOptions?: BebopAdminProps["relationOptions"] }) {
+function CollectionList({ app, client, collection, manifest, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; manifest: BebopAdminManifest; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const db = useDb() as AdminDatabase;
@@ -445,6 +471,15 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
   const [deleteError, setDeleteError] = useState<string>();
   const [operationError, setOperationError] = useState<string>();
+  const [relatedOptions, setRelatedOptions] = useState<Record<string, readonly RelationOption[]>>({});
+  const onRelatedOptions = useCallback((slug: string, options: readonly RelationOption[]) => {
+    setRelatedOptions((current) => {
+      const previous = current[slug];
+      if (previous?.length === options.length && previous.every((option, index) => option.id === options[index].id && option.name === options[index].name)) return current;
+      return { ...current, [slug]: options };
+    });
+  }, []);
+  const displayRelationOptions = useMemo(() => ({ ...relatedOptions, ...relationOptions }), [relatedOptions, relationOptions]);
   const filterFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind === "boolean" || field.kind === "select");
   const filterWhere = useMemo(() => Object.fromEntries(filterFields.flatMap((field) => {
     const value = filters[field.name];
@@ -468,6 +503,17 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
   const allColumns = storedFields(collection).map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
+  const relatedIdsByCollection = new Map<string, Set<string>>();
+  for (const column of [...new Set([...columns, ...(searchActive ? collection.listSearchableFields : [])])]) {
+    const field = fieldByName(collection, column);
+    if (field?.kind !== "relation" || !field.relationTo || !manifest.collections[field.relationTo] || relationOptions?.[field.relationTo]) continue;
+    const ids = relatedIdsByCollection.get(field.relationTo) ?? new Set<string>();
+    for (const row of readableRows) {
+      const id = valueFor(field, row);
+      if (typeof id === "string" && id) ids.add(id);
+    }
+    relatedIdsByCollection.set(field.relationTo, ids);
+  }
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     const filtered = readableRows.filter((row) => {
@@ -475,7 +521,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
         const field = fieldByName(collection, fieldName);
         const value = field ? valueFor(field, row) : row[fieldName];
         const relationLabel = field?.kind === "relation"
-          ? relationOptions?.[field.relationTo ?? ""]?.find((option) => option.id === value)?.name
+          ? displayRelationOptions[field.relationTo ?? ""]?.find((option) => option.id === value)?.name
           : undefined;
         return `${relationLabel ?? ""} ${String(value ?? "")}`.toLocaleLowerCase().includes(query);
       }) || (!collection.listSearchableFields.length && row.id.toLocaleLowerCase().includes(query));
@@ -496,7 +542,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
       return sort.direction === "asc" ? result : -result;
     });
     return filtered;
-  }, [collection, filterFields, filters, readableRows, relationOptions, search, sort]);
+  }, [collection, displayRelationOptions, filterFields, filters, readableRows, search, sort]);
   const totalRows = searchActive ? filteredRows.length : idResult.data?.length ?? 0;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const pageRows = searchActive
@@ -561,6 +607,16 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
 
   return (
     <div>
+      {[...relatedIdsByCollection].map(([slug, ids]) => (
+        <RelatedCollectionLabels
+          key={slug}
+          app={app}
+          client={client}
+          collection={manifest.collections[slug]}
+          ids={[...ids].sort()}
+          onChange={onRelatedOptions}
+        />
+      ))}
       <div className="admin-list-heading">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
         <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
@@ -681,9 +737,9 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
                         <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
                           {isTitle ? (
                             <Link to={`/admin/collections/${collection.slug}/${row.id}`} className="underline underline-offset-2 hover:text-primary">
-                              {formatCell(field, value, relationOptions)}
+                              {formatCell(field, value, displayRelationOptions)}
                             </Link>
-                          ) : formatCell(field, value, relationOptions)}
+                          ) : formatCell(field, value, displayRelationOptions)}
                         </TableCell>
                       );
                     })}

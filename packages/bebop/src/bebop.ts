@@ -25,6 +25,10 @@ export type RelationshipField = FieldOptions & {
   type: "relationship";
   relationTo: string;
 };
+export type UploadField = FieldOptions & {
+  type: "upload";
+  relationTo: string;
+};
 export type JoinField = {
   name: string;
   label?: string;
@@ -45,6 +49,7 @@ export type FieldDefinition =
   | JsonField
   | SelectField
   | RelationshipField
+  | UploadField
   | JoinField;
 
 export type Fields = readonly FieldDefinition[];
@@ -53,7 +58,7 @@ type SelectValue<TOption> = TOption extends string ? TOption : TOption extends {
 
 type FieldValue<TField> = TField extends { type: "select"; options: readonly (infer TOption)[] }
   ? SelectValue<TOption>
-  : TField extends { type: "text" | "relationship" }
+  : TField extends { type: "text" | "relationship" | "upload" }
     ? string
     : TField extends { type: "number" }
       ? number
@@ -65,7 +70,7 @@ type FieldValue<TField> = TField extends { type: "select"; options: readonly (in
 
 type StoredFieldName<TField> = TField extends { type: "join" }
   ? never
-  : TField extends { type: "relationship"; name: infer TName extends string }
+  : TField extends { type: "relationship" | "upload"; name: infer TName extends string }
   ? `${TName}Id`
   : TField extends { name: infer TName extends string }
     ? TName
@@ -146,6 +151,8 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   /** Payload-style collection names. Unspecified names are derived from the slug. */
   labels?: { singular?: string; plural?: string };
   fields: TFields;
+  /** Enable file storage for this collection. */
+  upload?: true | { mimeTypes?: readonly string[] };
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
   timestamps?: boolean;
   admin?: CollectionAdminOptions;
@@ -162,6 +169,7 @@ export type BetterAuthDefinition = {
 export type BebopConfig = {
   collections: readonly CollectionDefinition[];
   auth?: BetterAuthDefinition;
+  upload?: { limits?: { fileSize?: number } };
 };
 
 export function collection<const TSlug extends string, const TFields extends Fields>(

@@ -11,7 +11,8 @@ packages/
   bebop/          Config DSL and Jazz schema compiler
   admin/          First-party React admin UI and shadcn components
 docs/             Product and architecture notes
-examples/         Reserved for standalone examples
+examples/
+  basic/          Consumer app for trying workspace packages before npm publication
 ```
 
 ## Start the playground
@@ -22,6 +23,8 @@ pnpm dev
 ```
 
 The root scripts use pnpm and Turborepo to run workspace tasks. The playground app is at `http://127.0.0.1:5173/`; Bebop's first-party admin package is mounted separately at `http://127.0.0.1:5173/admin`. The playground is an integration host, while the admin UI lives in `packages/admin`.
+
+To try Bebop from a separate consumer app, run `pnpm example`. It starts `examples/basic` at `http://127.0.0.1:5174/`, with the admin mounted at `/admin`. The example imports the local workspace packages, so it exercises the current package code without an npm release. See [`examples/README.md`](./examples/README.md) for the package-check commands and how to switch to tarballs or published versions later.
 
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change collections, access rules, hooks, and admin list settings. `pnpm dev` builds and watches the admin package, generates the Jazz schema, admin manifest, and typed mutation client, then starts Vite. The Jazz Vite plugin starts the local Jazz server and picks up the generated schema and permissions.
 

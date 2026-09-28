@@ -411,7 +411,7 @@ function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopA
   const { collectionSlug = "" } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  return <CollectionList app={app} client={client} collection={collection} relationOptions={relationOptions} />;
+  return <CollectionList key={collection.slug} app={app} client={client} collection={collection} relationOptions={relationOptions} />;
 }
 
 function CollectionList({ app, client, collection, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; relationOptions?: BebopAdminProps["relationOptions"] }) {
@@ -440,8 +440,13 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
     return [[field.storageName, field.kind === "boolean" ? value === "true" : value]];
   })), [collection, filters]);
   const searchActive = Boolean(search.trim());
+  const sortField = fieldByName(collection, sort.field);
+  const defaultSortField = fieldByName(collection, collection.defaultColumns[0] ?? "");
+  const storedSortField = sortField?.storageName ?? (sort.field === "id" ? "id" : defaultSortField?.storageName ?? "id");
   const { rows: rowResult, ids: idResult } = useAdminRows(client, collection.slug, {
-    where: filterWhere, sort, page, pageSize, searchActive,
+    where: filterWhere,
+    sort: { field: storedSortField, direction: sort.direction },
+    page, pageSize, searchActive,
   });
   const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
   const rows = data ?? [];
@@ -454,7 +459,11 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
     const filtered = readableRows.filter((row) => {
       const matchesSearch = !query || collection.listSearchableFields.some((fieldName) => {
         const field = fieldByName(collection, fieldName);
-        return String(field ? valueFor(field, row) ?? "" : row[fieldName] ?? "").toLocaleLowerCase().includes(query);
+        const value = field ? valueFor(field, row) : row[fieldName];
+        const relationLabel = field?.kind === "relation"
+          ? relationOptions?.[field.relationTo ?? ""]?.find((option) => option.id === value)?.name
+          : undefined;
+        return `${relationLabel ?? ""} ${String(value ?? "")}`.toLocaleLowerCase().includes(query);
       }) || (!collection.listSearchableFields.length && row.id.toLocaleLowerCase().includes(query));
       const matchesFilters = filterFields.every((field) => {
         const selected = filters[field.name];
@@ -473,7 +482,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
       return sort.direction === "asc" ? result : -result;
     });
     return filtered;
-  }, [collection, filterFields, filters, readableRows, search, sort]);
+  }, [collection, filterFields, filters, readableRows, relationOptions, search, sort]);
   const totalRows = searchActive ? filteredRows.length : idResult.data?.length ?? 0;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const pageRows = searchActive

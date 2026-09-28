@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "pnpm --filter @bebop/admin build && turbo run dev --filter=@bebop/admin --filter=@bebop/playground",
     "build": "turbo run build",
+    "example": "pnpm --filter @bebop/admin build && pnpm --filter @bebop/example-basic dev",
+    "example:check": "pnpm --filter @bebop/example-basic check",
     "generate": "turbo run generate --filter=@bebop/playground",
     "validate:schema": "turbo run validate:schema --filter=@bebop/playground"
   },

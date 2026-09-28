@@ -63,3 +63,21 @@ if (false) {
   // @ts-expect-error Unknown collections are absent from the client.
   void client.comments.find();
 }
+
+const uploadConfig = defineConfig({ collections: [
+  collection({ slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }] }),
+  collection({ slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] }),
+] });
+declare const uploadClient: BebopClient<typeof uploadConfig>;
+if (false) {
+  void uploadClient.media.create({ file: new Blob() });
+  void uploadClient.media.update("id", { file: new Blob() });
+  void uploadClient.media.readFile("id");
+  void uploadClient.tasks.create({ imageId: "id" });
+  // @ts-expect-error An upload-enabled collection requires file content.
+  void uploadClient.media.create({});
+  // @ts-expect-error Upload references are stored as imageId.
+  void uploadClient.tasks.create({ image: "id" });
+  // @ts-expect-error Ordinary collections have no file reader.
+  void uploadClient.tasks.readFile("id");
+}

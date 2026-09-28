@@ -2,10 +2,11 @@ import type { BebopConfig, FieldDefinition, FieldOptions, Fields } from "./bebop
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-type StoredFieldKind = Exclude<FieldDefinition["type"], "join" | "relationship" | "checkbox"> | "relation" | "boolean" | "integer";
+type StoredFieldKind = Exclude<FieldDefinition["type"], "join" | "relationship" | "upload" | "checkbox"> | "relation" | "upload" | "boolean" | "integer";
 
 function fieldKind(field: Exclude<FieldDefinition, { type: "join" }>): StoredFieldKind {
   if (field.type === "relationship") return "relation" as const;
+  if (field.type === "upload") return "upload" as const;
   if (field.type === "checkbox") return "boolean" as const;
   if (field.type === "number" && field.integer) return "integer" as const;
   return field.type;
@@ -23,7 +24,7 @@ export function normalizeConfig(config: BebopConfig) {
       const name = definition.slug;
       const pluralLabel = definition.labels?.plural ?? definition.admin?.label ?? humanize(name);
       const singularLabel = definition.labels?.singular ?? singularize(pluralLabel);
-      const fields = definition.fields.map((field) => {
+      const configuredFields = definition.fields.map((field) => {
         if (field.type === "join") {
           return {
             name: field.name,
@@ -37,7 +38,7 @@ export function normalizeConfig(config: BebopConfig) {
         }
         return {
           name: field.name,
-          storageName: field.type === "relationship" ? `${field.name}Id` : field.name,
+          storageName: field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name,
           label: field.label ?? humanize(field.name),
           kind: fieldKind(field),
           required: Boolean(field.required),
@@ -47,16 +48,35 @@ export function normalizeConfig(config: BebopConfig) {
           ...(field.type === "select" && field.options.some((option) => typeof option !== "string")
             ? { optionLabels: Object.fromEntries(field.options.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
             : {}),
-          ...(field.type === "relationship" ? { relationTo: field.relationTo } : {}),
+          ...(field.type === "relationship" || field.type === "upload" ? { relationTo: field.relationTo } : {}),
         };
       });
+      const generatedFields = definition.upload
+        ? ([
+          ["filename", "text"], ["mimeType", "text"], ["filesize", "integer"],
+        ] as const).map(([fieldName, kind]) => ({
+          name: fieldName,
+          storageName: fieldName,
+          label: humanize(fieldName),
+          kind,
+          required: true,
+          generated: true,
+          admin: undefined,
+          definition: (kind === "integer" ? { name: fieldName, type: "number" as const, integer: true } : { name: fieldName, type: "text" as const }),
+        }))
+        : [];
+      const fields = [...configuredFields, ...generatedFields];
       const storedFields = fields.filter((field) => field.kind !== "join");
       const fieldNames = storedFields.map((field) => field.name);
-      const useAsTitle = definition.admin?.useAsTitle ?? (fieldNames.includes("title") ? "title" : undefined);
+      const useAsTitle = definition.admin?.useAsTitle ?? (fieldNames.includes("title") ? "title" : definition.upload ? "filename" : undefined);
       return {
         name,
         fields,
         access: definition.access,
+        upload: definition.upload ? {
+          mimeTypes: typeof definition.upload === "object" ? definition.upload.mimeTypes ?? [] : [],
+          maxFileSize: config.upload?.limits?.fileSize ?? 20 * 1024 * 1024,
+        } : undefined,
         admin: {
           labels: { singular: singularLabel, plural: pluralLabel },
           timestamps: definition.timestamps !== false,
@@ -87,7 +107,7 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
         );
         continue;
       }
-      if (field.kind === "relation") {
+      if (field.kind === "relation" || field.kind === "upload") {
         const columnName = field.storageName;
         const optional = field.required ? "" : ".optional()";
         columns.push(`${JSON.stringify(columnName)}: s.uuid()${optional}`);
@@ -98,15 +118,22 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
       }
 
       columns.push(
-        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { type: "relationship" | "join" }>)}${field.required ? "" : ".optional()"}`,
+        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>)}${field.required ? "" : ".optional()"}`,
       );
+    }
+    if (collection.upload) {
+      columns.push(`"fileId": s.uuid()`);
+      relations.push(`"file": s.rel(${JSON.stringify(`bebop_files_${collection.name}`)}, "fileId")`);
     }
 
     const relationObject = relations.length
       ? `{\n      ${relations.join(",\n      ")}\n    }`
       : "{}";
 
-    return `  ${JSON.stringify(collection.name)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
+    const mainTable = `  ${JSON.stringify(collection.name)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
+    return collection.upload
+      ? `${mainTable},\n  ${JSON.stringify(`bebop_files_${collection.name}`)}: s.table(\n    {\n      "ownerAccount": s.uuid(),\n      "mediaId": s.uuid().optional(),\n      "partIds": s.array(s.uuid()),\n      "partSizes": s.array(s.int())\n    },\n    {\n      "media": s.rel(${JSON.stringify(collection.name)}, "mediaId")\n    },\n  ),\n  ${JSON.stringify(`bebop_file_parts_${collection.name}`)}: s.table(\n    {\n      "data": s.bytes(),\n      "ownerAccount": s.uuid(),\n      "fileId": s.uuid()\n    },\n    {\n      "file": s.rel(${JSON.stringify(`bebop_files_${collection.name}`)}, "fileId")\n    },\n  )`
+      : mainTable;
   });
 
   const authImport = model.auth
@@ -140,6 +167,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
           ...("options" in field && field.options ? { options: field.options } : {}),
           ...("optionLabels" in field && field.optionLabels ? { optionLabels: field.optionLabels } : {}),
           ...("relationTo" in field && field.relationTo ? { relationTo: field.relationTo } : {}),
+          ...("generated" in field && field.generated ? { generated: true } : {}),
         });
     return [collection.name, {
       slug: collection.name,
@@ -149,6 +177,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
       ...(useAsTitle ? { useAsTitle } : {}),
       defaultColumns,
       listSearchableFields,
+      ...(collection.upload ? { upload: collection.upload } : {}),
     }] as const;
   });
 
@@ -160,11 +189,22 @@ function compilePermissionsFromModel(
   configModuleSpecifier = "./bebop.config.js",
 ): string {
   const hasAccessCallbacks = model.collections.some((collection) => collection.access && collection.access !== "public");
+  const hasUploads = model.collections.some((collection) => collection.upload);
   const grants = model.collections
     .flatMap((collection, index) => {
       const collectionName = collection.name;
       const access = collection.access;
-      if (!access) return [];
+      const fileRules = collection.upload ? [
+        `  policy.bebop_files_${collectionName}.allowInsert.where({ ownerAccount: session.user.account });`,
+        `  policy.bebop_files_${collectionName}.allowRead.where(allowedTo.read("media"));`,
+        `  policy.bebop_files_${collectionName}.allowUpdate.whereOld({ ownerAccount: session.user.account, mediaId: null }).whereNew({ ownerAccount: session.user.account });`,
+        `  policy.bebop_files_${collectionName}.allowDelete.where(anyOf([{ ownerAccount: session.user.account, mediaId: null }, allowedTo.delete("media")]));`,
+        `  policy.bebop_file_parts_${collectionName}.allowInsert.where({ ownerAccount: session.user.account });`,
+        `  policy.bebop_file_parts_${collectionName}.allowRead.where(allowedTo.read("file"));`,
+        `  policy.bebop_file_parts_${collectionName}.allowUpdate.never();`,
+        `  policy.bebop_file_parts_${collectionName}.allowDelete.where(allowedTo.delete("file"));`,
+      ] : [];
+      if (!access) return fileRules;
       const operations = [
         ["read", "Read"],
         ["create", "Insert"],
@@ -172,7 +212,7 @@ function compilePermissionsFromModel(
         ["delete", "Delete"],
       ] as const;
       if (access === "public") {
-        return operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.always();`);
+        return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.always();`), ...fileRules];
       }
       const rules: string[] = [`  const ${collectionName}Access: Exclude<CollectionDefinition["access"], "public"> = bebopConfig.collections[${index}].access;`];
       for (const [accessOperation, jazzOperation] of operations) {
@@ -183,7 +223,7 @@ function compilePermissionsFromModel(
             `  }`,
         );
       }
-      return rules;
+      return [...rules, ...fileRules];
     })
     .join("\n");
 
@@ -200,7 +240,7 @@ function compilePermissionsFromModel(
         `    return tablePolicy.exists.where(condition) as never;\n` +
         `  };\n`
     : "";
-  const permissionContext = hasAccessCallbacks ? "policy, session, allOf, anyOf, isCreator" : "policy";
+  const permissionContext = hasAccessCallbacks ? "policy, session, allOf, anyOf, isCreator, allowedTo" : hasUploads ? "policy, session, anyOf, allowedTo" : "policy";
   const appPermissions = `const appPermissions = s.definePermissions(app, ({ ${permissionContext} }) => {${existsHelper}\n${grants}\n});`;
 
   return `// Generated from bebop.config.ts. Missing collection operations are denied by Jazz.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
@@ -232,7 +272,7 @@ export function compileClientFactory(configModuleSpecifier = "./bebop.config.js"
   return `// Generated from bebop.config.ts. Do not edit this file.\nimport { createBebopClient as createClient } from "@bebopdev/core";\nimport type { Db } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\nimport bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\nexport function createBebopClient(db: Db) {\n  return createClient({ app, config: bebopConfig, db });\n}\n`;
 }
 
-function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship" | "join" }>): string {
+function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>): string {
   switch (field.type) {
     case "text":
       return "s.string()";
@@ -256,6 +296,10 @@ function validateConfig(config: BebopConfig): void {
 
   const collections = config.collections as BebopConfig["collections"];
   const collectionNames = collections.map((collection) => collection.slug);
+  const fileSizeLimit = config.upload?.limits?.fileSize;
+  if (fileSizeLimit !== undefined && (!Number.isSafeInteger(fileSizeLimit) || fileSizeLimit <= 0)) {
+    throw new Error("upload.limits.fileSize must be a positive safe integer.");
+  }
 
   if (config.auth && config.auth.provider !== "better-auth") {
     throw new Error(`Unsupported authentication provider "${config.auth.provider}".`);
@@ -269,6 +313,17 @@ function validateConfig(config: BebopConfig): void {
     const collectionName = definition.slug;
     if (!namePattern.test(collectionName)) {
       throw new Error(`Invalid collection name "${collectionName}". Use letters, numbers, and underscores.`);
+    }
+    if (collectionName.startsWith("bebop_files_") || collectionName.startsWith("bebop_file_parts_")) {
+      throw new Error(`Collection name "${collectionName}" uses the reserved Bebop file table prefix.`);
+    }
+    if (definition.upload !== undefined && definition.upload !== true && (typeof definition.upload !== "object" || definition.upload === null || (definition.upload.mimeTypes !== undefined && !Array.isArray(definition.upload.mimeTypes)))) {
+      throw new Error(`Collection "${collectionName}" upload must be true or contain mimeTypes.`);
+    }
+    if (typeof definition.upload === "object") {
+      for (const mimeType of definition.upload.mimeTypes ?? []) {
+        if (!/^[\w.+-]+\/[\w.+*-]+$/.test(mimeType)) throw new Error(`Invalid MIME type "${mimeType}" in "${collectionName}".`);
+      }
     }
 
     if (config.auth && collectionName.startsWith("better_auth_")) {
@@ -316,11 +371,11 @@ function validateConfig(config: BebopConfig): void {
       }
     }
 
-    const storedNames = new Set<string>(["id"]);
-    const fieldNames = new Set<string>();
+    const storedNames = new Set<string>(["id", ...(definition.upload ? ["filename", "mimeType", "filesize", "fileId"] : [])]);
+    const fieldNames = new Set<string>(definition.upload ? ["filename", "mimeType", "filesize"] : []);
     for (const field of fields) {
       const fieldName = field.name;
-      if (!["text", "number", "checkbox", "date", "json", "select", "relationship", "join"].includes(field.type)) {
+      if (!["text", "number", "checkbox", "date", "json", "select", "relationship", "upload", "join"].includes(field.type)) {
         throw new Error(`Unsupported field type "${field.type}" in collection "${collectionName}".`);
       }
       if (!namePattern.test(fieldName) || fieldName === "id") {
@@ -337,7 +392,7 @@ function validateConfig(config: BebopConfig): void {
       fieldNames.add(fieldName);
 
       if (field.type !== "join") {
-        const storageName = field.type === "relationship" ? `${fieldName}Id` : fieldName;
+        const storageName = field.type === "relationship" || field.type === "upload" ? `${fieldName}Id` : fieldName;
         if (storedNames.has(storageName)) {
           throw new Error(`Field "${fieldName}" conflicts with another stored field in "${collectionName}".`);
         }
@@ -346,6 +401,9 @@ function validateConfig(config: BebopConfig): void {
 
       if (field.type === "relationship" && !collectionNames.includes(field.relationTo) && !(config.auth?.provider === "better-auth" && field.relationTo === "better_auth_user")) {
         throw new Error(`Relation "${collectionName}.${fieldName}" targets unknown collection "${field.relationTo}".`);
+      }
+      if (field.type === "upload" && !collections.some((candidate) => candidate.slug === field.relationTo && candidate.upload)) {
+        throw new Error(`Upload field "${collectionName}.${fieldName}" must target an upload-enabled collection "${field.relationTo}".`);
       }
 
       if (field.type === "join") {
@@ -419,6 +477,7 @@ function validateConfig(config: BebopConfig): void {
       if (!fieldNames.has(fieldName)) {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields references unknown field "${fieldName}".`);
       }
+      if (definition.upload && (fieldName === "filename" || fieldName === "mimeType")) continue;
       if (fields.find((field: FieldDefinition) => field.name === fieldName)?.type !== "text") {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields field "${fieldName}" must be text.`);
       }

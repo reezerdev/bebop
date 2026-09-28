@@ -1,0 +1,634 @@
+{
+  "better_auth_user": {
+    "columns": [
+      {
+        "name": "name",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "email",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "emailVerified",
+        "column_type": {
+          "type": "Boolean"
+        },
+        "nullable": false
+      },
+      {
+        "name": "image",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "createdAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "updatedAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {}
+  },
+  "better_auth_session": {
+    "columns": [
+      {
+        "name": "expiresAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "token",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "createdAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "updatedAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "ipAddress",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "userAgent",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "userId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "better_auth_user"
+      }
+    ],
+    "relations": {
+      "userIdRelation": {
+        "kind": "forward",
+        "table": "better_auth_user",
+        "column": "userId"
+      }
+    }
+  },
+  "better_auth_account": {
+    "columns": [
+      {
+        "name": "issuer",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "accountId",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "providerId",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "userId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "better_auth_user"
+      },
+      {
+        "name": "accessToken",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "refreshToken",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "idToken",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "accessTokenExpiresAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      },
+      {
+        "name": "scope",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "password",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "createdAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "updatedAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {
+      "userIdRelation": {
+        "kind": "forward",
+        "table": "better_auth_user",
+        "column": "userId"
+      }
+    }
+  },
+  "better_auth_verification": {
+    "columns": [
+      {
+        "name": "identifier",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "value",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "expiresAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "createdAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "updatedAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {}
+  },
+  "better_auth_jwks": {
+    "columns": [
+      {
+        "name": "publicKey",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "privateKey",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "createdAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": false
+      },
+      {
+        "name": "expiresAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      },
+      {
+        "name": "alg",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "crv",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      }
+    ],
+    "relations": {}
+  },
+  "media": {
+    "columns": [
+      {
+        "name": "alt",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "filename",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "mimeType",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "filesize",
+        "column_type": {
+          "type": "Integer"
+        },
+        "nullable": false
+      },
+      {
+        "name": "fileId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "bebop_files_media"
+      }
+    ],
+    "relations": {
+      "file": {
+        "kind": "forward",
+        "table": "bebop_files_media",
+        "column": "fileId"
+      }
+    }
+  },
+  "bebop_files_media": {
+    "columns": [
+      {
+        "name": "ownerAccount",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false
+      },
+      {
+        "name": "mediaId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": true,
+        "references": "media"
+      },
+      {
+        "name": "partIds",
+        "column_type": {
+          "type": "Array",
+          "element": {
+            "type": "Uuid"
+          }
+        },
+        "nullable": false
+      },
+      {
+        "name": "partSizes",
+        "column_type": {
+          "type": "Array",
+          "element": {
+            "type": "Integer"
+          }
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {
+      "media": {
+        "kind": "forward",
+        "table": "media",
+        "column": "mediaId"
+      }
+    }
+  },
+  "bebop_file_parts_media": {
+    "columns": [
+      {
+        "name": "data",
+        "column_type": {
+          "type": "Bytea"
+        },
+        "nullable": false
+      },
+      {
+        "name": "ownerAccount",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false
+      },
+      {
+        "name": "fileId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "bebop_files_media"
+      }
+    ],
+    "relations": {
+      "file": {
+        "kind": "forward",
+        "table": "bebop_files_media",
+        "column": "fileId"
+      }
+    }
+  },
+  "workspaces": {
+    "columns": [
+      {
+        "name": "name",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "slug",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {
+      "members": {
+        "kind": "reverse",
+        "table": "workspaceMemberships",
+        "relation": "workspace"
+      }
+    }
+  },
+  "workspaceMemberships": {
+    "columns": [
+      {
+        "name": "workspaceId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "workspaces"
+      },
+      {
+        "name": "userId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "better_auth_user"
+      },
+      {
+        "name": "role",
+        "column_type": {
+          "type": "Enum",
+          "variants": [
+            "admin",
+            "manager",
+            "member",
+            "guest"
+          ]
+        },
+        "nullable": false
+      },
+      {
+        "name": "status",
+        "column_type": {
+          "type": "Enum",
+          "variants": [
+            "active",
+            "pending",
+            "deactivated"
+          ]
+        },
+        "nullable": false
+      }
+    ],
+    "relations": {
+      "workspace": {
+        "kind": "forward",
+        "table": "workspaces",
+        "column": "workspaceId"
+      },
+      "user": {
+        "kind": "forward",
+        "table": "better_auth_user",
+        "column": "userId"
+      }
+    }
+  },
+  "tasks": {
+    "columns": [
+      {
+        "name": "name",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "workspaceId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": true,
+        "references": "workspaces"
+      },
+      {
+        "name": "content",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "imageId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": true,
+        "references": "media"
+      },
+      {
+        "name": "priority",
+        "column_type": {
+          "type": "Enum",
+          "variants": [
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ]
+        },
+        "nullable": true
+      },
+      {
+        "name": "parentTaskId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": true,
+        "references": "tasks"
+      },
+      {
+        "name": "authorId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": false,
+        "references": "better_auth_user"
+      },
+      {
+        "name": "status",
+        "column_type": {
+          "type": "Enum",
+          "variants": [
+            "backlog",
+            "todo",
+            "in-progress",
+            "in-review",
+            "done"
+          ]
+        },
+        "nullable": true
+      },
+      {
+        "name": "assigneeId",
+        "column_type": {
+          "type": "Uuid"
+        },
+        "nullable": true,
+        "references": "better_auth_user"
+      },
+      {
+        "name": "dueAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      },
+      {
+        "name": "archivedAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      }
+    ],
+    "relations": {
+      "workspace": {
+        "kind": "forward",
+        "table": "workspaces",
+        "column": "workspaceId"
+      },
+      "image": {
+        "kind": "forward",
+        "table": "media",
+        "column": "imageId"
+      },
+      "parentTask": {
+        "kind": "forward",
+        "table": "tasks",
+        "column": "parentTaskId"
+      },
+      "author": {
+        "kind": "forward",
+        "table": "better_auth_user",
+        "column": "authorId"
+      },
+      "assignee": {
+        "kind": "forward",
+        "table": "better_auth_user",
+        "column": "assigneeId"
+      }
+    }
+  }
+}

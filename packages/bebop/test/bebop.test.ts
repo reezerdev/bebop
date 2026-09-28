@@ -404,3 +404,109 @@ test("shared client forwards asynchronous Jazz mutation rejections", () => {
   fake.events[0]?.({ code: "permission_denied", reason: "denied", transaction: undefined as never });
   assert.equal(receivedCode, "permission_denied");
 });
+
+test("upload fields generate metadata, hidden chunk tables, and inherited file permissions", () => {
+  const config = defineConfig({ collections: [
+    { slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }], access: "public" },
+    { slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] },
+  ] });
+  const artifacts = compileArtifacts(config);
+  assert.deepEqual(artifacts, compileArtifacts(config));
+  assert.match(artifacts.schema, /"data": s\.bytes\(\)/);
+  assert.match(artifacts.schema, /"bebop_files_media": s\.table/);
+  assert.match(artifacts.schema, /"bebop_file_parts_media": s\.table/);
+  assert.match(artifacts.schema, /"filename": s\.string\(\)/);
+  assert.match(artifacts.schema, /"fileId": s\.uuid\(\)/);
+  assert.match(artifacts.schema, /"imageId": s\.uuid\(\)\.optional\(\)/);
+  assert.match(artifacts.permissions, /allowRead\.where\(allowedTo\.read\("media"\)\)/);
+  assert.match(artifacts.permissions, /allowRead\.where\(allowedTo\.read\("file"\)\)/);
+  assert.match(artifacts.adminManifest, /"maxFileSize": 20971520/);
+});
+
+test("upload configuration rejects invalid targets, reserved names, and size limits", () => {
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "media", fields: [{ name: "alt", type: "text" }] },
+    { slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] },
+  ] })), /upload-enabled collection/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "media", upload: true, fields: [{ name: "filename", type: "text" }] },
+  ] })), /Duplicate field name|conflicts with another stored field/);
+  assert.throws(() => compileSchema(defineConfig({ upload: { limits: { fileSize: 0 } }, collections: [
+    { slug: "media", upload: true, fields: [{ name: "alt", type: "text" }] },
+  ] })), /fileSize must be a positive/);
+});
+
+test("upload client streams bytes and links, replaces, reads, and deletes Media with hooks", async () => {
+  const order: string[] = [];
+  const rows = new Map<string, Record<string, unknown>>();
+  let nextId = 1;
+  const makeTable = (name: string) => ({
+    name,
+    where(condition: Record<string, unknown>) { return { name, condition }; },
+    select(..._columns: string[]) { return { where: (condition: Record<string, unknown>) => ({ name, condition }) }; },
+  });
+  const mediaTable = makeTable("media");
+  const fileTable = makeTable("files");
+  const partTable = makeTable("parts");
+  const write = <T>(value: T) => ({ value, wait: async () => value, txId: Promise.resolve("tx") });
+  const db = {
+    getAuthState: () => ({ session: { user: { account: "account-1" } } }),
+    one: async (query: { name: string; condition: { id: string } }) => rows.get(`${query.name}:${query.condition.id}`) ?? null,
+    insert: (table: { name: string }, data: Record<string, unknown>) => {
+      if (table.name === "files") order.push("stage");
+      const id = `${table.name}-${nextId++}`;
+      rows.set(`${table.name}:${id}`, { id, ...data });
+      return write({ id, ...data });
+    },
+    transaction: async (callback: (tx: unknown) => unknown) => {
+      order.push("transaction");
+      const tx = {
+        insert(table: { name: string }, data: Record<string, unknown>) {
+          const id = `media-${nextId++}`;
+          const value = { id, ...data };
+          rows.set(`${table.name}:${id}`, value);
+          return value;
+        },
+        update(table: { name: string }, id: string, data: Record<string, unknown>) {
+          rows.set(`${table.name}:${id}`, { ...rows.get(`${table.name}:${id}`), ...data });
+        },
+        delete(table: { name: string }, id: string) { rows.delete(`${table.name}:${id}`); },
+      };
+      return write(await callback(tx));
+    },
+    update: (table: { name: string }, id: string, data: Record<string, unknown>) => {
+      rows.set(`${table.name}:${id}`, { ...rows.get(`${table.name}:${id}`), ...data });
+      return write(undefined);
+    },
+    delete: (table: { name: string }, id: string) => { rows.delete(`${table.name}:${id}`); return write(undefined); },
+    onMutationError: () => () => {},
+  };
+  const config = defineConfig({ upload: { limits: { fileSize: 400_000 } }, collections: [{
+    slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }],
+    hooks: {
+      beforeChange: ({ operation }) => { order.push(`before:${operation}`); return { alt: "caption" }; },
+      afterChange: ({ operation }) => { order.push(`after:${operation}`); },
+      beforeDelete: () => { order.push("before:delete"); },
+      afterDelete: () => { order.push("after:delete"); },
+    },
+  }] });
+  const client = createBebopClient({ app: { media: mediaTable, bebop_files_media: fileTable, bebop_file_parts_media: partTable } as never, config, db: db as unknown as Db });
+  await assert.rejects(client.media.create({ file: new File([new Uint8Array(400_001)], "large.png", { type: "image/png" }) }), /upload limit/);
+  await assert.rejects(client.media.create({ file: new File(["text"], "notes.txt", { type: "text/plain" }) }), /not allowed/);
+  const firstBytes = new Uint8Array(300_000).fill(65);
+  const first = await client.media.create({ file: new File([firstBytes], "first.png", { type: "image/png" }) });
+  assert.equal(first.doc.filename, "first.png");
+  assert.equal(first.doc.alt, "caption");
+  assert.equal((rows.get(`files:${first.doc.fileId}`) as { mediaId: string }).mediaId, first.doc.id);
+  assert.equal((rows.get(`files:${first.doc.fileId}`) as { partIds: string[] }).partIds.length, 2);
+  assert.deepEqual(new Uint8Array(await (await client.media.readFile(first.doc.id))!.arrayBuffer()), firstBytes);
+  await first.waitForGlobal();
+  await assert.rejects(client.media.update(first.doc.id, { fileId: "invalid" } as never), /Unknown media write field/);
+  const second = await client.media.update(first.doc.id, { file: new File(["second"], "second.png", { type: "image/png" }) });
+  assert.equal(second.doc.filename, "second.png");
+  assert.equal(rows.has(`files:${first.doc.fileId}`), false);
+  assert.equal(await (await client.media.readFile(first.doc.id))?.text(), "second");
+  await client.media.delete(first.doc.id);
+  assert.equal(rows.has(`files:${second.doc.fileId}`), false);
+  assert.deepEqual(order, ["before:create", "stage", "transaction", "after:create", "before:update", "stage", "transaction", "after:update", "before:delete", "transaction", "after:delete"]);
+});

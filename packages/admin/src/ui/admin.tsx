@@ -39,6 +39,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Textarea } from "../components/ui/textarea.js";
 import { Toaster, useToastManager } from "../components/ui/toast.js";
 import { AdminPortalContainer } from "../lib/admin-portal.js";
+import { MediaPreview, UploadDropzone, UploadFieldInput, validateSelectedFile } from "./upload.js";
 
 type AdminRecord = Record<string, unknown> & { id: string; $createdAt?: Date; $updatedAt?: Date };
 type AdminTable = QueryBuilder<AdminRecord> & {
@@ -142,7 +143,7 @@ function formatCell(field: BebopAdminField | undefined, value: unknown, relation
   if (field?.kind === "boolean") return <Badge variant={value ? "default" : "secondary"}>{value ? "Yes" : "No"}</Badge>;
   if (field?.kind === "date") return formatDate(value);
   if (field?.kind === "json") return <span className="font-mono text-xs">{JSON.stringify(value)}</span>;
-  if (field?.kind === "relation") {
+  if (field?.kind === "relation" || field?.kind === "upload") {
     const name = relationOptions?.[field.relationTo ?? ""]?.find((option) => option.id === value)?.name;
     return name ?? <span className="font-mono text-xs">{String(value).slice(0, 8)}</span>;
   }
@@ -506,7 +507,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
   const relatedIdsByCollection = new Map<string, Set<string>>();
   for (const column of [...new Set([...columns, ...(searchActive ? collection.listSearchableFields : [])])]) {
     const field = fieldByName(collection, column);
-    if (field?.kind !== "relation" || !field.relationTo || !manifest.collections[field.relationTo] || relationOptions?.[field.relationTo]) continue;
+    if ((field?.kind !== "relation" && field?.kind !== "upload") || !field.relationTo || !manifest.collections[field.relationTo] || relationOptions?.[field.relationTo]) continue;
     const ids = relatedIdsByCollection.get(field.relationTo) ?? new Set<string>();
     for (const row of readableRows) {
       const id = valueFor(field, row);
@@ -896,6 +897,8 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const [readAdvice, setReadAdvice] = useState<PermissionAdvice>("unknown");
   const [saveError, setSaveError] = useState<string>();
   const [saveApplied, setSaveApplied] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File>();
+  const [fileError, setFileError] = useState<string>();
   const joinReturnPath = joinContext && (!id || existing?.[joinContext.relationship.storageName] === joinContext.parentId)
     ? joinContext.returnTo
     : undefined;
@@ -913,8 +916,8 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const parentLabel = savedParentTitle !== undefined && savedParentTitle !== null && String(savedParentTitle).trim()
     ? String(savedParentTitle)
     : id ?? "";
-  const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && field.admin?.position !== "sidebar");
-  const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && field.admin?.position === "sidebar");
+  const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position !== "sidebar");
+  const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position === "sidebar");
   const joinFields = collection.fields.filter((field): field is BebopAdminJoinField => field.kind === "join");
 
   useEffect(() => { setDocumentBreadcrumb(id ? title : undefined); }, [id, setDocumentBreadcrumb, title]);
@@ -958,6 +961,11 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       setPermissionAdvice("unknown");
       return;
     }
+    if (collection.upload) {
+      // Media metadata and its file id are assigned by the upload client after streaming.
+      setPermissionAdvice("unknown");
+      return;
+    }
     setPermissionAdvice("unknown");
     const check = id
       ? db.canUpdate(table, id, serializedValues)
@@ -968,7 +976,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       if (active) setPermissionAdvice("unknown");
     });
     return () => { active = false; };
-  }, [db, existing, id, serializedValuesKey, table]);
+  }, [collection.upload, db, existing, id, serializedValuesKey, table]);
 
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
@@ -979,17 +987,23 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
     const document = serializeValues(collection, values);
     setSaveError(undefined);
     try {
+      if (collection.upload && !id && !selectedFile) throw new Error("Choose a file before creating media.");
+      if (selectedFile) {
+        const validation = validateSelectedFile(selectedFile, collection.upload);
+        if (validation) throw new Error(validation);
+      }
       if (!table) throw new Error("The generated Bebop app is missing this collection.");
-      const advice = id
+      const advice = collection.upload ? "unknown" : id
         ? await db.canUpdate(table, id, document)
         : await db.canInsert(table, document);
       setPermissionAdvice(advice);
       if (advice === "denied") throw new Error("Your current session cannot save this document.");
       const operations = getMutations(client, collection.slug);
       if (!operations) throw new Error("The Bebop mutation client is missing this collection.");
+      const mutationData = selectedFile ? { ...document, file: selectedFile } : document;
       const result = id
-        ? await operations.update(id, document)
-        : await operations.create(document);
+        ? await operations.update(id, mutationData)
+        : await operations.create(mutationData);
       const resultDoc = (result as { doc?: AdminRecord } | undefined)?.doc;
       toast.add({
         type: "success",
@@ -1051,7 +1065,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             </> : <span className="text-muted-foreground">New document</span>}
           </div>
           <div className="admin-editor-actions">
-            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty)}>{saveApplied ? "Local write applied" : id ? "Save" : "Create"}</Button>
+            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : id ? "Save" : "Create"}</Button>
             <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
           </div>
         </div>
@@ -1060,6 +1074,13 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         {saveApplied && !saveError && <p className="admin-editor-message text-muted-foreground" role="status">The local change was applied. Jazz may still be syncing it.</p>}
         <fieldset disabled={Boolean(saveApplied || (id && permissionAdvice === "denied"))} className={`admin-editor-grid ${sidebarFields.length ? "" : "admin-editor-grid-single"}`}>
           <div className="admin-editor-main">
+            {collection.upload && <div className="admin-editor-field">
+              <Label className="text-[13px] font-normal">File {!id && <span className="text-destructive">*</span>}</Label>
+              {id && typeof existing?.filename === "string" && <MediaPreview client={client} collection={collection.slug} id={id} filename={existing.filename} mimeType={String(existing.mimeType ?? "")} />}
+              {selectedFile && <p className="text-sm">Selected: {selectedFile.name} ({Math.ceil(selectedFile.size / 1024)} KB)</p>}
+              <UploadDropzone onFile={(file) => { setFileError(validateSelectedFile(file, collection.upload)); setSelectedFile(validateSelectedFile(file, collection.upload) ? undefined : file); }}
+                accept={collection.upload.mimeTypes.join(",")} label={id ? "Replace file" : "Choose file"} error={fileError} />
+            </div>}
             {mainFields.map(renderField)}
           </div>
           {sidebarFields.length > 0 && <aside className="admin-editor-side" aria-label="Additional fields">
@@ -1234,7 +1255,7 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
 }
 
 function initialValues(collection: BebopAdminCollection, row?: AdminRecord, defaults?: Readonly<Record<string, unknown>>): FieldValues {
-  return Object.fromEntries(storedFields(collection).map((field) => {
+  return Object.fromEntries(storedFields(collection).filter((field) => !field.generated).map((field) => {
     const value = row ? valueFor(field, row) : defaults?.[field.name];
     if (field.kind === "boolean") return [field.name, Boolean(value)];
     if (field.kind === "date") return [field.name, value instanceof Date ? localDateInput(value, field.admin?.date?.pickerAppearance === "dayAndTime") : ""];
@@ -1254,7 +1275,7 @@ function localDateInput(value: Date, includeTime = false): string {
 }
 
 function serializeValues(collection: BebopAdminCollection, values: FieldValues): Record<string, unknown> {
-  return Object.fromEntries(storedFields(collection).flatMap((field) => {
+  return Object.fromEntries(storedFields(collection).filter((field) => !field.generated).flatMap((field) => {
     const raw = values[field.name];
     if (field.kind === "boolean") return [[field.storageName, Boolean(raw)]];
     if (raw === "" || raw === undefined || raw === null) return field.required ? [] : [[field.storageName, null]];
@@ -1316,6 +1337,13 @@ function FieldInput({
       />
     );
   }
+  if (field.kind === "upload" && field.relationTo) {
+    return <Controller control={control} name={field.name} rules={rules} render={({ field: input }) =>
+      <UploadFieldInput field={field} client={client} collection={manifest.collections[field.relationTo ?? ""]}
+        value={typeof input.value === "string" && input.value ? input.value : null}
+        onChange={input.onChange} onBlur={input.onBlur} inputRef={input.ref} />
+    } />;
+  }
   if (field.kind === "select") {
     return (
       <Controller
@@ -1325,7 +1353,9 @@ function FieldInput({
         render={({ field: input }) => (
           <Select value={typeof input.value === "string" && input.value ? input.value : null} onValueChange={input.onChange}>
             <SelectTrigger id={`field-${field.name}`} ref={input.ref} onBlur={input.onBlur} className="w-full">
-              <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`} />
+              <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`}>
+                {(value: string | null) => value ? selectLabel(field, value) : `Select ${field.label.toLocaleLowerCase()}`}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {field.options?.map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}
@@ -1401,7 +1431,7 @@ function NotFoundPage({ message = "We couldn’t find the page you’re looking 
     <div className="flex min-h-72 flex-col items-center justify-center text-center">
       <p className="text-sm font-medium">Page not found</p>
       <p className="mt-1 text-sm text-muted-foreground">{message}</p>
-      <Button render={<Link to="/admin" />} variant="outline" className="mt-5">Back to overview</Button>
+      <Button nativeButton={false} render={<Link to="/admin" />} variant="outline" className="mt-5">Back to overview</Button>
     </div>
   );
 }

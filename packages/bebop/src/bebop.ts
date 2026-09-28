@@ -173,6 +173,12 @@ export type BebopConfig = {
 };
 
 export function collection<const TSlug extends string, const TFields extends Fields>(
+  definition: CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } },
+): CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } };
+export function collection<const TSlug extends string, const TFields extends Fields>(
+  definition: CollectionDefinition<TFields> & { slug: TSlug },
+): CollectionDefinition<TFields> & { slug: TSlug };
+export function collection<const TSlug extends string, const TFields extends Fields>(
   definition: CollectionDefinition<TFields> & { slug: TSlug },
 ): CollectionDefinition<TFields> & { slug: TSlug } {
   return definition;

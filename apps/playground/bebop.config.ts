@@ -2,7 +2,17 @@ import { defineConfig, betterAuth } from "@bebopdev/core";
 
 export default defineConfig({
   auth: betterAuth(),
+  upload: { limits: { fileSize: 20 * 1024 * 1024 } },
   collections: [
+    {
+      slug: "media",
+      labels: { singular: "Media", plural: "Media" },
+      upload: { mimeTypes: ["image/*"] },
+      timestamps: true,
+      access: "public",
+      admin: { useAsTitle: "filename", defaultColumns: ["filename", "mimeType", "filesize"] },
+      fields: [{ name: "alt", type: "text" }],
+    },
     {
       slug: "workspaces",
       labels: { singular: "Workspace", plural: "Workspaces" },
@@ -65,6 +75,7 @@ export default defineConfig({
         { name: "name", type: "text", required: true },
         { name: "workspace", type: "relationship", relationTo: "workspaces", admin: { position: "sidebar" } },
         { name: "content", type: "text", admin: { input: "textarea" } },
+        { name: "image", type: "upload", relationTo: "media" },
         { name: "priority", type: "select", options: [
           { label: "Low", value: "low" },
           { label: "Medium", value: "medium" },

@@ -4,6 +4,39 @@ import { schema as betterAuthSchema } from "./schema-better-auth/schema.js";
 
 const schema = {
   ...betterAuthSchema,
+  "media": s.table(
+    {
+      "alt": s.string().optional(),
+      "filename": s.string(),
+      "mimeType": s.string(),
+      "filesize": s.int(),
+      "fileId": s.uuid()
+    },
+    {
+      "file": s.rel("bebop_files_media", "fileId")
+    },
+  ),
+  "bebop_files_media": s.table(
+    {
+      "ownerAccount": s.uuid(),
+      "mediaId": s.uuid().optional(),
+      "partIds": s.array(s.uuid()),
+      "partSizes": s.array(s.int())
+    },
+    {
+      "media": s.rel("media", "mediaId")
+    },
+  ),
+  "bebop_file_parts_media": s.table(
+    {
+      "data": s.bytes(),
+      "ownerAccount": s.uuid(),
+      "fileId": s.uuid()
+    },
+    {
+      "file": s.rel("bebop_files_media", "fileId")
+    },
+  ),
   "workspaces": s.table(
     {
       "name": s.string(),
@@ -30,6 +63,7 @@ const schema = {
       "name": s.string(),
       "workspaceId": s.uuid().optional(),
       "content": s.string().optional(),
+      "imageId": s.uuid().optional(),
       "priority": s.enum("low", "medium", "high", "urgent").optional(),
       "parentTaskId": s.uuid().optional(),
       "authorId": s.uuid(),
@@ -40,6 +74,7 @@ const schema = {
     },
     {
       "workspace": s.rel("workspaces", "workspaceId"),
+      "image": s.rel("media", "imageId"),
       "parentTask": s.rel("tasks", "parentTaskId"),
       "author": s.rel("better_auth_user", "authorId"),
       "assignee": s.rel("better_auth_user", "assigneeId")

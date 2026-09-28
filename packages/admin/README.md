@@ -35,4 +35,6 @@ import "@bebopdev/admin/styles.css";
 
 `app`, `bebopAdminManifest`, and the typed client are generated from `bebop.config.ts` by `@bebopdev/cli`. The host can pass the current user's name, email, and logout action through the admin props.
 
+Upload-enabled collections have a file picker with drag and drop, replacement, preview, and download. A field pointing at an upload collection can create media or choose an existing document; creating media does not save the parent form. Configure upload collections and fields in Bebop config, then regenerate the schema and manifest before opening the admin.
+
 See the [repository README](https://github.com/reezerdev/bebop#readme) for full host and authentication wiring.

@@ -1,4 +1,4 @@
-export type BebopAdminStoredFieldKind = "text" | "number" | "integer" | "boolean" | "date" | "json" | "select" | "relation";
+export type BebopAdminStoredFieldKind = "text" | "number" | "integer" | "boolean" | "date" | "json" | "select" | "relation" | "upload";
 export type BebopAdminFieldKind = BebopAdminStoredFieldKind | "join";
 
 type BebopAdminFieldBase = {
@@ -23,6 +23,7 @@ export type BebopAdminStoredField = BebopAdminFieldBase & BebopAdminFieldOptions
   options?: readonly string[];
   optionLabels?: Readonly<Record<string, string>>;
   relationTo?: string;
+  generated?: boolean;
 };
 
 export type BebopAdminJoinField = BebopAdminFieldBase & BebopAdminFieldOptions & {
@@ -42,6 +43,7 @@ export type BebopAdminCollection = {
   useAsTitle?: string;
   defaultColumns: readonly string[];
   listSearchableFields: readonly string[];
+  upload?: { mimeTypes: readonly string[]; maxFileSize: number };
 };
 
 export type BebopAdminManifest = {

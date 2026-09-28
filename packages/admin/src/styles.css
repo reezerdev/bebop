@@ -240,6 +240,16 @@
 .admin-editor [data-slot="textarea"] { @apply min-h-32 w-full border border-input bg-muted/50 px-3 py-2 text-[13px]; }
 .admin-editor-document-id { @apply flex flex-col gap-1 border-t border-border pt-5 text-xs text-muted-foreground; }
 .admin-editor-document-id code { @apply break-all text-foreground; }
+.admin-upload-dropzone { @apply relative flex min-h-16 flex-wrap items-center justify-between gap-3 border border-dashed border-border bg-muted/30 px-4 py-3 text-[13px]; }
+.admin-upload-dragging { @apply border-primary bg-primary/10; }
+.admin-upload-actions { @apply flex flex-wrap items-center gap-2; }
+.admin-upload-hint { @apply text-xs text-muted-foreground; }
+.admin-upload-error { @apply w-full text-xs text-destructive; }
+.admin-upload-field { @apply flex flex-col gap-3; }
+.admin-upload-selected { @apply flex flex-col gap-3 border border-border bg-muted/30 p-3 text-sm; }
+.admin-media-preview { @apply flex flex-col items-start gap-2; }
+.admin-media-preview img { @apply max-h-64 max-w-full border border-border object-contain; }
+.admin-media-download { @apply inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2; }
 
 @media (max-width: 767px) {
   .admin-sidebar { @apply -translate-x-full; }

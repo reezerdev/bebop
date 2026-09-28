@@ -32,19 +32,19 @@ import { defineConfig } from "@bebop/core";
 
 export default defineConfig({
   collections: [{
-    slug: "posts",
-    labels: { singular: "Post", plural: "Posts" },
-    admin: { useAsTitle: "title" },
+    slug: "tasks",
+    labels: { singular: "Task", plural: "Tasks" },
+    admin: { useAsTitle: "name" },
     fields: [
-      { name: "title", type: "text", required: true },
-      { name: "published", type: "checkbox", admin: { position: "sidebar" } },
-      { name: "category", type: "select", options: ["guide", "story"] },
+      { name: "name", type: "text", required: true },
+      { name: "content", type: "text", admin: { input: "textarea" } },
+      { name: "status", type: "select", options: ["todo", "done"] },
     ],
   }],
 });
 ```
 
-The current supported types are `text`, `number` (with optional `integer: true`), `checkbox`, `date`, `json`, `select`, and single `relationship` (with `relationTo`). A relationship named `author` stores its ID in an `authorId` column. This is the supported subset of Payload's field config, not its complete field API.
+The current supported types are `text`, `number` (with optional `integer: true`), `checkbox`, `date`, `json`, `select`, and single `relationship` (with `relationTo`). A relationship named `author` stores its ID in an `authorId` column. Text fields can set `admin.input: "textarea"`; date fields can set `admin.date.pickerAppearance: "dayAndTime"`. Bebop stores task content as plain text, not Payload rich text. This is the supported subset of Payload's field config, not its complete field API.
 
 If a collection defines access or lifecycle callbacks and you want their field data inferred inside those callbacks, wrap that collection object with `collection({...})` from `@bebop/core`. The fields inside it remain plain `{ name, type }` objects. Plain collection objects still work for configurations that do not need that callback inference.
 
@@ -60,7 +60,7 @@ The client exposes `query`, `queryIds`, `find`, and `findById` for reads. List q
 
 The admin uses shadcn/ui's Base UI components and the official Sera style with the Neutral palette and square corners. Its collection screens use compact Noto Sans text and headings. It follows the system color preference by default and honors `.light` or `.dark` on the document element. Its setup is in [`packages/admin/components.json`](./packages/admin/components.json). To add a component, run `pnpm dlx shadcn@latest add <component> -c packages/admin`; component source stays in `packages/admin/src/components/ui` and is bundled with the admin package.
 
-The playground includes email and password authentication through Better Auth, using Jazz as its database adapter. Add `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET` to `apps/playground/.env`; use [`apps/playground/.env.example`](./apps/playground/.env.example) as a template and generate a secret with `openssl rand -base64 32`. Then run `pnpm generate` to generate Better Auth's Jazz tables, and start the app with `pnpm dev`. Sign-up and sign-in open the corresponding Jazz account. Better Auth tables get deny-by-default client permissions; the playground's post permissions remain open for experimentation.
+The playground includes email and password authentication through Better Auth, using Jazz as its database adapter. Add `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET` to `apps/playground/.env`; use [`apps/playground/.env.example`](./apps/playground/.env.example) as a template and generate a secret with `openssl rand -base64 32`. Then run `pnpm generate` to generate Better Auth's Jazz tables, and start the app with `pnpm dev`. Sign-up and sign-in open the corresponding Jazz account. Better Auth tables get deny-by-default client permissions; the playground's Workspaces, Workspace Memberships, and Tasks permissions remain open for experimentation.
 
 When enabling Better Auth in another Bebop config, install compatible `better-auth` and `auth` CLI packages, add `auth: betterAuth()` to the config, and provide an `auth-generate.ts` using `jazzAdapter` as in [`apps/playground/auth-generate.ts`](./apps/playground/auth-generate.ts). `bebop generate` runs the Better Auth schema generator before compiling the merged Jazz schema and permissions. `bebop dev` also watches `auth-options.ts` and the selected generator config. Runtime route and client wiring depend on the framework; the playground's [`auth.ts`](./apps/playground/auth.ts), [`vite.config.ts`](./apps/playground/vite.config.ts), and [`auth-client.ts`](./apps/playground/auth-client.ts) show the Vite and React setup.
 
@@ -77,7 +77,7 @@ pnpm --filter @bebop/playground exec bebop validate
 
 The Better Auth CLI requires Node.js 22.12 or newer. The workspace declares that version range.
 
-The playground's posts are deliberately open through `access: "public"`. Better Auth tables remain denied to client sessions. Review collection access settings before deploying.
+The playground's three collections are deliberately open through `access: "public"`. The task author defaults to the signed-in user in the host UI, but the open demo policy does not prevent direct clients from supplying another author ID. Workspace membership records do not yet grant or restrict Jazz access. Better Auth tables remain denied to client sessions. Review collection access settings before deploying.
 
 See the [implementation plan](./docs/implementation-plan.md) for the roadmap.
 See [architecture notes](./docs/architecture.md) for the current package boundaries, write semantics, and the next security milestone.

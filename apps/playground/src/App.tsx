@@ -40,7 +40,10 @@ export function App() {
     return [...current, ...users.filter((user) => user.id !== currentUserId)];
   }, [currentUserId, currentUserName, users]);
   const relationOptions = useMemo(() => ({ better_auth_user: authorOptions }), [authorOptions]);
-  const createDefaults = useMemo(() => ({ posts: { author: currentUserId } }), [currentUserId]);
+  const createDefaults = useMemo(() => ({
+    tasks: { author: currentUserId, assignee: currentUserId, status: "todo" },
+    workspaceMemberships: { user: currentUserId, role: "member", status: "active" },
+  }), [currentUserId]);
 
   return <Routes>
     <Route path="/" element={<PlaygroundPage client={bebop} logout={() => logout()} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />

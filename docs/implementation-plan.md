@@ -25,17 +25,18 @@ import { defineConfig } from '@bebop/core'
 export default defineConfig({
   collections: [
     {
-      slug: 'users',
+      slug: 'workspaces',
+      labels: { singular: 'Workspace', plural: 'Workspaces' },
       fields: [{ name: 'name', type: 'text', required: true }],
     },
     {
-      slug: 'posts',
-      labels: { singular: 'Post', plural: 'Posts' },
-      admin: { useAsTitle: 'title' },
+      slug: 'tasks',
+      labels: { singular: 'Task', plural: 'Tasks' },
+      admin: { useAsTitle: 'name' },
       fields: [
-        { name: 'title', type: 'text', required: true },
-        { name: 'status', type: 'select', options: ['draft', 'published'] },
-        { name: 'author', type: 'relationship', relationTo: 'users', required: true },
+        { name: 'name', type: 'text', required: true },
+        { name: 'workspace', type: 'relationship', relationTo: 'workspaces', required: true },
+        { name: 'status', type: 'select', options: ['todo', 'done'] },
       ],
     },
   ],
@@ -83,7 +84,7 @@ Keep the config/compiler and UI in separate packages. The admin package owns its
 - Compiler golden tests for field mappings, relation names, policy output, and deterministic generation.
 - Type-level tests for required/optional fields, select literals, collection keys, relation results, and invalid CRUD inputs.
 - Integration tests against the pinned Jazz release for permission filtering, old/new row updates, offline rejection, durability, and migrations.
-- End-to-end example: author creates a draft, publishes it, another user reads the published post, and an unauthorized edit fails.
+- End-to-end example: a user creates a workspace and task, a member reads it, and an unauthorized edit fails.
 
 ## Outside the first release
 

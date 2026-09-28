@@ -6,7 +6,11 @@ export type BebopAdminField = {
   label: string;
   kind: BebopAdminFieldKind;
   required: boolean;
-  admin?: { position?: "main" | "sidebar" };
+  admin?: {
+    position?: "main" | "sidebar";
+    input?: "textarea";
+    date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
+  };
   options?: readonly string[];
   optionLabels?: Readonly<Record<string, string>>;
   relationTo?: string;

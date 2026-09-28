@@ -12,7 +12,8 @@ test("admin manifest includes the configured title and field positions", () => {
       labels: { singular: "Blog Post", plural: "Blog Posts" },
       fields: [
         { name: "title", type: "text", required: true, admin: { position: "main" } },
-        { name: "summary", type: "text", admin: { position: "sidebar" } },
+        { name: "summary", type: "text", admin: { position: "sidebar", input: "textarea" } },
+        { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
       ],
       admin: { useAsTitle: "title" },
     }],
@@ -25,6 +26,8 @@ test("admin manifest includes the configured title and field positions", () => {
   assert.match(manifest, /"plural": "Blog Posts"/);
   assert.match(manifest, /"position": "main"/);
   assert.match(manifest, /"position": "sidebar"/);
+  assert.match(manifest, /"input": "textarea"/);
+  assert.match(manifest, /"pickerAppearance": "dayAndTime"/);
   assert.doesNotMatch(manifest, /"sidebarFields"/);
   assert.throws(() => compileAdminManifest(defineConfig({
     collections: [{ slug: "posts", fields: [{ name: "title", type: "text", admin: { position: "invalid" as "sidebar" } }] }],

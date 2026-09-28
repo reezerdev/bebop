@@ -28,7 +28,7 @@ export function normalizeConfig(config: BebopConfig) {
         kind: fieldKind(field),
         required: Boolean(field.required),
         definition: field,
-        ...(field.admin?.position ? { admin: { position: field.admin.position } } : {}),
+        ...(field.admin ? { admin: field.admin } : {}),
         ...(field.type === "select" ? { options: field.options.map(selectOptionValue) } : {}),
         ...(field.type === "select" && field.options.some((option) => typeof option !== "string")
           ? { optionLabels: Object.fromEntries(field.options.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
@@ -322,6 +322,12 @@ function validateConfig(config: BebopConfig): void {
       }
       if (field.admin?.position !== undefined && field.admin.position !== "main" && field.admin.position !== "sidebar") {
         throw new Error(`Field "${collectionName}.${fieldName}" admin.position must be "main" or "sidebar".`);
+      }
+      if (field.admin?.input !== undefined && (field.type !== "text" || field.admin.input !== "textarea")) {
+        throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
+      }
+      if (field.admin?.date !== undefined && (field.type !== "date" || !["dayOnly", "dayAndTime", undefined].includes(field.admin.date.pickerAppearance))) {
+        throw new Error(`Field "${collectionName}.${fieldName}" admin.date must configure a date field.`);
       }
     }
 

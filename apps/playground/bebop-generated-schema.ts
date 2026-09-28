@@ -4,18 +4,43 @@ import { schema as betterAuthSchema } from "./schema-better-auth/schema.js";
 
 const schema = {
   ...betterAuthSchema,
-  "posts": s.table(
+  "workspaces": s.table(
     {
-      "title": s.string(),
-      "authorId": s.uuid(),
-      "body": s.string().optional(),
-      "slug": s.string().optional(),
-      "publishedAt": s.timestamp().optional(),
-      "published": s.boolean().optional(),
-      "category": s.enum("announcement", "guide", "story").optional()
+      "name": s.string(),
+      "slug": s.string()
+    },
+    {},
+  ),
+  "workspaceMemberships": s.table(
+    {
+      "workspaceId": s.uuid(),
+      "userId": s.uuid(),
+      "role": s.enum("admin", "manager", "member", "guest"),
+      "status": s.enum("active", "pending", "deactivated")
     },
     {
-      "author": s.rel("better_auth_user", "authorId")
+      "workspace": s.rel("workspaces", "workspaceId"),
+      "user": s.rel("better_auth_user", "userId")
+    },
+  ),
+  "tasks": s.table(
+    {
+      "name": s.string(),
+      "workspaceId": s.uuid().optional(),
+      "content": s.string().optional(),
+      "priority": s.enum("low", "medium", "high", "urgent").optional(),
+      "parentTaskId": s.uuid().optional(),
+      "authorId": s.uuid(),
+      "status": s.enum("backlog", "todo", "in-progress", "in-review", "done").optional(),
+      "assigneeId": s.uuid().optional(),
+      "dueAt": s.timestamp().optional(),
+      "archivedAt": s.timestamp().optional()
+    },
+    {
+      "workspace": s.rel("workspaces", "workspaceId"),
+      "parentTask": s.rel("tasks", "parentTaskId"),
+      "author": s.rel("better_auth_user", "authorId"),
+      "assignee": s.rel("better_auth_user", "assigneeId")
     },
   )
 } as const;

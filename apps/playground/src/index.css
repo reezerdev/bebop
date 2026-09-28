@@ -41,6 +41,7 @@ body { margin: 0; }
 .playground-lede { max-width: 500px; color: #69736a; font-size: 15px; line-height: 1.75; margin: 0; }
 .playground-workspace { max-width: 1120px; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 64px; align-items: start; padding: 35px 0 68px; margin: 0 auto; border-top: 1px solid var(--playground-line); }
 .playground-composer { padding: 4px 0 0; }
+.playground-task-form { margin-top: 52px; padding-top: 32px; border-top: 1px solid var(--playground-line); }
 .playground-section-label { margin-bottom: 25px; }
 .playground-section-label span { color: #c1885a; margin-right: 10px; }
 .playground-composer label { display: block; margin: 0 0 8px; font-size: 12px; font-weight: 600; }

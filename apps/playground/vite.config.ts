@@ -65,7 +65,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       jazzPlugin({
-        appId: "bebop-playground",
+        appId: "bebop-tasks-playground",
         server: {
           jwksUrl: `${baseURL}/api/auth/jwks`,
           jwtIssuer: baseURL,

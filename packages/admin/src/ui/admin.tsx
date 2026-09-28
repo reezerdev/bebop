@@ -932,17 +932,20 @@ function initialValues(collection: BebopAdminCollection, row?: AdminRecord, defa
   return Object.fromEntries(collection.fields.map((field) => {
     const value = row ? valueFor(field, row) : defaults?.[field.name];
     if (field.kind === "boolean") return [field.name, Boolean(value)];
-    if (field.kind === "date") return [field.name, value instanceof Date ? localDateInput(value) : ""];
+    if (field.kind === "date") return [field.name, value instanceof Date ? localDateInput(value, field.admin?.date?.pickerAppearance === "dayAndTime") : ""];
     if (field.kind === "json") return [field.name, value === undefined || value === null ? "" : JSON.stringify(value, null, 2)];
     return [field.name, value === undefined || value === null ? "" : String(value)];
   }));
 }
 
-function localDateInput(value: Date): string {
+function localDateInput(value: Date, includeTime = false): string {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  if (!includeTime) return `${year}-${month}-${day}`;
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function serializeValues(collection: BebopAdminCollection, values: FieldValues): Record<string, unknown> {
@@ -951,7 +954,7 @@ function serializeValues(collection: BebopAdminCollection, values: FieldValues):
     if (field.kind === "boolean") return [[field.storageName, Boolean(raw)]];
     if (raw === "" || raw === undefined || raw === null) return field.required ? [] : [[field.storageName, null]];
     if (field.kind === "number" || field.kind === "integer") return [[field.storageName, Number(raw)]];
-    if (field.kind === "date") return [[field.storageName, new Date(`${String(raw)}T00:00:00`)]];
+    if (field.kind === "date") return [[field.storageName, new Date(field.admin?.date?.pickerAppearance === "dayAndTime" ? String(raw) : `${String(raw)}T00:00:00`)]];
     if (field.kind === "json") return [[field.storageName, JSON.parse(String(raw))]];
     return [[field.storageName, raw]];
   }));
@@ -1031,7 +1034,10 @@ function FieldInput({
   if (field.kind === "json") {
     return <Textarea id={`field-${field.name}`} rows={7} className="font-mono text-xs" placeholder="{}" {...registration} />;
   }
-  const type = field.kind === "date" ? "date" : field.kind === "number" || field.kind === "integer" ? "number" : "text";
+  if (field.kind === "text" && field.admin?.input === "textarea") {
+    return <Textarea id={`field-${field.name}`} rows={7} {...registration} />;
+  }
+  const type = field.kind === "date" ? field.admin?.date?.pickerAppearance === "dayAndTime" ? "datetime-local" : "date" : field.kind === "number" || field.kind === "integer" ? "number" : "text";
   return <Input id={`field-${field.name}`} type={type} step={field.kind === "integer" ? 1 : field.kind === "number" ? "any" : undefined} {...registration} />;
 }
 

@@ -4,7 +4,11 @@ export type FieldOptions = {
   name: string;
   label?: string;
   required?: boolean;
-  admin?: { position?: "main" | "sidebar" };
+  admin?: {
+    position?: "main" | "sidebar";
+    input?: "textarea";
+    date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
+  };
 };
 
 export type TextField = FieldOptions & { type: "text" };

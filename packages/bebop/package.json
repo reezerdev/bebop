@@ -1,12 +1,28 @@
 {
-  "name": "@bebop/core",
-  "private": true,
-  "version": "0.1.0",
+  "name": "@bebopdev/core",
+  "version": "0.1.0-beta.0",
+  "description": "Payload-style collection configuration and Jazz schema compilation for Bebop.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reezerdev/bebop.git",
+    "directory": "packages/bebop"
+  },
+  "homepage": "https://github.com/reezerdev/bebop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "peerDependencies": {
@@ -14,9 +30,12 @@
   },
   "devDependencies": {
     "jazz-tools": "2.0.0-alpha.57",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
     "test": "tsx --test test/*.test.ts"
   }
 }

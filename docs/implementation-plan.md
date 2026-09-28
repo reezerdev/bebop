@@ -4,7 +4,7 @@
 
 Build a TypeScript headless CMS whose collection configuration compiles to Jazz v2 tables, relations, and permissions. Bebop owns the developer-facing configuration, validation, lifecycle, and typed CRUD API; Jazz owns storage, queries, sync, and the final authorization decision for direct client operations.
 
-The first release is a useful CMS with a first-party admin interface, demonstrated by a small host app. The admin UI lives in `@bebop/admin`; the playground only integrates it.
+The first release is a useful CMS with a first-party admin interface, demonstrated by a small host app. The admin UI lives in `@bebopdev/admin`; the playground only integrates it.
 
 ## Ground rules
 
@@ -20,7 +20,7 @@ The first release is a useful CMS with a first-party admin interface, demonstrat
 ## Proposed public API
 
 ```ts
-import { defineConfig } from '@bebop/core'
+import { defineConfig } from '@bebopdev/core'
 
 export default defineConfig({
   collections: [
@@ -51,7 +51,7 @@ Collection slugs and select values retain literal types; `find`, `findById`, `cr
 | --- | --- | --- |
 | 0. Jazz feasibility spike | Pin one Jazz v2 alpha; build a minimal app with two related tables, row permissions, a local write, a rejected write, a backend request, and a schema change. | Confirm the supported DSL, type inference, durability waits, permission behavior, and migration workflow. Record any Jazz limitation that changes the design. |
 | 1. Config and compiler | Define collections and the first fields: text, number, integer, boolean, date, select, JSON, and single relation. Add config checks and deterministic generation of `bebop-generated-schema.ts`, Jazz's `schema.ts` entry point, `permissions.ts`, and a metadata manifest. | Example config generates valid Jazz artifacts; invalid relation targets, field names, or access expressions fail with useful diagnostics; generation is repeatable. |
-| 2. Admin UI package | Build `@bebop/admin` with shadcn/ui, a Payload-style dashboard, collection lists, and generated create/edit forms. Generate the admin manifest from config and mount the package at `/admin` in the playground. | Every supported field kind renders and persists; configured list columns/search fields work; the package ships its own CSS; direct `/admin` navigation works. |
+| 2. Admin UI package | Build `@bebopdev/admin` with shadcn/ui, a Payload-style dashboard, collection lists, and generated create/edit forms. Generate the admin manifest from config and mount the package at `/admin` in the playground. | Every supported field kind renders and persists; configured list columns/search fields work; the package ships its own CSS; direct `/admin` navigation works. |
 | 3. Typed headless API | Implement typed find/findById/create/update/delete, filtering, sort, and pagination over the generated Jazz app. Add direct-mode validation and a clear pending/accepted/rejected mutation result. | Type checks reject wrong collection fields; CRUD and relation queries work; offline direct writes reconcile or report authority rejection. |
 | 4. Security and command lifecycle | Compile a small access DSL for public, authenticated, owner, and row-field conditions. Add command-mode endpoint, authoritative validation, `beforeValidate`, `beforeChange`, `beforeDelete`, and durable effect dispatch. | Unauthorized read/write attempts fail in policy and API tests; direct writes to command collections fail; retries do not duplicate external effects. |
 | 5. Extensibility and release | Extend the starter `bebop` CLI with migration generation and plugin workflows. Add a minimal plugin contract for deterministic collection/field contributions and named hooks. Publish a runnable example and API documentation. | Two example plugins compose without collisions; a schema change produces a reviewed Jazz migration; a new developer can start and exercise the sample without editing generated files. |

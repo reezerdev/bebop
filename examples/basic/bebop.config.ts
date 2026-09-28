@@ -1,4 +1,4 @@
-import { defineConfig } from "@bebop/core";
+import { defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
   collections: [{

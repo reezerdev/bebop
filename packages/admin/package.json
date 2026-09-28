@@ -1,23 +1,45 @@
 {
-  "name": "@bebop/admin",
-  "private": true,
-  "version": "0.1.0",
+  "name": "@bebopdev/admin",
+  "version": "0.1.0-beta.0",
+  "description": "First-party React admin UI for Bebop collections on Jazz.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reezerdev/bebop.git",
+    "directory": "packages/admin"
+  },
+  "homepage": "https://github.com/reezerdev/bebop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.tsx",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./styles.css": "./dist/index.css"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && tsc -p tsconfig.types.json",
+    "prepack": "pnpm run build",
+    "check": "tsc --noEmit -p tsconfig.json",
     "dev": "vite build --watch"
   },
   "peerDependencies": {
     "react": ">=19",
     "react-dom": ">=19",
-    "react-router-dom": ">=6"
+    "react-router-dom": ">=6",
+    "jazz-tools": "2.0.0-alpha.57"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -25,11 +47,11 @@
     "@fontsource-variable/playfair-display": "^5.3.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
-    "jazz-tools": "2.0.0-alpha.57",
     "lucide-react": "^0.468.0",
     "react-hook-form": "^7.89.0"
   },
   "devDependencies": {
+    "jazz-tools": "2.0.0-alpha.57",
     "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

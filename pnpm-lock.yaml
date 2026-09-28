@@ -172,10 +172,10 @@ importers:
 
   apps/playground:
     dependencies:
-      '@bebop/admin':
+      '@bebopdev/admin':
         specifier: workspace:*
         version: link:../../packages/admin
-      '@bebop/core':
+      '@bebopdev/core':
         specifier: workspace:*
         version: link:../../packages/bebop
       better-auth:
@@ -197,7 +197,7 @@ importers:
         specifier: ^7.18.4
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
-      '@bebop/cli':
+      '@bebopdev/cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/react':
@@ -224,10 +224,10 @@ importers:
 
   examples/basic:
     dependencies:
-      '@bebop/admin':
+      '@bebopdev/admin':
         specifier: workspace:*
         version: link:../../packages/admin
-      '@bebop/core':
+      '@bebopdev/core':
         specifier: workspace:*
         version: link:../../packages/bebop
       jazz-tools:
@@ -243,7 +243,7 @@ importers:
         specifier: ^7.18.4
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
-      '@bebop/cli':
+      '@bebopdev/cli':
         specifier: workspace:*
         version: link:../../packages/cli
       '@types/react':
@@ -279,9 +279,6 @@ importers:
       cn:
         specifier: ^0.4.0
         version: 0.4.0
-      jazz-tools:
-        specifier: 2.0.0-alpha.57
-        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.3.0)
@@ -310,6 +307,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.1
         version: 6.1.1(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      jazz-tools:
+        specifier: 2.0.0-alpha.57
+        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       shadcn:
         specifier: ^4.21.0
         version: 4.21.0(typescript@5.9.3)
@@ -334,10 +334,13 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/cli:
     dependencies:
-      '@bebop/core':
+      '@bebopdev/core':
         specifier: workspace:*
         version: link:../bebop
       tsx:

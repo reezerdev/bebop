@@ -45,7 +45,7 @@ test("bebop dev regenerates when an imported collection module changes", { timeo
   const config = path.join(directory, "bebop.config.ts");
   const fields = path.join(directory, "fields.ts");
   const generated = path.join(directory, "generated", "bebop-generated-schema.ts");
-  await writeFile(config, 'import { defineConfig } from "@bebop/core";\nimport { fields } from "./fields.js";\nexport default defineConfig({ collections: [{ slug: "posts", fields }] });\n');
+  await writeFile(config, 'import { defineConfig } from "@bebopdev/core";\nimport { fields } from "./fields.js";\nexport default defineConfig({ collections: [{ slug: "posts", fields }] });\n');
   await writeFile(fields, 'export const fields = [{ name: "title", type: "text" }];\n');
 
   const child = spawn(process.execPath, [

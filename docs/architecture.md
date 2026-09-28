@@ -3,15 +3,15 @@
 ## Current boundaries
 
 ```text
-bebop.config.ts ──> @bebop/core compiler ──> Jazz schema and permissions
+bebop.config.ts ──> @bebopdev/core compiler ──> Jazz schema and permissions
                                       ├────> admin manifest
                                       └────> typed client factory
 
-host app ──> auth, router, JazzProvider ──> @bebop/admin
+host app ──> auth, router, JazzProvider ──> @bebopdev/admin
                                      └────> shared Bebop client ──> Jazz
 ```
 
-The config is the only collection definition. The CLI normalizes and validates it once per generation and emits the schema, permissions, admin manifest, and client factory. `@bebop/core` owns that compiler and the collection client. `@bebop/admin` owns its screens, components, and scoped CSS. The playground is an integration host and keeps `/` separate from `/admin`.
+The config is the only collection definition. The CLI normalizes and validates it once per generation and emits the schema, permissions, admin manifest, and client factory. `@bebopdev/core` owns that compiler and the collection client. `@bebopdev/admin` owns its screens, components, and scoped CSS. The playground is an integration host and keeps `/` separate from `/admin`.
 
 This follows Payload's useful separation between collection config, generated metadata, and a first-party admin, while keeping Jazz's sync and permission model explicit. The package boundary matters more than splitting the current small codebase into more packages.
 
@@ -27,4 +27,4 @@ Collection lists query only the current row page, but read IDs for the total cou
 
 Current hooks run in the browser and can run offline. They are suitable for local transformations and interface behavior. They cannot be trusted for authoritative validation or external side effects. A future command collection mode should deny direct client writes in Jazz, verify the caller at a backend boundary, run validation and hooks there, await global acceptance, and dispatch external effects through an idempotent outbox. The project should implement and test that whole path together rather than expose a command setting before it is secure.
 
-Jazz is pinned to `2.0.0-alpha.57`. For a schema change, regenerate artifacts, run `pnpm --filter @bebop/playground exec bebop validate`, and review the Jazz migration before merging. Keep generated files in sync with their source config.
+Jazz is pinned to `2.0.0-alpha.57`. For a schema change, regenerate artifacts, run `pnpm --filter @bebopdev/playground exec bebop validate`, and review the Jazz migration before merging. Keep generated files in sync with their source config.

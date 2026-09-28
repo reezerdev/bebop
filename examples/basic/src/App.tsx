@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDb, useAll } from "jazz-tools/react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
-import { BebopAdmin } from "@bebop/admin";
+import { BebopAdmin } from "@bebopdev/admin";
 import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";

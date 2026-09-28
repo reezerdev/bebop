@@ -4,7 +4,7 @@ import { betterAuth as jazzBetterAuth, JazzProvider, useJazzAuth } from "jazz-to
 import { BrowserRouter } from "react-router-dom";
 import { authClient } from "../auth-client.ts";
 import { App } from "./App.tsx";
-import "@bebop/admin/styles.css";
+import "@bebopdev/admin/styles.css";
 import "./index.css";
 
 function AuthPanel() {

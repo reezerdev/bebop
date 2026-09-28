@@ -1,5 +1,5 @@
 {
-  "name": "@bebop/example-basic",
+  "name": "@bebopdev/example-basic",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,15 +10,15 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@bebop/admin": "workspace:*",
-    "@bebop/core": "workspace:*",
+    "@bebopdev/admin": "workspace:*",
+    "@bebopdev/core": "workspace:*",
     "jazz-tools": "2.0.0-alpha.57",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@bebop/cli": "workspace:*",
+    "@bebopdev/cli": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

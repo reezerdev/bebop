@@ -25,6 +25,17 @@ export type RelationshipField = FieldOptions & {
   type: "relationship";
   relationTo: string;
 };
+export type JoinField = {
+  name: string;
+  label?: string;
+  type: "join";
+  collection: string;
+  on: string;
+  admin?: {
+    defaultColumns?: readonly string[];
+    allowCreate?: boolean;
+  };
+};
 
 export type FieldDefinition =
   | TextField
@@ -33,7 +44,8 @@ export type FieldDefinition =
   | DateField
   | JsonField
   | SelectField
-  | RelationshipField;
+  | RelationshipField
+  | JoinField;
 
 export type Fields = readonly FieldDefinition[];
 
@@ -51,7 +63,9 @@ type FieldValue<TField> = TField extends { type: "select"; options: readonly (in
           ? Date
           : unknown;
 
-type StoredFieldName<TField> = TField extends { type: "relationship"; name: infer TName extends string }
+type StoredFieldName<TField> = TField extends { type: "join" }
+  ? never
+  : TField extends { type: "relationship"; name: infer TName extends string }
   ? `${TName}Id`
   : TField extends { name: infer TName extends string }
     ? TName

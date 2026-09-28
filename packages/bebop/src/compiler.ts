@@ -1,8 +1,10 @@
-import type { BebopConfig, FieldDefinition } from "./bebop.ts";
+import type { BebopConfig, FieldDefinition, FieldOptions, Fields } from "./bebop.ts";
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-function fieldKind(field: FieldDefinition) {
+type StoredFieldKind = Exclude<FieldDefinition["type"], "join" | "relationship" | "checkbox"> | "relation" | "boolean" | "integer";
+
+function fieldKind(field: Exclude<FieldDefinition, { type: "join" }>): StoredFieldKind {
   if (field.type === "relationship") return "relation" as const;
   if (field.type === "checkbox") return "boolean" as const;
   if (field.type === "number" && field.integer) return "integer" as const;
@@ -21,21 +23,35 @@ export function normalizeConfig(config: BebopConfig) {
       const name = definition.slug;
       const pluralLabel = definition.labels?.plural ?? definition.admin?.label ?? humanize(name);
       const singularLabel = definition.labels?.singular ?? singularize(pluralLabel);
-      const fields = definition.fields.map((field) => ({
-        name: field.name,
-        storageName: field.type === "relationship" ? `${field.name}Id` : field.name,
-        label: field.label ?? humanize(field.name),
-        kind: fieldKind(field),
-        required: Boolean(field.required),
-        definition: field,
-        ...(field.admin ? { admin: field.admin } : {}),
-        ...(field.type === "select" ? { options: field.options.map(selectOptionValue) } : {}),
-        ...(field.type === "select" && field.options.some((option) => typeof option !== "string")
-          ? { optionLabels: Object.fromEntries(field.options.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
-          : {}),
-        ...(field.type === "relationship" ? { relationTo: field.relationTo } : {}),
-      }));
-      const fieldNames = fields.map((field) => field.name);
+      const fields = definition.fields.map((field) => {
+        if (field.type === "join") {
+          return {
+            name: field.name,
+            label: field.label ?? humanize(field.name),
+            kind: "join" as const,
+            required: false,
+            collection: field.collection,
+            on: field.on,
+            ...(field.admin ? { admin: field.admin } : {}),
+          };
+        }
+        return {
+          name: field.name,
+          storageName: field.type === "relationship" ? `${field.name}Id` : field.name,
+          label: field.label ?? humanize(field.name),
+          kind: fieldKind(field),
+          required: Boolean(field.required),
+          definition: field,
+          ...(field.admin ? { admin: field.admin } : {}),
+          ...(field.type === "select" ? { options: field.options.map(selectOptionValue) } : {}),
+          ...(field.type === "select" && field.options.some((option) => typeof option !== "string")
+            ? { optionLabels: Object.fromEntries(field.options.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
+            : {}),
+          ...(field.type === "relationship" ? { relationTo: field.relationTo } : {}),
+        };
+      });
+      const storedFields = fields.filter((field) => field.kind !== "join");
+      const fieldNames = storedFields.map((field) => field.name);
       const useAsTitle = definition.admin?.useAsTitle ?? (fieldNames.includes("title") ? "title" : undefined);
       return {
         name,
@@ -65,6 +81,12 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
     const relations: string[] = [];
 
     for (const field of collection.fields) {
+      if (field.kind === "join") {
+        relations.push(
+          `${JSON.stringify(field.name)}: s.reverse(${JSON.stringify(field.collection)}, ${JSON.stringify(field.on)})`,
+        );
+        continue;
+      }
       if (field.kind === "relation") {
         const columnName = field.storageName;
         const optional = field.required ? "" : ".optional()";
@@ -76,7 +98,7 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
       }
 
       columns.push(
-        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { type: "relationship" }>)}${field.required ? "" : ".optional()"}`,
+        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { type: "relationship" | "join" }>)}${field.required ? "" : ".optional()"}`,
       );
     }
 
@@ -98,13 +120,27 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
 function compileAdminManifestFromModel(model: NormalizedConfig): string {
   const collections = model.collections.map((collection) => {
     const { labels, timestamps, useAsTitle, defaultColumns, listSearchableFields } = collection.admin;
-    const fields = collection.fields.map(({ name, storageName, label: fieldLabel, kind, required, ...rest }) => ({
-      name, storageName, label: fieldLabel, kind, required,
-      ...(rest.admin ? { admin: rest.admin } : {}),
-      ...(rest.options ? { options: rest.options } : {}),
-      ...(rest.optionLabels ? { optionLabels: rest.optionLabels } : {}),
-      ...(rest.relationTo ? { relationTo: rest.relationTo } : {}),
-    }));
+    const fields = collection.fields.map((field) => field.kind === "join"
+      ? {
+          name: field.name,
+          label: field.label,
+          kind: field.kind,
+          required: false,
+          collection: field.collection,
+          on: field.on,
+          ...(field.admin ? { admin: field.admin } : {}),
+        }
+      : {
+          name: field.name,
+          storageName: field.storageName,
+          label: field.label,
+          kind: field.kind,
+          required: field.required,
+          ...(field.admin ? { admin: field.admin } : {}),
+          ...("options" in field && field.options ? { options: field.options } : {}),
+          ...("optionLabels" in field && field.optionLabels ? { optionLabels: field.optionLabels } : {}),
+          ...("relationTo" in field && field.relationTo ? { relationTo: field.relationTo } : {}),
+        });
     return [collection.name, {
       slug: collection.name,
       labels,
@@ -155,7 +191,7 @@ function compilePermissionsFromModel(
     ? 'import { permissions as betterAuthPermissions } from "./schema-better-auth/schema.js";\n'
     : "";
   const configImport = hasAccessCallbacks
-    ? `import bebopConfig from ${JSON.stringify(configModuleSpecifier)};\nimport type { CollectionDefinition } from "@bebop/core";\n`
+    ? `import bebopConfig from ${JSON.stringify(configModuleSpecifier)};\nimport type { CollectionDefinition } from "@bebopdev/core";\n`
     : "";
   const existsHelper = hasAccessCallbacks
     ? `\n  const exists = (collectionName: string, condition: Record<string, unknown>) => {\n` +
@@ -193,10 +229,10 @@ export function compileArtifacts(config: BebopConfig, configModuleSpecifier = ".
 }
 
 export function compileClientFactory(configModuleSpecifier = "./bebop.config.js"): string {
-  return `// Generated from bebop.config.ts. Do not edit this file.\nimport { createBebopClient as createClient } from "@bebop/core";\nimport type { Db } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\nimport bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\nexport function createBebopClient(db: Db) {\n  return createClient({ app, config: bebopConfig, db });\n}\n`;
+  return `// Generated from bebop.config.ts. Do not edit this file.\nimport { createBebopClient as createClient } from "@bebopdev/core";\nimport type { Db } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\nimport bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\nexport function createBebopClient(db: Db) {\n  return createClient({ app, config: bebopConfig, db });\n}\n`;
 }
 
-function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship" }>): string {
+function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship" | "join" }>): string {
   switch (field.type) {
     case "text":
       return "s.string()";
@@ -218,7 +254,8 @@ function validateConfig(config: BebopConfig): void {
     throw new Error("Bebop config must define at least one collection.");
   }
 
-  const collectionNames = config.collections.map((collection) => collection.slug);
+  const collections = config.collections as BebopConfig["collections"];
+  const collectionNames = collections.map((collection) => collection.slug);
 
   if (config.auth && config.auth.provider !== "better-auth") {
     throw new Error(`Unsupported authentication provider "${config.auth.provider}".`);
@@ -228,7 +265,7 @@ function validateConfig(config: BebopConfig): void {
     throw new Error("Collection slugs must be unique.");
   }
 
-  for (const definition of config.collections) {
+  for (const definition of collections) {
     const collectionName = definition.slug;
     if (!namePattern.test(collectionName)) {
       throw new Error(`Invalid collection name "${collectionName}". Use letters, numbers, and underscores.`);
@@ -243,6 +280,7 @@ function validateConfig(config: BebopConfig): void {
     if (!Array.isArray(definition.fields) || definition.fields.length === 0) {
       throw new Error(`Collection "${collectionName}" must define at least one field.`);
     }
+    const fields = definition.fields as Fields;
 
     if (definition.timestamps === false) {
       throw new Error(
@@ -280,9 +318,9 @@ function validateConfig(config: BebopConfig): void {
 
     const storedNames = new Set<string>(["id"]);
     const fieldNames = new Set<string>();
-    for (const field of definition.fields) {
+    for (const field of fields) {
       const fieldName = field.name;
-      if (!["text", "number", "checkbox", "date", "json", "select", "relationship"].includes(field.type)) {
+      if (!["text", "number", "checkbox", "date", "json", "select", "relationship", "join"].includes(field.type)) {
         throw new Error(`Unsupported field type "${field.type}" in collection "${collectionName}".`);
       }
       if (!namePattern.test(fieldName) || fieldName === "id") {
@@ -298,14 +336,45 @@ function validateConfig(config: BebopConfig): void {
       }
       fieldNames.add(fieldName);
 
-      const storageName = field.type === "relationship" ? `${fieldName}Id` : fieldName;
-      if (storedNames.has(storageName)) {
-        throw new Error(`Field "${fieldName}" conflicts with another stored field in "${collectionName}".`);
+      if (field.type !== "join") {
+        const storageName = field.type === "relationship" ? `${fieldName}Id` : fieldName;
+        if (storedNames.has(storageName)) {
+          throw new Error(`Field "${fieldName}" conflicts with another stored field in "${collectionName}".`);
+        }
+        storedNames.add(storageName);
       }
-      storedNames.add(storageName);
 
       if (field.type === "relationship" && !collectionNames.includes(field.relationTo) && !(config.auth?.provider === "better-auth" && field.relationTo === "better_auth_user")) {
         throw new Error(`Relation "${collectionName}.${fieldName}" targets unknown collection "${field.relationTo}".`);
+      }
+
+      if (field.type === "join") {
+        const target = collections.find((candidate) => candidate.slug === field.collection);
+        if (!target) {
+          throw new Error(`Join field "${collectionName}.${fieldName}" targets unknown collection "${field.collection}".`);
+        }
+        const relationship = target.fields.find((candidate) => candidate.name === field.on);
+        if (!relationship) {
+          throw new Error(`Join field "${collectionName}.${fieldName}" references missing field "${field.collection}.${field.on}".`);
+        }
+        if (relationship.type !== "relationship") {
+          throw new Error(`Join field "${collectionName}.${fieldName}" on field "${field.collection}.${field.on}" must be a relationship.`);
+        }
+        if (relationship.relationTo !== collectionName) {
+          throw new Error(`Join field "${collectionName}.${fieldName}" on field "${field.collection}.${field.on}" must relate to "${collectionName}".`);
+        }
+        if (field.label !== undefined && !field.label.trim()) {
+          throw new Error(`Field "${collectionName}.${fieldName}" label cannot be empty.`);
+        }
+        for (const column of field.admin?.defaultColumns ?? []) {
+          const columnField = target.fields.find((candidate) => candidate.name === column);
+          if (!columnField || columnField.type === "join") {
+            throw new Error(`Join field "${collectionName}.${fieldName}" admin.defaultColumns references unknown stored field "${column}" in "${field.collection}".`);
+          }
+        }
+        if (field.admin?.allowCreate !== undefined && typeof field.admin.allowCreate !== "boolean") {
+          throw new Error(`Join field "${collectionName}.${fieldName}" admin.allowCreate must be a boolean.`);
+        }
       }
 
       if (field.type === "select") {
@@ -320,14 +389,17 @@ function validateConfig(config: BebopConfig): void {
           throw new Error(`Select field "${collectionName}.${fieldName}" must have non-empty option labels.`);
         }
       }
-      if (field.admin?.position !== undefined && field.admin.position !== "main" && field.admin.position !== "sidebar") {
-        throw new Error(`Field "${collectionName}.${fieldName}" admin.position must be "main" or "sidebar".`);
-      }
-      if (field.admin?.input !== undefined && (field.type !== "text" || field.admin.input !== "textarea")) {
-        throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
-      }
-      if (field.admin?.date !== undefined && (field.type !== "date" || !["dayOnly", "dayAndTime", undefined].includes(field.admin.date.pickerAppearance))) {
-        throw new Error(`Field "${collectionName}.${fieldName}" admin.date must configure a date field.`);
+      if (field.type !== "join") {
+        const fieldAdmin = field.admin as FieldOptions["admin"] | undefined;
+        if (fieldAdmin?.position !== undefined && fieldAdmin.position !== "main" && fieldAdmin.position !== "sidebar") {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.position must be "main" or "sidebar".`);
+        }
+        if (fieldAdmin?.input !== undefined && (field.type !== "text" || fieldAdmin.input !== "textarea")) {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
+        }
+        if (fieldAdmin?.date !== undefined && (field.type !== "date" || !["dayOnly", "dayAndTime", undefined].includes(fieldAdmin.date.pickerAppearance))) {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.date must configure a date field.`);
+        }
       }
     }
 
@@ -336,6 +408,9 @@ function validateConfig(config: BebopConfig): void {
       throw new Error(`Collection "${collectionName}" admin.useAsTitle references unknown field "${adminOptions.useAsTitle}".`);
     }
     for (const fieldName of adminOptions?.defaultColumns ?? []) {
+      if (fields.find((field) => field.name === fieldName)?.type === "join") {
+        throw new Error(`Collection "${collectionName}" admin.defaultColumns cannot include virtual join field "${fieldName}".`);
+      }
       if (!fieldNames.has(fieldName)) {
         throw new Error(`Collection "${collectionName}" admin.defaultColumns references unknown field "${fieldName}".`);
       }
@@ -344,7 +419,7 @@ function validateConfig(config: BebopConfig): void {
       if (!fieldNames.has(fieldName)) {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields references unknown field "${fieldName}".`);
       }
-      if (definition.fields.find((field: FieldDefinition) => field.name === fieldName)?.type !== "text") {
+      if (fields.find((field: FieldDefinition) => field.name === fieldName)?.type !== "text") {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields field "${fieldName}" must be text.`);
       }
     }

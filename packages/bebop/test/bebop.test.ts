@@ -163,6 +163,72 @@ test("Payload-style field objects keep the supported Jazz storage types", () => 
   assert.match(manifest, /"optionLabels": \{\s*"draft": "Draft"\s*\}/);
 });
 
+test("join fields compile as virtual Jazz reverse relations and manifest metadata", () => {
+  const config = defineConfig({
+    collections: [
+      {
+        slug: "workspaces",
+        fields: [
+          { name: "name", type: "text", required: true },
+          { name: "members", label: "Members", type: "join", collection: "workspaceMemberships", on: "workspace", admin: { defaultColumns: ["user", "role"], allowCreate: false } },
+        ],
+        admin: { defaultColumns: ["name"] },
+      },
+      {
+        slug: "workspaceMemberships",
+        fields: [
+          { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
+          { name: "user", type: "text", required: true },
+          { name: "role", type: "text" },
+        ],
+      },
+    ],
+  });
+
+  const schema = compileSchema(config);
+  const manifest = compileAdminManifest(config);
+  assert.equal(schema, compileSchema(config));
+  assert.equal(manifest, compileAdminManifest(config));
+  assert.match(schema, /"members": s\.reverse\("workspaceMemberships", "workspace"\)/);
+  assert.doesNotMatch(schema, /"members": s\.(?:string|uuid|timestamp|json|int|float|boolean|enum)/);
+  assert.match(manifest, /"kind": "join"/);
+  assert.match(manifest, /"collection": "workspaceMemberships"/);
+  assert.match(manifest, /"on": "workspace"/);
+  assert.match(manifest, /"defaultColumns": \[\s*"user",\s*"role"\s*\]/);
+  assert.match(manifest, /"allowCreate": false/);
+});
+
+test("join fields require a direct relationship back to the declaring collection", () => {
+  const base = {
+    slug: "workspaces",
+    fields: [{ name: "name", type: "text" }, { name: "members", type: "join", collection: "memberships", on: "workspace" }],
+  } as const;
+  const compileWithTarget = (target: { slug: string; fields: readonly { name: string; type: string; relationTo?: string }[] }) =>
+    compileSchema(defineConfig({ collections: [base, target] as never }));
+
+  assert.throws(() => compileWithTarget({ slug: "other", fields: [{ name: "workspace", type: "relationship", relationTo: "workspaces" }] }), /targets unknown collection "memberships"/);
+  assert.throws(() => compileWithTarget({ slug: "memberships", fields: [{ name: "other", type: "relationship", relationTo: "workspaces" }] }), /references missing field "memberships.workspace"/);
+  assert.throws(() => compileWithTarget({ slug: "memberships", fields: [{ name: "workspace", type: "text" }] }), /must be a relationship/);
+  assert.throws(() => compileWithTarget({ slug: "memberships", fields: [{ name: "workspace", type: "relationship", relationTo: "other" }] }), /must relate to "workspaces"/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { ...base, fields: [{ name: "name", type: "text" }, { name: "members", type: "join", collection: "memberships", on: "workspace", admin: { defaultColumns: ["missing"] } }] },
+    { slug: "memberships", fields: [{ name: "workspace", type: "relationship", relationTo: "workspaces" }] },
+  ] as never })), /admin\.defaultColumns references unknown stored field "missing"/);
+});
+
+test("join fields are rejected as runtime mutation data", async () => {
+  const config = defineConfig({ collections: [
+    { slug: "workspaces", fields: [{ name: "name", type: "text", required: true }, { name: "members", type: "join", collection: "workspaceMemberships", on: "workspace" }] },
+    { slug: "workspaceMemberships", fields: [{ name: "workspace", type: "relationship", relationTo: "workspaces", required: true }] },
+  ] });
+  const fake = createFakeDb();
+  const client = createBebopClient({ app: { workspaces: fake.app.posts, workspaceMemberships: fake.app.posts } as never, config, db: fake.db });
+  await assert.rejects(
+    () => client.workspaces.create({ name: "Bebop", members: [] } as never),
+    /Unknown workspaces write field "members"/,
+  );
+});
+
 test("field arrays reject duplicate names and invalid admin references", () => {
   assert.throws(() => compileSchema(defineConfig({ collections: [{
     slug: "posts",

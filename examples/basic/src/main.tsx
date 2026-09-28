@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { JazzProvider } from "jazz-tools/react";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App.js";
-import "@bebop/admin/styles.css";
+import "@bebopdev/admin/styles.css";
 import "./style.css";
 
 createRoot(document.getElementById("root")!).render(

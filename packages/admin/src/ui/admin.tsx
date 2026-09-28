@@ -26,9 +26,10 @@ import {
   useNavigate,
   useOutletContext,
   useParams,
+  useSearchParams,
   useRoutes,
 } from "react-router-dom";
-import type { BebopAdminCollection, BebopAdminField, BebopAdminManifest } from "../types.js";
+import type { BebopAdminCollection, BebopAdminField, BebopAdminJoinField, BebopAdminManifest, BebopAdminStoredField } from "../types.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
 import { Input } from "../components/ui/input.js";
@@ -133,7 +134,7 @@ function formatLabel(value: string): string {
 }
 
 function selectLabel(field: BebopAdminField, value: string): string {
-  return field.optionLabels?.[value] ?? formatLabel(value);
+  return ("optionLabels" in field ? field.optionLabels?.[value] : undefined) ?? formatLabel(value);
 }
 
 function formatCell(field: BebopAdminField | undefined, value: unknown, relationOptions?: BebopAdminProps["relationOptions"]): ReactNode {
@@ -150,7 +151,7 @@ function formatCell(field: BebopAdminField | undefined, value: unknown, relation
 }
 
 function valueFor(field: BebopAdminField, row: AdminRecord): unknown {
-  return row[field.storageName];
+  return field.kind === "join" ? undefined : row[field.storageName];
 }
 
 function fieldByName(collection: BebopAdminCollection, name: string): BebopAdminField | undefined {
@@ -161,21 +162,28 @@ function humanize(value: string): string {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
 }
 
+function storedFields(collection: BebopAdminCollection) {
+  return collection.fields.filter((field) => field.kind !== "join");
+}
+
 function useAdminRows(client: BebopAdminClient, collectionSlug: string, options: {
   where: Record<string, unknown>;
   sort: { field: string; direction: "asc" | "desc" };
-  page: number;
-  pageSize: number;
+  page?: number;
+  pageSize?: number;
   searchActive: boolean;
+  enabled?: boolean;
 }) {
   const operations = getMutations(client, collectionSlug);
-  const query = operations?.query({
+  const query = options.enabled === false ? undefined : operations?.query({
     where: options.where,
     orderBy: options.sort,
     includeTimestamps: true,
-    ...(!options.searchActive ? { limit: options.pageSize, offset: (options.page - 1) * options.pageSize } : {}),
+    ...(!options.searchActive && options.pageSize !== undefined
+      ? { limit: options.pageSize, offset: ((options.page ?? 1) - 1) * options.pageSize }
+      : {}),
   });
-  const idsQuery = options.searchActive ? undefined : operations?.queryIds({ where: options.where });
+  const idsQuery = options.enabled === false || options.searchActive ? undefined : operations?.queryIds({ where: options.where });
   const rows = useAll<AdminRecord>(query);
   const ids = useAll<{ id: string }>(idsQuery);
   return { rows, ids };
@@ -433,11 +441,11 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => collection.defaultColumns.length
     ? [...collection.defaultColumns]
-    : collection.fields.slice(0, 4).map((field) => field.name));
+    : storedFields(collection).slice(0, 4).map((field) => field.name));
   const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
   const [deleteError, setDeleteError] = useState<string>();
   const [operationError, setOperationError] = useState<string>();
-  const filterFields = collection.fields.filter((field) => field.kind === "boolean" || field.kind === "select");
+  const filterFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind === "boolean" || field.kind === "select");
   const filterWhere = useMemo(() => Object.fromEntries(filterFields.flatMap((field) => {
     const value = filters[field.name];
     if (!value) return [];
@@ -446,7 +454,9 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const searchActive = Boolean(search.trim());
   const sortField = fieldByName(collection, sort.field);
   const defaultSortField = fieldByName(collection, collection.defaultColumns[0] ?? "");
-  const storedSortField = sortField?.storageName ?? (sort.field === "id" ? "id" : defaultSortField?.storageName ?? "id");
+  const storedSortField = sortField && sortField.kind !== "join"
+    ? sortField.storageName
+    : sort.field === "id" ? "id" : defaultSortField?.kind !== "join" ? defaultSortField?.storageName ?? "id" : "id";
   const { rows: rowResult, ids: idResult } = useAdminRows(client, collection.slug, {
     where: filterWhere,
     sort: { field: storedSortField, direction: sort.direction },
@@ -456,7 +466,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const rows = data ?? [];
   const readPermissions = useRowReadPermissions(db, table, rows);
   const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
-  const allColumns = collection.fields.map((field) => field.name);
+  const allColumns = storedFields(collection).map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -508,7 +518,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   useEffect(() => {
     const defaults = collection.defaultColumns.length
       ? [...collection.defaultColumns]
-      : collection.fields.slice(0, 4).map((field) => field.name);
+      : storedFields(collection).slice(0, 4).map((field) => field.name);
     setVisibleColumns(defaults);
     setSort({ field: defaults[0] ?? "id", direction: "asc" });
     setSelectedIds(new Set());
@@ -778,12 +788,41 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
 
 function EditorRoute({ app, client, manifest, createDefaults, relationOptions }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "relationOptions">) {
   const { collectionSlug = "", id } = useParams();
+  const [searchParams] = useSearchParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} relationOptions={relationOptions} />;
+  const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
+  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} joinContext={joinContext} relationOptions={relationOptions} />;
 }
 
-function DocumentEditor({ app, client, manifest, collection, id, createDefaults, relationOptions }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; relationOptions?: BebopAdminProps["relationOptions"] }) {
+type JoinNavigationContext = {
+  sourceSlug: string;
+  parentId: string;
+  returnTo: string;
+  relationship: BebopAdminStoredField;
+};
+
+function resolveJoinContext(manifest: BebopAdminManifest, targetSlug: string, params: URLSearchParams): JoinNavigationContext | undefined {
+  const parentId = params.get("bebopParent");
+  const [sourceSlug, joinName, ...rest] = (params.get("bebopJoin") ?? "").split(".");
+  if (!parentId || !sourceSlug || !joinName || rest.length) return undefined;
+  const source = manifest.collections[sourceSlug];
+  const target = manifest.collections[targetSlug];
+  const join = source?.fields.find((field): field is BebopAdminJoinField => field.kind === "join" && field.name === joinName);
+  if (!source || !target || !join || join.collection !== targetSlug) return undefined;
+  const relationship = target.fields.find((field): field is BebopAdminStoredField =>
+    field.kind === "relation" && field.name === join.on && field.relationTo === sourceSlug,
+  );
+  if (!relationship) return undefined;
+  return {
+    sourceSlug,
+    parentId,
+    relationship,
+    returnTo: `/admin/collections/${sourceSlug}/${encodeURIComponent(parentId)}`,
+  };
+}
+
+function DocumentEditor({ app, client, manifest, collection, id, createDefaults, joinContext, relationOptions }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
@@ -791,12 +830,19 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const table = getTable(app, collection.slug);
   const documentQuery = id ? getMutations(client, collection.slug)?.query({ where: { id }, includeTimestamps: true }) : undefined;
   const { data: existing, isLoading, error } = useOne<AdminRecord>(documentQuery);
-  const form = useForm<FieldValues>({ defaultValues: id ? {} : initialValues(collection, undefined, createDefaults) });
+  const createFieldDefaults = useMemo(() => ({
+    ...createDefaults,
+    ...(joinContext && !id ? { [joinContext.relationship.name]: joinContext.parentId } : {}),
+  }), [createDefaults, id, joinContext]);
+  const form = useForm<FieldValues>({ defaultValues: id ? {} : initialValues(collection, undefined, createFieldDefaults) });
   const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting, isDirty, dirtyFields } } = form;
   const [permissionAdvice, setPermissionAdvice] = useState<PermissionAdvice>("unknown");
   const [readAdvice, setReadAdvice] = useState<PermissionAdvice>("unknown");
   const [saveError, setSaveError] = useState<string>();
   const [saveApplied, setSaveApplied] = useState(false);
+  const joinReturnPath = joinContext && (!id || existing?.[joinContext.relationship.storageName] === joinContext.parentId)
+    ? joinContext.returnTo
+    : undefined;
   const watchedValues = form.watch();
   const serializedValues = useMemo(() => serializeValues(collection, watchedValues), [collection, watchedValues]);
   const serializedValuesKey = JSON.stringify(serializedValues);
@@ -807,8 +853,13 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const title = titleValue !== undefined && titleValue !== null && String(titleValue).trim()
     ? String(titleValue)
     : id ? `Untitled ${collection.labels.singular.toLocaleLowerCase()}` : `New ${collection.labels.singular}`;
-  const mainFields = collection.fields.filter((field) => field.admin?.position !== "sidebar");
-  const sidebarFields = collection.fields.filter((field) => field.admin?.position === "sidebar");
+  const savedParentTitle = titleField && existing ? valueFor(titleField, existing) : undefined;
+  const parentLabel = savedParentTitle !== undefined && savedParentTitle !== null && String(savedParentTitle).trim()
+    ? String(savedParentTitle)
+    : id ?? "";
+  const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && field.admin?.position !== "sidebar");
+  const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && field.admin?.position === "sidebar");
+  const joinFields = collection.fields.filter((field): field is BebopAdminJoinField => field.kind === "join");
 
   useEffect(() => { setDocumentBreadcrumb(id ? title : undefined); }, [id, setDocumentBreadcrumb, title]);
 
@@ -817,14 +868,14 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   }, [collection, existing, reset]);
 
   useEffect(() => {
-    if (id || !createDefaults) return;
-    const defaults = initialValues(collection, undefined, createDefaults);
-    for (const field of collection.fields) {
-      if (Object.hasOwn(createDefaults, field.name) && !dirtyFields[field.name]) {
+    if (id || !createFieldDefaults) return;
+    const defaults = initialValues(collection, undefined, createFieldDefaults);
+    for (const field of storedFields(collection)) {
+      if (Object.hasOwn(createFieldDefaults, field.name) && !dirtyFields[field.name]) {
         setValue(field.name, defaults[field.name], { shouldDirty: false });
       }
     }
-  }, [collection, createDefaults, dirtyFields, id, setValue]);
+  }, [collection, createFieldDefaults, dirtyFields, id, setValue]);
 
   useEffect(() => {
     let active = true;
@@ -880,14 +931,22 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       if (advice === "denied") throw new Error("Your current session cannot save this document.");
       const operations = getMutations(client, collection.slug);
       if (!operations) throw new Error("The Bebop mutation client is missing this collection.");
-      if (id) await operations.update(id, document);
-      else await operations.create(document);
+      const result = id
+        ? await operations.update(id, document)
+        : await operations.create(document);
+      const resultDoc = (result as { doc?: AdminRecord } | undefined)?.doc;
       toast.add({
         type: "success",
         title: `${collection.labels.singular} ${id ? "updated" : "created"} locally`,
         description: "Jazz sync may still be pending.",
       });
-      navigate(`/admin/collections/${collection.slug}`);
+      if (joinReturnPath && joinContext && resultDoc?.[joinContext.relationship.storageName] === joinContext.parentId) {
+        navigate(joinReturnPath);
+      } else if (!id && joinFields.length > 0 && resultDoc?.id) {
+        navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(resultDoc.id)}`);
+      } else {
+        navigate(`/admin/collections/${collection.slug}`);
+      }
     } catch (mutationFailure) {
       const localWriteApplied = mutationFailure instanceof Error && "localWriteApplied" in mutationFailure;
       setSaveApplied(localWriteApplied);
@@ -902,7 +961,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
     }
   }
 
-  function renderField(field: BebopAdminField) {
+  function renderField(field: BebopAdminStoredField) {
     return (
       <div key={field.name} className="admin-editor-field">
         {field.kind === "boolean" ? (
@@ -937,7 +996,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
           </div>
           <div className="admin-editor-actions">
             <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty)}>{saveApplied ? "Local write applied" : id ? "Save" : "Create"}</Button>
-            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
+            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
           </div>
         </div>
         {permissionAdvice === "denied" && <p className="admin-editor-message text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
@@ -953,12 +1012,173 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
           </aside>}
         </fieldset>
       </form>
+      {joinFields.map((field) => id && existing
+        ? <JoinFieldPanel key={field.name} app={app} client={client} manifest={manifest} source={collection} field={field} parentId={id} parentLabel={parentLabel} relationOptions={relationOptions} />
+        : <section key={field.name} className="mt-8 border-t pt-6">
+            <h2 className="font-heading text-base font-semibold uppercase tracking-wide">{field.label}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Save this {collection.labels.singular.toLocaleLowerCase()} before managing {manifest.collections[field.collection]?.labels.plural.toLocaleLowerCase() ?? field.label.toLocaleLowerCase()}.</p>
+          </section>)}
     </div>
   );
 }
 
+function JoinFieldPanel({ app, client, manifest, source, field, parentId, parentLabel, relationOptions }: {
+  app: object;
+  client: BebopAdminClient;
+  manifest: BebopAdminManifest;
+  source: BebopAdminCollection;
+  field: BebopAdminJoinField;
+  parentId: string;
+  parentLabel: string;
+  relationOptions?: BebopAdminProps["relationOptions"];
+}) {
+  const navigate = useNavigate();
+  const db = useDb() as AdminDatabase;
+  const target = manifest.collections[field.collection];
+  const relation = target?.fields.find((candidate): candidate is BebopAdminStoredField =>
+    candidate.kind === "relation" && candidate.name === field.on && candidate.relationTo === source.slug,
+  );
+  const targetTable = getTable(app, field.collection);
+  const columnsAvailable = target ? storedFields(target) : [];
+  const defaultColumns = useMemo(() => {
+    const columns = target ? storedFields(target) : [];
+    const configured = field.admin?.defaultColumns ?? target?.defaultColumns;
+    const valid = configured?.filter((name) => columns.some((candidate) => candidate.name === name));
+    return valid?.length ? valid : columns.slice(0, 4).map((candidate) => candidate.name);
+  }, [field.admin?.defaultColumns, target]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultColumns);
+  const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>({ field: defaultColumns[0] ?? "id", direction: "asc" });
+  const [createAdvice, setCreateAdvice] = useState<PermissionAdvice>("unknown");
+  const where = useMemo(() => relation ? { [relation.storageName]: parentId } : {}, [parentId, relation]);
+  const sortField = target ? fieldByName(target, sort.field) : undefined;
+  const storedSortField = sortField && sortField.kind !== "join" ? sortField.storageName : "id";
+  const { rows: rowResult, ids: idResult } = useAdminRows(client, field.collection, {
+    where,
+    sort: { field: storedSortField, direction: sort.direction },
+    searchActive: false,
+    enabled: Boolean(target && relation && targetTable),
+  });
+  const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
+  const rows = data ?? [];
+  const readPermissions = useRowReadPermissions(db, targetTable, rows);
+  const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
+  const allColumns = columnsAvailable.map((candidate) => candidate.name);
+  const visible = allColumns.filter((name) => visibleColumns.includes(name));
+  const titleField = target?.useAsTitle ? fieldByName(target, target.useAsTitle) : undefined;
+  const titleColumn = titleField && titleField.kind !== "join" && visible.includes(titleField.name)
+    ? titleField.name
+    : visible[0];
+  const totalRows = idResult.data?.length ?? 0;
+  const readDenied = rows.some((row) => readPermissions[row.id] === "denied");
+  const createAllowed = field.admin?.allowCreate !== false;
+
+  useEffect(() => {
+    setVisibleColumns(defaultColumns);
+    setSort({ field: defaultColumns[0] ?? "id", direction: "asc" });
+  }, [defaultColumns]);
+
+  useEffect(() => {
+    let active = true;
+    if (!createAllowed || !targetTable || !relation) {
+      setCreateAdvice("denied");
+      return;
+    }
+    setCreateAdvice("unknown");
+    void db.canInsert(targetTable, { [relation.storageName]: parentId }).then((advice) => {
+      if (active) setCreateAdvice(advice);
+    }).catch(() => {
+      if (active) setCreateAdvice("unknown");
+    });
+    return () => { active = false; };
+  }, [createAllowed, db, parentId, relation, targetTable]);
+
+  const contextualQuery = new URLSearchParams({
+    bebopJoin: `${source.slug}.${field.name}`,
+    bebopParent: parentId,
+  }).toString();
+  const targetCollection = target;
+
+  return (
+    <section className="mt-8 border-t pt-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-medium">{field.label}</h2>
+        <div className="flex items-center gap-2">
+          {createAllowed && <Button
+            variant="secondary"
+            size="sm"
+            disabled={createAdvice === "denied"}
+            onClick={() => navigate(`/admin/collections/${field.collection}/create?${contextualQuery}`)}
+          ><Plus size={15} /> Add New</Button>}
+          <details className="admin-table-menu">
+            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
+            <div className="admin-table-menu-content">
+              <p className="admin-table-menu-label">Visible columns</p>
+              {allColumns.map((column) => {
+                const candidate = fieldByName(targetCollection!, column);
+                const checked = visibleColumns.includes(column);
+                return <label key={column} className="admin-menu-checkbox">
+                  <input type="checkbox" checked={checked} disabled={checked && visibleColumns.length === 1} onChange={() => setVisibleColumns((current) => checked ? current.filter((name) => name !== column) : [...current, column])} />
+                  <span>{candidate?.label ?? humanize(column)}</span>
+                </label>;
+              })}
+            </div>
+          </details>
+        </div>
+      </div>
+      {createAllowed && createAdvice === "denied" && <p className="mb-3 text-sm text-muted-foreground" role="status">Your current session cannot add records to this list.</p>}
+      {rowsError ? (
+        <div className="py-10 text-center text-sm text-destructive">Could not load related documents: {rowsError.message}</div>
+      ) : rowsLoading || idResult.isLoading ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">Loading {targetCollection?.labels.plural.toLocaleLowerCase() ?? "records"}…</div>
+      ) : !targetCollection || !relation ? (
+        <div className="py-10 text-center text-sm text-destructive">The generated join relation is missing or invalid.</div>
+      ) : totalRows === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-sm font-medium">{rows.length ? "No matching documents" : `No ${targetCollection.labels.plural.toLocaleLowerCase()} yet`}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{rows.length ? "Try another search." : `Records related to this ${source.labels.singular.toLocaleLowerCase()} will appear here.`}</p>
+        </div>
+      ) : (
+        <div className="admin-join-table-surface">
+          <div className="admin-table-section">
+            <Table>
+              <TableHeader><TableRow>{visible.map((column) => {
+                const candidate = fieldByName(targetCollection, column);
+                const activeSort = sort.field === column;
+                const SortIcon = activeSort ? sort.direction === "asc" ? ArrowUp : ArrowDown : ArrowUpDown;
+                return <TableHead key={column} className="h-10 text-[13px] font-normal normal-case tracking-normal">
+                  <button className="admin-sort-button" onClick={() => setSort((current) => ({ field: column, direction: current.field === column && current.direction === "asc" ? "desc" : "asc" }))}>
+                    {candidate?.label ?? humanize(column)}<SortIcon size={13} />
+                  </button>
+                </TableHead>;
+              })}{targetCollection.timestamps && <TableHead className="h-10 text-[13px] font-normal normal-case tracking-normal">Updated</TableHead>}</TableRow></TableHeader>
+              <TableBody>{readableRows.length === 0
+                ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0)} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
+                : readableRows.map((row) => <TableRow key={row.id} className="hover:bg-muted">
+                    {visible.map((column) => {
+                      const candidate = fieldByName(targetCollection, column);
+                      const value = candidate ? valueFor(candidate, row) : row[column];
+                      const displayValue = candidate?.kind === "relation" && candidate.name === field.on && value === parentId
+                        ? parentLabel
+                        : formatCell(candidate, value, relationOptions);
+                      return <TableCell key={column} className="admin-table-cell">
+                        {column === titleColumn
+                          ? <Link to={`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`} className="underline underline-offset-2 hover:text-primary">{displayValue}</Link>
+                          : displayValue}
+                      </TableCell>;
+                    })}
+                    {targetCollection.timestamps && <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(row.$updatedAt, true)}</TableCell>}
+                  </TableRow>)}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function initialValues(collection: BebopAdminCollection, row?: AdminRecord, defaults?: Readonly<Record<string, unknown>>): FieldValues {
-  return Object.fromEntries(collection.fields.map((field) => {
+  return Object.fromEntries(storedFields(collection).map((field) => {
     const value = row ? valueFor(field, row) : defaults?.[field.name];
     if (field.kind === "boolean") return [field.name, Boolean(value)];
     if (field.kind === "date") return [field.name, value instanceof Date ? localDateInput(value, field.admin?.date?.pickerAppearance === "dayAndTime") : ""];
@@ -978,7 +1198,7 @@ function localDateInput(value: Date, includeTime = false): string {
 }
 
 function serializeValues(collection: BebopAdminCollection, values: FieldValues): Record<string, unknown> {
-  return Object.fromEntries(collection.fields.flatMap((field) => {
+  return Object.fromEntries(storedFields(collection).flatMap((field) => {
     const raw = values[field.name];
     if (field.kind === "boolean") return [[field.storageName, Boolean(raw)]];
     if (raw === "" || raw === undefined || raw === null) return field.required ? [] : [[field.storageName, null]];
@@ -998,7 +1218,7 @@ function FieldInput({
   control,
   relationOptions,
 }: {
-  field: BebopAdminField;
+  field: BebopAdminStoredField;
   app: object;
   client: BebopAdminClient;
   manifest: BebopAdminManifest;
@@ -1081,7 +1301,7 @@ function RelationInput({
   inputRef,
   options,
 }: {
-  field: BebopAdminField;
+  field: BebopAdminStoredField;
   app: object;
   client: BebopAdminClient;
   manifest: BebopAdminManifest;

@@ -1,20 +1,38 @@
-export type BebopAdminFieldKind = "text" | "number" | "integer" | "boolean" | "date" | "json" | "select" | "relation";
+export type BebopAdminStoredFieldKind = "text" | "number" | "integer" | "boolean" | "date" | "json" | "select" | "relation";
+export type BebopAdminFieldKind = BebopAdminStoredFieldKind | "join";
 
-export type BebopAdminField = {
+type BebopAdminFieldBase = {
   name: string;
-  storageName: string;
   label: string;
-  kind: BebopAdminFieldKind;
-  required: boolean;
+};
+
+type BebopAdminFieldOptions = {
   admin?: {
     position?: "main" | "sidebar";
     input?: "textarea";
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
+    defaultColumns?: readonly string[];
+    allowCreate?: boolean;
   };
+};
+
+export type BebopAdminStoredField = BebopAdminFieldBase & BebopAdminFieldOptions & {
+  kind: BebopAdminStoredFieldKind;
+  storageName: string;
+  required: boolean;
   options?: readonly string[];
   optionLabels?: Readonly<Record<string, string>>;
   relationTo?: string;
 };
+
+export type BebopAdminJoinField = BebopAdminFieldBase & BebopAdminFieldOptions & {
+  kind: "join";
+  required: false;
+  collection: string;
+  on: string;
+};
+
+export type BebopAdminField = BebopAdminStoredField | BebopAdminJoinField;
 
 export type BebopAdminCollection = {
   slug: string;

@@ -6,5 +6,7 @@ export type {
   BebopAdminCollection,
   BebopAdminField,
   BebopAdminFieldKind,
+  BebopAdminJoinField,
   BebopAdminManifest,
+  BebopAdminStoredField,
 } from "./types.js";

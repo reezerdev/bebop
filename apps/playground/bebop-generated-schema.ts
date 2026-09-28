@@ -9,7 +9,9 @@ const schema = {
       "name": s.string(),
       "slug": s.string()
     },
-    {},
+    {
+      "members": s.reverse("workspaceMemberships", "workspace")
+    },
   ),
   "workspaceMemberships": s.table(
     {

@@ -31,7 +31,7 @@ Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to c
 Collection and field definitions use Payload's object shape. Field types are string values, so adding a field requires no field helper import:
 
 ```ts
-import { defineConfig } from "@bebop/core";
+import { defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
   collections: [{
@@ -49,9 +49,9 @@ export default defineConfig({
 
 The current supported types are `text`, `number` (with optional `integer: true`), `checkbox`, `date`, `json`, `select`, and single `relationship` (with `relationTo`). A relationship named `author` stores its ID in an `authorId` column. Text fields can set `admin.input: "textarea"`; date fields can set `admin.date.pickerAppearance: "dayAndTime"`. Bebop stores task content as plain text, not Payload rich text. This is the supported subset of Payload's field config, not its complete field API.
 
-If a collection defines access or lifecycle callbacks and you want their field data inferred inside those callbacks, wrap that collection object with `collection({...})` from `@bebop/core`. The fields inside it remain plain `{ name, type }` objects. Plain collection objects still work for configurations that do not need that callback inference.
+If a collection defines access or lifecycle callbacks and you want their field data inferred inside those callbacks, wrap that collection object with `collection({...})` from `@bebopdev/core`. The fields inside it remain plain `{ name, type }` objects. Plain collection objects still work for configurations that do not need that callback inference.
 
-The admin package renders every collection and supported field kind from `bebop.config.ts`. Top-level `labels.singular` names one document in create and empty states; `labels.plural` names the collection in navigation and lists. Bebop derives missing labels from the collection slug, and `admin.label` remains a deprecated alias for the plural label. Set collection `admin.useAsTitle` to the field that names each document; the admin uses it in list links, the editor heading, and the document breadcrumb. Set `admin: { position: "sidebar" }` in a field's options to place that field on the right of the editor; `"main"` is the default. Other collection admin options include default columns and searchable text fields. Its shadcn/ui components and compiled CSS are owned by `@bebop/admin`, so consuming apps do not need their own Tailwind setup. The host app provides the router, Jazz provider, authentication flow, signed-in user's name and email, and logout action. `BebopAdmin` also receives the generated Bebop client so admin writes run collection hooks.
+The admin package renders every collection and supported field kind from `bebop.config.ts`. Top-level `labels.singular` names one document in create and empty states; `labels.plural` names the collection in navigation and lists. Bebop derives missing labels from the collection slug, and `admin.label` remains a deprecated alias for the plural label. Set collection `admin.useAsTitle` to the field that names each document; the admin uses it in list links, the editor heading, and the document breadcrumb. Set `admin: { position: "sidebar" }` in a field's options to place that field on the right of the editor; `"main"` is the default. Other collection admin options include default columns and searchable text fields. Its shadcn/ui components and compiled CSS are owned by `@bebopdev/admin`, so consuming apps do not need their own Tailwind setup. The host app provides the router, Jazz provider, authentication flow, signed-in user's name and email, and logout action. `BebopAdmin` also receives the generated Bebop client so admin writes run collection hooks.
 
 The host passes `canAccessAdmin` after making its own admin entry decision. The playground grants entry to any signed-in demo user; a production host should supply its own role or membership check.
 
@@ -70,8 +70,8 @@ When enabling Better Auth in another Bebop config, install compatible `better-au
 You can also run the CLI commands directly in the playground workspace:
 
 ```sh
-pnpm --filter @bebop/playground exec bebop generate
-pnpm --filter @bebop/playground exec bebop validate
+pnpm --filter @bebopdev/playground exec bebop generate
+pnpm --filter @bebopdev/playground exec bebop validate
 ```
 
 `bebop generate` supports `--config <path>` and `--out-dir <path>`. `bebop dev` accepts a custom server command after `--`; without one, it starts Vite on `127.0.0.1`.

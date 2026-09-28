@@ -129,7 +129,15 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
     const readLocalDocument = (id: string) => db.one(table.where({ id }));
-    const storedFields = new Set(definition.fields.map((field) => field.type === "relationship" ? `${field.name}Id` : field.name));
+    const storedFields = new Set(definition.fields.flatMap((field) => field.type === "join"
+      ? []
+      : [field.type === "relationship" ? `${field.name}Id` : field.name]));
+    const validateWriteData = (data: Record<string, unknown>) => {
+      for (const name of Object.keys(data)) {
+        if (!storedFields.has(name)) throw new Error(`Unknown ${collectionName} write field "${name}".`);
+      }
+      return data;
+    };
     const validatedWhere = (where: Record<string, unknown> | undefined) => {
       if (!where) return undefined;
       for (const name of Object.keys(where)) {
@@ -166,12 +174,14 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       find: (options) => db.all(query(options)),
       findById: (id) => readLocalDocument(id) as Promise<CollectionDocument<Fields> | null>,
       async create(data) {
+        validateWriteData(data as Record<string, unknown>);
         const context: CollectionChangeContext<Fields> = {
           operation: "create",
           data: { ...data } as Partial<StoredFields<Fields>>,
         };
         const patch = await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
+        validateWriteData(document);
         const write = db.insert(table, document) as WriteResult<CollectionDocument<Fields>> & WriteHandle<unknown, unknown>;
         const doc = write.value;
         try {
@@ -183,6 +193,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       },
 
       async update(id, data) {
+        validateWriteData(data as Record<string, unknown>);
         const originalDoc = await readLocalDocument(id) as CollectionDocument<Fields> | null;
         if (!originalDoc) throw new BebopDocumentNotFoundError(collectionName, id);
         const context: CollectionChangeContext<Fields> = {
@@ -193,6 +204,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         };
         const patch = await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
+        validateWriteData(document);
         const write = db.update(table, id, document) as WriteHandle<unknown, unknown>;
         const doc = { ...originalDoc, ...document } as CollectionDocument<Fields>;
         try {

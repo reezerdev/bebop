@@ -210,8 +210,10 @@
 .admin-menu-checkbox input { @apply accent-primary; }
 .admin-filter-menu { @apply flex max-h-[70vh] w-64 flex-col gap-3 overflow-y-auto; }
 .admin-filter-field { @apply flex flex-col gap-1.5 px-1 text-xs font-medium text-muted-foreground; }
-.admin-table-section { @apply w-full overflow-x-auto; }
+.admin-table-section { @apply min-w-0 w-full; }
+.admin-table-section [data-slot="table-container"] { @apply min-w-0; }
 .admin-table-section [data-slot="table"] { font-size: 13px; }
+.admin-join-table-surface { @apply min-w-0 border border-border bg-muted/50; }
 .admin-table-cell { @apply whitespace-normal py-4 align-top; }
 .admin-sort-button { @apply inline-flex items-center gap-2 font-normal text-muted-foreground hover:text-foreground; }
 .admin-checkbox { appearance: none; display: inline-grid; width: 1rem; height: 1rem; place-content: center; flex: none; cursor: pointer; border: 1px solid var(--input); background: transparent; }

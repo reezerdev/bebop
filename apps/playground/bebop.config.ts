@@ -1,4 +1,4 @@
-import { defineConfig, betterAuth } from "@bebop/core";
+import { defineConfig, betterAuth } from "@bebopdev/core";
 
 export default defineConfig({
   auth: betterAuth(),
@@ -16,6 +16,14 @@ export default defineConfig({
       fields: [
         { name: "name", type: "text", required: true },
         { name: "slug", type: "text", required: true },
+        {
+          name: "members",
+          label: "Members",
+          type: "join",
+          collection: "workspaceMemberships",
+          on: "workspace",
+          admin: { defaultColumns: ["user", "workspace", "role", "status"] },
+        },
       ],
     },
     {

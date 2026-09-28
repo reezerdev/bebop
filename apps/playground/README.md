@@ -1,6 +1,6 @@
 # Bebop playground
 
-This app exercises `@bebop/core` and mounts the first-party `@bebop/admin` package. The admin UI is owned by Bebop under `packages/admin`; the playground supplies a Vite host, Jazz provider, and Better Auth setup.
+This app exercises `@bebopdev/core` and mounts the first-party `@bebopdev/admin` package. The admin UI is owned by Bebop under `packages/admin`; the playground supplies a Vite host, Jazz provider, and Better Auth setup.
 
 Add `BETTER_AUTH_URL=http://127.0.0.1:5173` and a private `BETTER_AUTH_SECRET` to `.env` (see `.env.example`; generate the secret with `openssl rand -base64 32`). Run `pnpm generate` from the workspace root to generate Better Auth's Jazz schema, `bebop-generated-schema.ts`, `bebop-generated-client.ts`, and `permissions.ts`.
 

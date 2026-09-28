@@ -74,7 +74,7 @@ async function loadConfig(configPath) {
 }
 
 async function loadCompiler(configPath) {
-  const { compileArtifacts } = await tsImport("@bebop/core", {
+  const { compileArtifacts } = await tsImport("@bebopdev/core", {
     parentURL: pathToFileURL(configPath).href,
   });
   return compileArtifacts;

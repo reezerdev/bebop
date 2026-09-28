@@ -21,6 +21,22 @@ export const bebopAdminManifest = {
           "label": "Slug",
           "kind": "text",
           "required": true
+        },
+        {
+          "name": "members",
+          "label": "Members",
+          "kind": "join",
+          "required": false,
+          "collection": "workspaceMemberships",
+          "on": "workspace",
+          "admin": {
+            "defaultColumns": [
+              "user",
+              "workspace",
+              "role",
+              "status"
+            ]
+          }
         }
       ],
       "timestamps": true,

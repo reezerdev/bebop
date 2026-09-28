@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDb, useJazzAuth } from "jazz-tools/react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { BebopAdmin } from "@bebop/admin";
+import { BebopAdmin } from "@bebopdev/admin";
 import { authClient } from "../auth-client.ts";
 import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";

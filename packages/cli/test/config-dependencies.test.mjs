@@ -45,8 +45,8 @@ test("bebop dev regenerates when an imported collection module changes", { timeo
   const config = path.join(directory, "bebop.config.ts");
   const fields = path.join(directory, "fields.ts");
   const generated = path.join(directory, "generated", "bebop-generated-schema.ts");
-  await writeFile(config, 'import { defineConfig, collection } from "@bebop/core";\nimport { fields } from "./fields.js";\nexport default defineConfig({ collections: { posts: collection({ fields }) } });\n');
-  await writeFile(fields, 'import { text } from "@bebop/core";\nexport const fields = { title: text() };\n');
+  await writeFile(config, 'import { defineConfig } from "@bebop/core";\nimport { fields } from "./fields.js";\nexport default defineConfig({ collections: [{ slug: "posts", fields }] });\n');
+  await writeFile(fields, 'export const fields = [{ name: "title", type: "text" }];\n');
 
   const child = spawn(process.execPath, [
     path.join(cliDirectory, "bin", "bebop.mjs"), "dev", "--config", config,
@@ -58,7 +58,7 @@ test("bebop dev regenerates when an imported collection module changes", { timeo
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
     await waitForFileText(generated, '"title"', child, () => output);
-    await writeFile(fields, 'import { text } from "@bebop/core";\nexport const fields = { title: text(), subtitle: text() };\n');
+    await writeFile(fields, 'export const fields = [{ name: "title", type: "text" }, { name: "subtitle", type: "text" }];\n');
     await waitForFileText(generated, '"subtitle"', child, () => output);
     assert.match(output, /Watching .*fields\.ts/);
   } finally {

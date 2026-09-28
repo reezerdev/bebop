@@ -3,7 +3,10 @@ export const bebopAdminManifest = {
   "collections": {
     "posts": {
       "slug": "posts",
-      "label": "Posts",
+      "labels": {
+        "singular": "Post",
+        "plural": "Posts"
+      },
       "fields": [
         {
           "name": "title",

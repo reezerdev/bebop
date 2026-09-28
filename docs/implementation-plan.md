@@ -20,30 +20,29 @@ The first release is a useful CMS with a first-party admin interface, demonstrat
 ## Proposed public API
 
 ```ts
-import { defineConfig, collection, text, select, relation } from 'bebop'
+import { defineConfig } from '@bebop/core'
 
 export default defineConfig({
-  collections: {
-    users: collection({
-      mode: 'direct',
-      fields: { name: text({ required: true }) },
-      access: { read: allowAuthenticated(), create: allowSelf(), update: allowSelf() },
-    }),
-    posts: collection({
-      mode: 'command',
-      fields: {
-        title: text({ required: true, minLength: 3 }),
-        status: select(['draft', 'published'] as const),
-        author: relation({ to: 'users', required: true }),
-      },
-      access: { read: allowPublishedOrOwner('author'), create: allowAuthenticated(), update: allowOwner('author') },
-      hooks: { beforeChange: [makeSlug], afterChange: [enqueueSearchIndex] },
-    }),
-  },
+  collections: [
+    {
+      slug: 'users',
+      fields: [{ name: 'name', type: 'text', required: true }],
+    },
+    {
+      slug: 'posts',
+      labels: { singular: 'Post', plural: 'Posts' },
+      admin: { useAsTitle: 'title' },
+      fields: [
+        { name: 'title', type: 'text', required: true },
+        { name: 'status', type: 'select', options: ['draft', 'published'] },
+        { name: 'author', type: 'relationship', relationTo: 'users', required: true },
+      ],
+    },
+  ],
 })
 ```
 
-The exact helper names are provisional. The contract is the important part: collection keys and select values retain literal types; `cms.find`, `findById`, `create`, `update`, and `delete` infer their input and result from the config. Relation fields are presented as relations in Bebop while the generated Jazz schema holds their UUID columns.
+Collection slugs and select values retain literal types; `find`, `findById`, `create`, `update`, and `delete` infer their input and result from the config. A relationship is declared with Payload's `relationship` field type while the generated Jazz schema stores its UUID in a `<name>Id` column. Access callbacks and client-side lifecycle hooks are configured on each collection.
 
 ## Milestones
 

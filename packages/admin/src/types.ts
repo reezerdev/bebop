@@ -8,12 +8,13 @@ export type BebopAdminField = {
   required: boolean;
   admin?: { position?: "main" | "sidebar" };
   options?: readonly string[];
+  optionLabels?: Readonly<Record<string, string>>;
   relationTo?: string;
 };
 
 export type BebopAdminCollection = {
   slug: string;
-  label: string;
+  labels: { singular: string; plural: string };
   fields: readonly BebopAdminField[];
   timestamps: boolean;
   useAsTitle?: string;

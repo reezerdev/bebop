@@ -9,12 +9,8 @@ import type {
 } from "./bebop.ts";
 
 type RequiredStoredKeys<TFields extends Fields> = {
-  [TName in keyof TFields]: TFields[TName] extends { required: true }
-    ? TFields[TName] extends { kind: "relation" }
-      ? `${Extract<TName, string>}Id`
-      : Extract<TName, string>
-    : never;
-}[keyof TFields];
+  [TName in keyof StoredFields<TFields>]-?: {} extends Pick<StoredFields<TFields>, TName> ? never : TName;
+}[keyof StoredFields<TFields>];
 
 export type CollectionCreateData<TFields extends Fields> = Pick<StoredFields<TFields>, RequiredStoredKeys<TFields>> &
   Partial<Omit<StoredFields<TFields>, RequiredStoredKeys<TFields>>>;
@@ -71,7 +67,7 @@ export type BebopCollectionClient<TFields extends Fields> = {
 };
 
 export type BebopClient<TConfig extends BebopConfig> = {
-  [TName in keyof TConfig["collections"]]: BebopCollectionClient<TConfig["collections"][TName]["fields"]>;
+  [TCollection in TConfig["collections"][number] as TCollection["slug"]]: BebopCollectionClient<TCollection["fields"]>;
 } & {
   onMutationError(listener: (event: MutationErrorEvent) => void): () => void;
 };
@@ -119,20 +115,21 @@ function nonnegativeInteger(value: number | undefined, name: string): number | u
 }
 
 export function createBebopClient<const TConfig extends BebopConfig>(options: {
-  app: Record<keyof TConfig["collections"], object>;
+  app: Record<TConfig["collections"][number]["slug"], object>;
   config: TConfig;
   db: Db;
 }): BebopClient<TConfig> {
   const { app, config, db } = options;
   const collections: Record<string, BebopCollectionClient<Fields>> = {};
 
-  for (const [collectionName, definition] of Object.entries(config.collections)) {
-    const table = app[collectionName as keyof TConfig["collections"]] as BebopTable;
+  for (const definition of config.collections) {
+    const collectionName = definition.slug;
+    const table = app[collectionName as TConfig["collections"][number]["slug"]] as BebopTable;
     if (!table) throw new Error(`Generated Bebop app is missing collection "${collectionName}".`);
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
     const readLocalDocument = (id: string) => db.one(table.where({ id }));
-    const storedFields = new Set(Object.entries(definition.fields).map(([name, field]) => field.kind === "relation" ? `${name}Id` : name));
+    const storedFields = new Set(definition.fields.map((field) => field.type === "relationship" ? `${field.name}Id` : field.name));
     const validatedWhere = (where: Record<string, unknown> | undefined) => {
       if (!where) return undefined;
       for (const name of Object.keys(where)) {
@@ -171,7 +168,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       async create(data) {
         const context: CollectionChangeContext<Fields> = {
           operation: "create",
-          data: { ...data },
+          data: { ...data } as Partial<StoredFields<Fields>>,
         };
         const patch = await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
@@ -191,7 +188,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         const context: CollectionChangeContext<Fields> = {
           operation: "update",
           id,
-          data: { ...data },
+          data: { ...data } as Partial<StoredFields<Fields>>,
           originalDoc,
         };
         const patch = await hooks?.beforeChange?.(context);

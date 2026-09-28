@@ -131,6 +131,10 @@ function formatLabel(value: string): string {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
 }
 
+function selectLabel(field: BebopAdminField, value: string): string {
+  return field.optionLabels?.[value] ?? formatLabel(value);
+}
+
 function formatCell(field: BebopAdminField | undefined, value: unknown, relationOptions?: BebopAdminProps["relationOptions"]): ReactNode {
   if (value === null || value === undefined || value === "") return <span className="text-muted-foreground">—</span>;
   if (field?.kind === "boolean") return <Badge variant={value ? "default" : "secondary"}>{value ? "Yes" : "No"}</Badge>;
@@ -140,6 +144,7 @@ function formatCell(field: BebopAdminField | undefined, value: unknown, relation
     const name = relationOptions?.[field.relationTo ?? ""]?.find((option) => option.id === value)?.name;
     return name ?? <span className="font-mono text-xs">{String(value).slice(0, 8)}</span>;
   }
+  if (field?.kind === "select") return selectLabel(field, String(value));
   return String(value);
 }
 
@@ -284,7 +289,7 @@ function AdminLayout({
   const currentCollection = activeCollection ? manifest.collections[activeCollection] : undefined;
   const isCreateRoute = location.pathname.endsWith("/create");
   const isDocumentRoute = Boolean(currentCollection && location.pathname.match(/\/collections\/[^/]+\/[^/]+\/?$/) && !isCreateRoute);
-  const collections = Object.values(manifest.collections).sort((left, right) => left.label.localeCompare(right.label));
+  const collections = Object.values(manifest.collections).sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
   const userName = user?.name?.trim() || "Signed in";
   const userEmail = user?.email?.trim() || "Email unavailable";
   const avatarInitials = (user?.name?.trim() || user?.email?.trim() || "U")
@@ -316,7 +321,7 @@ function AdminLayout({
                 className={({ isActive }) => `admin-nav-link ${isActive ? "admin-nav-active" : ""}`}
                 onClick={() => setMobileOpen(false)}
               >
-                <span className="truncate">{collection.label}</span>
+                <span className="truncate">{collection.labels.plural}</span>
               </NavLink>
             ))}
           </nav>}
@@ -344,8 +349,8 @@ function AdminLayout({
           <div className="admin-breadcrumbs">
             <Link to="/admin" className="admin-brand-mark" aria-label="Bebop dashboard">b</Link>
             <span className="admin-breadcrumb-divider">/</span>
-            {currentCollection ? <Link to={`/admin/collections/${currentCollection.slug}`} className="hover:underline">{currentCollection.label}</Link> : <span>Dashboard</span>}
-            {(isCreateRoute || isDocumentRoute) && <><span className="text-muted-foreground">/</span><span className="max-w-56 truncate" title={currentDocumentBreadcrumb}>{isCreateRoute ? "New" : currentDocumentBreadcrumb ?? "Document"}</span></>}
+            {currentCollection ? <Link to={`/admin/collections/${currentCollection.slug}`} className="hover:underline">{currentCollection.labels.plural}</Link> : <span>Dashboard</span>}
+            {(isCreateRoute || isDocumentRoute) && <><span className="text-muted-foreground">/</span><span className="max-w-56 truncate" title={currentDocumentBreadcrumb}>{isCreateRoute ? `New ${currentCollection?.labels.singular ?? "document"}` : currentDocumentBreadcrumb ?? "Document"}</span></>}
             {activeCollection && !currentCollection && <span>Not found</span>}
           </div>
         </header>
@@ -383,7 +388,7 @@ function PageTitle({
 }
 
 function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
-  const collections = Object.values(manifest.collections).sort((left, right) => left.label.localeCompare(right.label));
+  const collections = Object.values(manifest.collections).sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
 
   return (
     <section>
@@ -391,8 +396,8 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
       <div className="admin-collection-grid">
         {collections.map((collection) => (
           <article key={collection.slug} className="admin-collection-card">
-            <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.label}</Link>
-            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.label}`}>
+            <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.labels.plural}</Link>
+            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
               <Plus size={19} />
             </Link>
           </article>
@@ -534,7 +539,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   return (
     <div>
       <div className="admin-list-heading">
-        <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.label}</h1>
+        <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
         <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
@@ -581,14 +586,14 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
                   >
                     <SelectTrigger className="w-full" aria-label={`Filter by ${field.label}`}>
                       <SelectValue>{filters[field.name]
-                        ? field.kind === "boolean" ? filters[field.name] === "true" ? "Yes" : "No" : formatLabel(filters[field.name])
+                        ? field.kind === "boolean" ? filters[field.name] === "true" ? "Yes" : "No" : selectLabel(field, filters[field.name])
                         : `All ${field.label.toLocaleLowerCase()}`}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={filterAllValue}>All {field.label.toLocaleLowerCase()}</SelectItem>
                       {field.kind === "boolean" ? (
                         <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></>
-                      ) : field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
+                      ) : field.options?.map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </label>
@@ -604,7 +609,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
         ) : totalRows === 0 ? (
           <div className="py-16 text-center">
             <h2 className="text-sm font-medium">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied read access for the available documents." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied read access for the available documents." : `Create your first ${collection.labels.singular.toLocaleLowerCase()} to get started.`}</p>
             {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
@@ -776,7 +781,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
     : undefined;
   const title = titleValue !== undefined && titleValue !== null && String(titleValue).trim()
     ? String(titleValue)
-    : id ? "Untitled document" : "New document";
+    : id ? `Untitled ${collection.labels.singular.toLocaleLowerCase()}` : `New ${collection.labels.singular}`;
   const mainFields = collection.fields.filter((field) => field.admin?.position !== "sidebar");
   const sidebarFields = collection.fields.filter((field) => field.admin?.position === "sidebar");
 
@@ -1015,7 +1020,7 @@ function FieldInput({
               <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
-              {field.options?.map((option) => <SelectItem key={option} value={option}>{formatLabel(option)}</SelectItem>)}
+              {field.options?.map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}
             </SelectContent>
           </Select>
         )}

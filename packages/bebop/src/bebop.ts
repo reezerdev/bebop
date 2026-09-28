@@ -1,61 +1,62 @@
 import type { PermissionExpressionInput, RowContext, SessionContext } from "jazz-tools/permissions";
 
 export type FieldOptions = {
+  name: string;
+  label?: string;
   required?: boolean;
   admin?: { position?: "main" | "sidebar" };
 };
 
-export type TextField = FieldOptions & { kind: "text" };
-export type NumberField = FieldOptions & { kind: "number" };
-export type IntegerField = FieldOptions & { kind: "integer" };
-export type BooleanField = FieldOptions & { kind: "boolean" };
-export type DateField = FieldOptions & { kind: "date" };
-export type JsonField = FieldOptions & { kind: "json" };
+export type TextField = FieldOptions & { type: "text" };
+export type NumberField = FieldOptions & { type: "number"; integer?: boolean };
+export type CheckboxField = FieldOptions & { type: "checkbox" };
+export type DateField = FieldOptions & { type: "date" };
+export type JsonField = FieldOptions & { type: "json" };
+export type SelectOption = string | { label: string; value: string };
 export type SelectField = FieldOptions & {
-  kind: "select";
-  options: readonly [string, ...string[]];
+  type: "select";
+  options: readonly [SelectOption, ...SelectOption[]];
 };
-export type RelationField = FieldOptions & {
-  kind: "relation";
-  to: string;
+export type RelationshipField = FieldOptions & {
+  type: "relationship";
+  relationTo: string;
 };
 
 export type FieldDefinition =
   | TextField
   | NumberField
-  | IntegerField
-  | BooleanField
+  | CheckboxField
   | DateField
   | JsonField
   | SelectField
-  | RelationField;
+  | RelationshipField;
 
-export type Fields = Record<string, FieldDefinition>;
+export type Fields = readonly FieldDefinition[];
 
-type FieldValue<TField> = TField extends { kind: "select"; options: readonly (infer TOption extends string)[] }
-  ? TOption
-  : TField extends { kind: "text" | "relation" }
-  ? string
-  : TField extends { kind: "number" | "integer" }
-    ? number
-    : TField extends { kind: "boolean" }
-      ? boolean
-      : TField extends { kind: "date" }
-        ? Date
-        : unknown;
+type SelectValue<TOption> = TOption extends string ? TOption : TOption extends { value: infer TValue extends string } ? TValue : never;
 
-type StoredFieldName<TName extends string, TField> = TField extends { kind: "relation" }
+type FieldValue<TField> = TField extends { type: "select"; options: readonly (infer TOption)[] }
+  ? SelectValue<TOption>
+  : TField extends { type: "text" | "relationship" }
+    ? string
+    : TField extends { type: "number" }
+      ? number
+      : TField extends { type: "checkbox" }
+        ? boolean
+        : TField extends { type: "date" }
+          ? Date
+          : unknown;
+
+type StoredFieldName<TField> = TField extends { type: "relationship"; name: infer TName extends string }
   ? `${TName}Id`
-  : TName;
+  : TField extends { name: infer TName extends string }
+    ? TName
+    : never;
 
 export type StoredFields<TFields extends Fields> = {
-  [TName in keyof TFields as TFields[TName] extends { required: true }
-    ? TName extends string ? StoredFieldName<TName, TFields[TName]> : never
-    : never]-?: FieldValue<TFields[TName]>;
+  [TField in TFields[number] as TField extends { required: true } ? StoredFieldName<TField> : never]-?: FieldValue<TField>;
 } & {
-  [TName in keyof TFields as TFields[TName] extends { required: true }
-    ? never
-    : TName extends string ? StoredFieldName<TName, TFields[TName]> : never]?: FieldValue<TFields[TName]>;
+  [TField in TFields[number] as TField extends { required: true } ? never : StoredFieldName<TField>]?: FieldValue<TField>;
 };
 
 export type CollectionDocument<TFields extends Fields> = StoredFields<TFields> & {
@@ -116,18 +117,22 @@ export type CollectionHooks<TFields extends Fields> = {
 };
 
 export type CollectionAdminOptions = {
+  /** @deprecated Use collection labels.plural instead. */
   label?: string;
   useAsTitle?: string;
   defaultColumns?: readonly string[];
   listSearchableFields?: readonly string[];
 };
 export type CollectionDefinition<TFields extends Fields = Fields> = {
+  slug: string;
+  /** Payload-style collection names. Unspecified names are derived from the slug. */
+  labels?: { singular?: string; plural?: string };
   fields: TFields;
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
   timestamps?: boolean;
   admin?: CollectionAdminOptions;
-  /** Jazz row-level access predicates. Missing operations are denied. */
-  access?: CollectionAccess<TFields>;
+  /** Jazz row-level access predicates. Use "public" to grant all operations; omitted operations are denied. */
+  access?: "public" | CollectionAccess<TFields>;
   /** Client-side lifecycle callbacks run by the generated Bebop mutation client. */
   hooks?: CollectionHooks<TFields>;
 };
@@ -137,51 +142,13 @@ export type BetterAuthDefinition = {
   generateConfig?: string;
 };
 export type BebopConfig = {
-  collections: Record<string, CollectionDefinition>;
+  collections: readonly CollectionDefinition[];
   auth?: BetterAuthDefinition;
 };
 
-export function text<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): TextField & TOptions {
-  return { kind: "text", ...options };
-}
-
-export function number<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): NumberField & TOptions {
-  return { kind: "number", ...options };
-}
-
-export function integer<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): IntegerField & TOptions {
-  return { kind: "integer", ...options };
-}
-
-export function checkbox<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): BooleanField & TOptions {
-  return { kind: "boolean", ...options };
-}
-
-export function date<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): DateField & TOptions {
-  return { kind: "date", ...options };
-}
-
-export function json<const TOptions extends FieldOptions = {}>(options: TOptions = {} as TOptions): JsonField & TOptions {
-  return { kind: "json", ...options };
-}
-
-export function select<const T extends readonly [string, ...string[]], const TOptions extends FieldOptions = {}>(
-  options: T,
-  fieldOptions: TOptions = {} as TOptions,
-): SelectField & { options: T } & TOptions {
-  return { kind: "select", options, ...fieldOptions };
-}
-
-export function relation<const TTo extends string, const TOptions extends FieldOptions = {}>(
-  to: TTo,
-  options: TOptions = {} as TOptions,
-): RelationField & { to: TTo } & TOptions {
-  return { kind: "relation", to, ...options };
-}
-
-export function collection<const TFields extends Fields>(
-  definition: CollectionDefinition<TFields>,
-): CollectionDefinition<TFields> {
+export function collection<const TSlug extends string, const TFields extends Fields>(
+  definition: CollectionDefinition<TFields> & { slug: TSlug },
+): CollectionDefinition<TFields> & { slug: TSlug } {
   return definition;
 }
 

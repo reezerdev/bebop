@@ -25,11 +25,34 @@ The root scripts use pnpm and Turborepo to run workspace tasks. The playground a
 
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts) to change collections, access rules, hooks, and admin list settings. `pnpm dev` builds and watches the admin package, generates the Jazz schema, admin manifest, and typed mutation client, then starts Vite. The Jazz Vite plugin starts the local Jazz server and picks up the generated schema and permissions.
 
-The admin package renders every collection and supported field kind from `bebop.config.ts`. Set collection `admin.useAsTitle` to the field that names each document; the admin uses it in list links, the editor heading, and the document breadcrumb. Set `admin: { position: "sidebar" }` in a field's options to place that field on the right of the editor; `"main"` is the default. Other collection options include a label, default columns, and searchable text fields. Its shadcn/ui components and compiled CSS are owned by `@bebop/admin`, so consuming apps do not need their own Tailwind setup. The host app provides the router, Jazz provider, authentication flow, signed-in user's name and email, and logout action. `BebopAdmin` also receives the generated Bebop client so admin writes run collection hooks.
+Collection and field definitions use Payload's object shape. Field types are string values, so adding a field requires no field helper import:
+
+```ts
+import { defineConfig } from "@bebop/core";
+
+export default defineConfig({
+  collections: [{
+    slug: "posts",
+    labels: { singular: "Post", plural: "Posts" },
+    admin: { useAsTitle: "title" },
+    fields: [
+      { name: "title", type: "text", required: true },
+      { name: "published", type: "checkbox", admin: { position: "sidebar" } },
+      { name: "category", type: "select", options: ["guide", "story"] },
+    ],
+  }],
+});
+```
+
+The current supported types are `text`, `number` (with optional `integer: true`), `checkbox`, `date`, `json`, `select`, and single `relationship` (with `relationTo`). A relationship named `author` stores its ID in an `authorId` column. This is the supported subset of Payload's field config, not its complete field API.
+
+If a collection defines access or lifecycle callbacks and you want their field data inferred inside those callbacks, wrap that collection object with `collection({...})` from `@bebop/core`. The fields inside it remain plain `{ name, type }` objects. Plain collection objects still work for configurations that do not need that callback inference.
+
+The admin package renders every collection and supported field kind from `bebop.config.ts`. Top-level `labels.singular` names one document in create and empty states; `labels.plural` names the collection in navigation and lists. Bebop derives missing labels from the collection slug, and `admin.label` remains a deprecated alias for the plural label. Set collection `admin.useAsTitle` to the field that names each document; the admin uses it in list links, the editor heading, and the document breadcrumb. Set `admin: { position: "sidebar" }` in a field's options to place that field on the right of the editor; `"main"` is the default. Other collection admin options include default columns and searchable text fields. Its shadcn/ui components and compiled CSS are owned by `@bebop/admin`, so consuming apps do not need their own Tailwind setup. The host app provides the router, Jazz provider, authentication flow, signed-in user's name and email, and logout action. `BebopAdmin` also receives the generated Bebop client so admin writes run collection hooks.
 
 The host passes `canAccessAdmin` after making its own admin entry decision. The playground grants entry to any signed-in demo user; a production host should supply its own role or membership check.
 
-Collection `access` rules compile to Jazz row-level permissions. Declare only the operations you intend to grant; omitted operations are denied. For example, an owner-only collection can return `{ ownerId: session.user.account }` from its `read`, `create`, `update`, and `delete` callbacks. Rules can use Jazz's `session`, `allOf`, `anyOf`, `exists`, and `isCreator` helpers. The playground explicitly grants all four operations on posts to keep its local demo open. The admin displays rows returned by Jazz unless read advice explicitly denies them, and it hides write actions Jazz explicitly denies. Unknown advice does not deny local data or optimistic writes; Jazz remains the enforcement authority.
+Collection `access` rules compile to Jazz row-level permissions. Omitted access denies all operations, and omitted operations inside an access object are denied. Use `access: "public"` when every session may read, create, update, and delete; the playground uses this for its open demo. For a restricted collection, provide callbacks such as `{ read: ({ session }) => ({ ownerId: session.user.account }) }`. Rules can use Jazz's `session`, `allOf`, `anyOf`, `exists`, and `isCreator` helpers. The admin displays rows returned by Jazz unless read advice explicitly denies them, and it hides write actions Jazz explicitly denies. Unknown advice does not deny local data or optimistic writes; Jazz remains the enforcement authority.
 
 Collection `hooks` provide `beforeChange` / `afterChange` for create and update, and `beforeDelete` / `afterDelete` for deletes. A before hook can return a partial data patch or throw to stop the local mutation. After hooks run after the optimistic local write; they do not mean Jazz has accepted the write on the server. Use the generated `createBebopClient(db)` from app code as well as in the admin to run hooks consistently. Direct `db.insert`, `db.update`, and `db.delete` calls bypass Bebop hooks. The client exposes `onMutationError` for later Jazz sync rejections. Use trusted server code for security checks and external side effects that must be authoritative.
 
@@ -54,7 +77,7 @@ pnpm --filter @bebop/playground exec bebop validate
 
 The Better Auth CLI requires Node.js 22.12 or newer. The workspace declares that version range.
 
-The playground's posts are deliberately open through explicit access callbacks. Better Auth tables remain denied to client sessions. Review the configured access callbacks before deploying.
+The playground's posts are deliberately open through `access: "public"`. Better Auth tables remain denied to client sessions. Review collection access settings before deploying.
 
 See the [implementation plan](./docs/implementation-plan.md) for the roadmap.
 See [architecture notes](./docs/architecture.md) for the current package boundaries, write semantics, and the next security milestone.

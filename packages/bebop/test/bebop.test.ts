@@ -1,45 +1,64 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Db } from "jazz-tools";
-import { collection, defineConfig, text } from "../src/bebop.ts";
+import { defineConfig } from "../src/bebop.ts";
 import { BebopHookError, createBebopClient } from "../src/client.ts";
-import { compileAdminManifest, compileArtifacts, compileClientFactory, compilePermissions, compileSchema } from "../src/compiler.ts";
+import { compileAdminManifest, compileArtifacts, compileClientFactory, compilePermissions, compileSchema, normalizeConfig } from "../src/compiler.ts";
 
 test("admin manifest includes the configured title and field positions", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: {
-          title: text({ required: true, admin: { position: "main" } }),
-          summary: text({ admin: { position: "sidebar" } }),
-        },
-        admin: { useAsTitle: "title" },
-      }),
-    },
+    collections: [{
+      slug: "posts",
+      labels: { singular: "Blog Post", plural: "Blog Posts" },
+      fields: [
+        { name: "title", type: "text", required: true, admin: { position: "main" } },
+        { name: "summary", type: "text", admin: { position: "sidebar" } },
+      ],
+      admin: { useAsTitle: "title" },
+    }],
   });
 
   const manifest = compileAdminManifest(config);
   assert.equal(manifest, compileAdminManifest(config));
   assert.match(manifest, /"useAsTitle": "title"/);
+  assert.match(manifest, /"singular": "Blog Post"/);
+  assert.match(manifest, /"plural": "Blog Posts"/);
   assert.match(manifest, /"position": "main"/);
   assert.match(manifest, /"position": "sidebar"/);
   assert.doesNotMatch(manifest, /"sidebarFields"/);
   assert.throws(() => compileAdminManifest(defineConfig({
-    collections: { posts: collection({ fields: { title: text({ admin: { position: "invalid" as "sidebar" } }) } }) },
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text", admin: { position: "invalid" as "sidebar" } }] }],
   })), /admin\.position must be "main" or "sidebar"/);
+});
+
+test("collection labels default from the slug and reject empty overrides", () => {
+  const config = defineConfig({
+    collections: [
+      { slug: "posts", fields: [{ name: "title", type: "text" }] },
+      { slug: "categories", fields: [{ name: "title", type: "text" }] },
+      { slug: "stories", admin: { label: "Case Studies" }, fields: [{ name: "title", type: "text" }] },
+    ],
+  });
+  assert.deepEqual(normalizeConfig(config).collections.map((item) => item.admin.labels), [
+    { singular: "Post", plural: "Posts" },
+    { singular: "Category", plural: "Categories" },
+    { singular: "Case Study", plural: "Case Studies" },
+  ]);
+  assert.throws(() => compileAdminManifest(defineConfig({
+    collections: [{ slug: "posts", labels: { singular: " " }, fields: [{ name: "title", type: "text" }] }],
+  })), /labels\.singular cannot be empty/);
 });
 
 test("permission generation compiles configured Jazz rules and leaves omitted operations denied", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: { ownerId: text(), published: { kind: "boolean" as const } },
-        access: {
-          read: ({ session }) => ({ ownerId: session.user.account }),
-          create: () => ({}),
-        },
-      }),
-    },
+    collections: [{
+      slug: "posts",
+      fields: [{ name: "ownerId", type: "text" }, { name: "published", type: "checkbox" }],
+      access: {
+        read: ({ session }) => ({ ownerId: session.user.account }),
+        create: () => ({}),
+      },
+    }],
   });
 
   const permissions = compilePermissions(config, "./config.js");
@@ -52,9 +71,7 @@ test("permission generation compiles configured Jazz rules and leaves omitted op
 
 test("permissions with no configured rules do not create implicit grants", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({ fields: { title: text() } }),
-    },
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }],
   });
 
   const permissions = compilePermissions(config);
@@ -62,19 +79,32 @@ test("permissions with no configured rules do not create implicit grants", () =>
   assert.match(permissions, /Missing collection operations are denied/);
 });
 
+test("public access grants all operations without empty callbacks", () => {
+  const config = defineConfig({
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }], access: "public" }],
+  });
+
+  const permissions = compilePermissions(config);
+  for (const operation of ["Read", "Insert", "Update", "Delete"]) {
+    assert.match(permissions, new RegExp(`policy\\.posts\\.allow${operation}\\.always\\(\\)`));
+  }
+  assert.doesNotMatch(permissions, /import bebopConfig/);
+  assert.doesNotMatch(permissions, /\.where\(\(row\)/);
+  assert.equal(permissions, compilePermissions(config));
+});
+
 test("permission callbacks can build correlated exists rules against another collection", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: { title: text() },
-        access: {
-          read: ({ row, exists }) => exists("members", { postId: row.id, role: "editor" }),
-        },
-      }),
-      members: collection({
-        fields: { postId: text(), role: text() },
-      }),
-    },
+    collections: [{
+      slug: "posts",
+      fields: [{ name: "title", type: "text" }],
+      access: {
+        read: ({ row, exists }) => exists("members", { postId: row.id, role: "editor" }),
+      },
+    }, {
+      slug: "members",
+      fields: [{ name: "postId", type: "text" }, { name: "role", type: "text" }],
+    }],
   });
 
   const permissions = compilePermissions(config, "./config.js");
@@ -85,9 +115,7 @@ test("permission callbacks can build correlated exists rules against another col
 
 test("one normalized config produces deterministic compiler artifacts", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({ fields: { title: text({ required: true }) }, admin: { useAsTitle: "title" } }),
-    },
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text", required: true }], admin: { useAsTitle: "title" } }],
   });
   const artifacts = compileArtifacts(config, "./config.js");
   assert.deepEqual(artifacts, compileArtifacts(config, "./config.js"));
@@ -95,6 +123,57 @@ test("one normalized config produces deterministic compiler artifacts", () => {
   assert.equal(artifacts.adminManifest, compileAdminManifest(config));
   assert.equal(artifacts.permissions, compilePermissions(config, "./config.js"));
   assert.equal(artifacts.clientFactory, compileClientFactory("./config.js"));
+});
+
+test("Payload-style field objects keep the supported Jazz storage types", () => {
+  const config = defineConfig({
+    collections: [
+      { slug: "users", fields: [{ name: "name", type: "text", required: true }] },
+      {
+        slug: "posts",
+        fields: [
+          { name: "title", label: "Post title", type: "text", required: true },
+          { name: "rating", type: "number" },
+          { name: "views", type: "number", integer: true },
+          { name: "published", type: "checkbox" },
+          { name: "publishedAt", type: "date" },
+          { name: "metadata", type: "json" },
+          { name: "status", type: "select", options: [{ label: "Draft", value: "draft" }, "published"] },
+          { name: "author", type: "relationship", relationTo: "users", required: true },
+        ],
+      },
+    ],
+  });
+
+  const schema = compileSchema(config);
+  const manifest = compileAdminManifest(config);
+  assert.match(schema, /"rating": s\.float\(\)\.optional\(\)/);
+  assert.match(schema, /"views": s\.int\(\)\.optional\(\)/);
+  assert.match(schema, /"published": s\.boolean\(\)\.optional\(\)/);
+  assert.match(schema, /"publishedAt": s\.timestamp\(\)\.optional\(\)/);
+  assert.match(schema, /"metadata": s\.json\(\)\.optional\(\)/);
+  assert.match(schema, /"status": s\.enum\("draft", "published"\)\.optional\(\)/);
+  assert.match(schema, /"authorId": s\.uuid\(\)/);
+  assert.match(schema, /"author": s\.rel\("users", "authorId"\)/);
+  assert.match(manifest, /"label": "Post title"/);
+  assert.match(manifest, /"options": \[\s*"draft",\s*"published"\s*\]/);
+  assert.match(manifest, /"optionLabels": \{\s*"draft": "Draft"\s*\}/);
+});
+
+test("field arrays reject duplicate names and invalid admin references", () => {
+  assert.throws(() => compileSchema(defineConfig({ collections: [{
+    slug: "posts",
+    fields: [{ name: "title", type: "text" }, { name: "title", type: "text" }],
+  }] })), /Duplicate field name "title"/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [{
+    slug: "posts",
+    fields: [{ name: "author", type: "relationship", relationTo: "posts" }, { name: "authorId", type: "text" }],
+  }] })), /conflicts with another stored field/);
+  assert.throws(() => compileAdminManifest(defineConfig({ collections: [{
+    slug: "posts",
+    fields: [{ name: "title", type: "text" }],
+    admin: { defaultColumns: ["missing"] },
+  }] })), /admin\.defaultColumns references unknown field "missing"/);
 });
 
 function createFakeDb() {
@@ -140,7 +219,7 @@ function createFakeDb() {
 }
 
 test("shared collection queries validate fields and expose Jazz pagination", async () => {
-  const config = defineConfig({ collections: { posts: collection({ fields: { title: text() } }) } });
+  const config = defineConfig({ collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }] });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
   const query = client.posts.query({ where: { title: "hello" }, orderBy: { field: "title", direction: "desc" }, limit: 10, offset: 20, includeTimestamps: true });
@@ -163,20 +242,19 @@ test("shared collection queries validate fields and expose Jazz pagination", asy
 test("shared mutations run before and after hooks around optimistic writes", async () => {
   const order: string[] = [];
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: { title: text({ required: true }) },
-        hooks: {
-          beforeChange: ({ operation, data }) => {
-            order.push(`before:${operation}`);
-            return { title: `${data.title}!` };
-          },
-          afterChange: ({ operation }) => { order.push(`after:${operation}`); },
-          beforeDelete: ({ id }) => { order.push(`before:delete:${id}`); },
-          afterDelete: ({ id }) => { order.push(`after:delete:${id}`); },
+    collections: [{
+      slug: "posts",
+      fields: [{ name: "title", type: "text", required: true }],
+      hooks: {
+        beforeChange: ({ operation, data }) => {
+          order.push(`before:${operation}`);
+          return { title: `${data.title}!` };
         },
-      }),
-    },
+        afterChange: ({ operation }) => { order.push(`after:${operation}`); },
+        beforeDelete: ({ id }) => { order.push(`before:delete:${id}`); },
+        afterDelete: ({ id }) => { order.push(`after:delete:${id}`); },
+      },
+    }],
   });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
@@ -207,16 +285,15 @@ test("shared mutations run before and after hooks around optimistic writes", asy
 
 test("a before hook exception cancels the local write", async () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: { title: text({ required: true }) },
-        hooks: {
-          beforeChange: ({ data }) => {
-            if (data.title === "blocked") throw new Error("blocked by hook");
-          },
+    collections: [{
+      slug: "posts",
+      fields: [{ name: "title", type: "text", required: true }],
+      hooks: {
+        beforeChange: ({ data }) => {
+          if (data.title === "blocked") throw new Error("blocked by hook");
         },
-      }),
-    },
+      },
+    }],
   });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
@@ -227,14 +304,13 @@ test("a before hook exception cancels the local write", async () => {
 
 test("an after hook failure reports that the local write already happened", async () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({
-        fields: { title: text({ required: true }) },
-        hooks: {
-          afterChange: () => { throw new Error("after hook failed"); },
-        },
-      }),
-    },
+    collections: [{
+      slug: "posts",
+      fields: [{ name: "title", type: "text", required: true }],
+      hooks: {
+        afterChange: () => { throw new Error("after hook failed"); },
+      },
+    }],
   });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
@@ -250,9 +326,7 @@ test("an after hook failure reports that the local write already happened", asyn
 
 test("shared client forwards asynchronous Jazz mutation rejections", () => {
   const config = defineConfig({
-    collections: {
-      posts: collection({ fields: { title: text() } }),
-    },
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }],
   });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });

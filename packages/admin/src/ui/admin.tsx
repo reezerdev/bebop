@@ -36,6 +36,7 @@ import { Label } from "../components/ui/label.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.js";
 import { Textarea } from "../components/ui/textarea.js";
+import { Toaster, useToastManager } from "../components/ui/toast.js";
 import { AdminPortalContainer } from "../lib/admin-portal.js";
 
 type AdminRecord = Record<string, unknown> & { id: string; $createdAt?: Date; $updatedAt?: Date };
@@ -302,6 +303,7 @@ function AdminLayout({
 
   return (
     <AdminPortalContainer.Provider value={portalContainer}>
+    <Toaster>
     <div ref={portalContainer} className="bebop-admin min-h-svh bg-background text-foreground">
       <aside className={`admin-sidebar ${sidebarCollapsed ? "admin-sidebar-hidden" : ""} ${mobileOpen ? "admin-sidebar-open" : ""}`}>
         <div className="admin-sidebar-header">
@@ -360,6 +362,7 @@ function AdminLayout({
         </main>
       </div>
     </div>
+    </Toaster>
     </AdminPortalContainer.Provider>
   );
 }
@@ -416,6 +419,7 @@ function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopA
 
 function CollectionList({ app, client, collection, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
+  const toast = useToastManager();
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
   const [search, setSearch] = useState("");
@@ -739,8 +743,14 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
                         if (deletedIds.length) {
                           setPendingDelete(null);
                           setOperationError(`${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally before this operation stopped. ${error instanceof Error ? error.message : "The remaining documents could not be deleted."}`);
+                          toast.add({
+                            type: "warning",
+                            title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally`,
+                            description: "The remaining documents could not be deleted.",
+                          });
                         } else {
                           setDeleteError(error instanceof Error ? error.message : "The selected documents could not be deleted.");
+                          toast.add({ type: "error", title: "Could not delete documents", description: error instanceof Error ? error.message : "The selected documents could not be deleted." });
                         }
                         return;
                       }
@@ -748,6 +758,11 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
                     clearDeletedSelection();
                     setDeleteError(undefined);
                     setPendingDelete(null);
+                    toast.add({
+                      type: "success",
+                      title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally`,
+                      description: "Jazz sync may still be pending.",
+                    });
                   });
                 }}
               >
@@ -770,6 +785,7 @@ function EditorRoute({ app, client, manifest, createDefaults, relationOptions }:
 
 function DocumentEditor({ app, client, manifest, collection, id, createDefaults, relationOptions }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; relationOptions?: BebopAdminProps["relationOptions"] }) {
   const navigate = useNavigate();
+  const toast = useToastManager();
   const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
@@ -853,25 +869,24 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   if (id && readAdvice === "denied") return <div className="py-16 text-center text-sm text-destructive" role="alert">Your current session cannot read this document.</div>;
 
   async function save(values: FieldValues) {
-    if (!table) return;
     const document = serializeValues(collection, values);
     setSaveError(undefined);
-    const advice = id
-      ? await db.canUpdate(table, id, document)
-      : await db.canInsert(table, document);
-    setPermissionAdvice(advice);
-    if (advice === "denied") {
-      setSaveError("Your current session cannot save this document.");
-      return;
-    }
-    const operations = getMutations(client, collection.slug);
-    if (!operations) {
-      setSaveError("The Bebop mutation client is missing this collection.");
-      return;
-    }
     try {
+      if (!table) throw new Error("The generated Bebop app is missing this collection.");
+      const advice = id
+        ? await db.canUpdate(table, id, document)
+        : await db.canInsert(table, document);
+      setPermissionAdvice(advice);
+      if (advice === "denied") throw new Error("Your current session cannot save this document.");
+      const operations = getMutations(client, collection.slug);
+      if (!operations) throw new Error("The Bebop mutation client is missing this collection.");
       if (id) await operations.update(id, document);
       else await operations.create(document);
+      toast.add({
+        type: "success",
+        title: `${collection.labels.singular} ${id ? "updated" : "created"} locally`,
+        description: "Jazz sync may still be pending.",
+      });
       navigate(`/admin/collections/${collection.slug}`);
     } catch (mutationFailure) {
       const localWriteApplied = mutationFailure instanceof Error && "localWriteApplied" in mutationFailure;
@@ -879,6 +894,11 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       setSaveError(localWriteApplied
         ? `${(mutationFailure as Error).message} The local change was applied and may still sync.`
         : mutationFailure instanceof Error ? mutationFailure.message : "The document could not be saved.");
+      toast.add({
+        type: localWriteApplied ? "warning" : "error",
+        title: localWriteApplied ? "Local change needs attention" : "Could not save document",
+        description: mutationFailure instanceof Error ? mutationFailure.message : "The document could not be saved.",
+      });
     }
   }
 

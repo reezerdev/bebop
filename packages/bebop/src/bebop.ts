@@ -117,6 +117,7 @@ export type CollectionAdminOptions = {
   useAsTitle?: string;
   defaultColumns?: readonly string[];
   listSearchableFields?: readonly string[];
+  sidebarFields?: readonly string[];
 };
 export type CollectionDefinition<TFields extends Fields = Fields> = {
   fields: TFields;

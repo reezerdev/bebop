@@ -16,6 +16,7 @@ export default defineConfig({
         useAsTitle: "title",
         defaultColumns: ["title", "author", "published", "category"],
         listSearchableFields: ["title", "slug"],
+        sidebarFields: ["author", "publishedAt", "published", "category"],
       },
       fields: {
         title: text({ required: true }),

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useEffect, type ReactNode } from "react";
 import { useAll, useDb } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
 import type { MutationErrorEvent, PermissionAdvice } from "jazz-tools";
@@ -25,6 +25,7 @@ import {
   Outlet,
   useLocation,
   useNavigate,
+  useOutletContext,
   useParams,
   useRoutes,
 } from "react-router-dom";
@@ -57,6 +58,10 @@ type CollectionMutations = {
   create: (data: Record<string, unknown>) => Promise<unknown>;
   update: (id: string, data: Record<string, unknown>) => Promise<unknown>;
   delete: (id: string) => Promise<unknown>;
+};
+
+type AdminOutletContext = {
+  setDocumentBreadcrumb: (title: string | undefined) => void;
 };
 
 export type BebopAdminUser = {
@@ -255,9 +260,16 @@ function AdminLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [collectionsOpen, setCollectionsOpen] = useState(true);
+  const [documentBreadcrumb, setDocumentBreadcrumbState] = useState<{ path: string; title: string }>();
   const location = useLocation();
+  const setDocumentBreadcrumb = useCallback((title: string | undefined) => {
+    setDocumentBreadcrumbState(title ? { path: location.pathname, title } : undefined);
+  }, [location.pathname]);
+  const currentDocumentBreadcrumb = documentBreadcrumb?.path === location.pathname ? documentBreadcrumb.title : undefined;
   const activeCollection = location.pathname.match(/\/collections\/([^/]+)/)?.[1];
   const currentCollection = activeCollection ? manifest.collections[activeCollection] : undefined;
+  const isCreateRoute = location.pathname.endsWith("/create");
+  const isDocumentRoute = Boolean(currentCollection && location.pathname.match(/\/collections\/[^/]+\/[^/]+\/?$/) && !isCreateRoute);
   const collections = Object.values(manifest.collections).sort((left, right) => left.label.localeCompare(right.label));
   const userName = user?.name?.trim() || "Signed in";
   const userEmail = user?.email?.trim() || "Email unavailable";
@@ -273,7 +285,7 @@ function AdminLayout({
     <div className="bebop-admin min-h-svh bg-background text-foreground">
       <aside className={`admin-sidebar ${sidebarCollapsed ? "admin-sidebar-hidden" : ""} ${mobileOpen ? "admin-sidebar-open" : ""}`}>
         <div className="admin-sidebar-header">
-          <Button variant="outline" size="icon" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
+          <Button variant="outline" size="icon-xs" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
             <ArrowLeft size={18} />
           </Button>
         </div>
@@ -317,14 +329,14 @@ function AdminLayout({
           <div className="admin-breadcrumbs">
             <Link to="/admin" className="admin-brand-mark" aria-label="Bebop dashboard">b</Link>
             <span className="admin-breadcrumb-divider">/</span>
-            <span>{currentCollection?.label ?? "Dashboard"}</span>
-            {location.pathname.endsWith("/create") && <><span className="text-muted-foreground">/</span><span>New</span></>}
+            {currentCollection ? <Link to={`/admin/collections/${currentCollection.slug}`} className="hover:underline">{currentCollection.label}</Link> : <span>Dashboard</span>}
+            {(isCreateRoute || isDocumentRoute) && <><span className="text-muted-foreground">/</span><span className="max-w-56 truncate" title={currentDocumentBreadcrumb}>{isCreateRoute ? "New" : currentDocumentBreadcrumb ?? "Document"}</span></>}
             {activeCollection && !currentCollection && <span>Not found</span>}
           </div>
         </header>
         <main className="admin-content">
           {mutationError && <div className="mb-5 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{mutationError}</div>}
-          <Outlet />
+          <Outlet context={{ setDocumentBreadcrumb } satisfies AdminOutletContext} />
         </main>
       </div>
     </div>
@@ -346,7 +358,7 @@ function PageTitle({
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
         {eyebrow && <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">{eyebrow}</p>}
-        <h1 className="font-heading text-3xl font-semibold uppercase tracking-wider">{title}</h1>
+        <h1 className="text-[32px] font-normal leading-tight tracking-tight">{title}</h1>
         {description && <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}
@@ -359,7 +371,7 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
 
   return (
     <section>
-      <h1 className="mb-6 font-heading text-3xl font-semibold uppercase tracking-wider">Collections</h1>
+      <h1 className="mb-6 text-[32px] font-normal leading-tight tracking-tight">Collections</h1>
       <div className="admin-collection-grid">
         {collections.map((collection) => (
           <article key={collection.slug} className="admin-collection-card">
@@ -403,8 +415,7 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   const [operationError, setOperationError] = useState<string>();
   const rows = data ?? [];
   const readPermissions = useRowReadPermissions(db, table, rows);
-  const readableRows = rows.filter((row) => readPermissions[row.id] === "allowed");
-  const hasUnconfirmedReadRows = rows.some((row) => readPermissions[row.id] === "unknown");
+  const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
   const allColumns = collection.fields.map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const filterFields = collection.fields.filter((field) => field.kind === "boolean" || field.kind === "select");
@@ -491,15 +502,14 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
   return (
     <div>
       <div className="admin-list-heading">
-        <h1 className="font-heading text-3xl font-semibold uppercase tracking-wider">{collection.label}</h1>
-        <Button variant="secondary" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>
+        <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.label}</h1>
+        <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
-      {hasUnconfirmedReadRows && <p className="mb-3 border px-4 py-3 text-sm text-muted-foreground" role="status">Jazz could not confirm read access for some documents. They remain hidden.</p>}
       <div className="admin-table-toolbar">
         <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="pl-10 focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="h-8 pl-10 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {selectedRows.length > 0 && <Button variant="destructive" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedRows); }}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
@@ -559,8 +569,8 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
           <div className="py-12 text-center text-sm text-muted-foreground">Loading documents…</div>
         ) : filteredRows.length === 0 ? (
           <div className="py-16 text-center">
-            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied or could not confirm read access for the available documents." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
+            <h2 className="text-sm font-medium">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied read access for the available documents." : `Create your first ${collection.label.toLocaleLowerCase().replace(/s$/, "")} to get started.`}</p>
             {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
@@ -576,19 +586,19 @@ function CollectionList({ app, client, collection, relationOptions }: { app: obj
                     const active = sort.field === column;
                     const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
                     return (
-                      <TableHead key={column}>
+                      <TableHead key={column} className="h-10 text-[13px] font-normal normal-case tracking-normal">
                         <button className="admin-sort-button" onClick={() => toggleSort(column)}>
                           {field?.label ?? humanize(column)}<SortIcon size={13} />
                         </button>
                       </TableHead>
                     );
                   })}
-                  {collection.timestamps && <TableHead>Updated</TableHead>}
+                  {collection.timestamps && <TableHead className="h-10 text-[13px] font-normal normal-case tracking-normal">Updated</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pageRows.length === 0 ? (
-                  <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 2 : 1)} className="py-8 text-center text-sm text-muted-foreground">No readable documents on this page.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 2 : 1)} className="py-8 text-center text-sm text-muted-foreground">No documents on this page.</TableCell></TableRow>
                 ) : pageRows.map((row, rowIndex) => (
                   <TableRow key={row.id} className={rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}>
                     <TableCell className="w-12">
@@ -718,7 +728,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const form = useForm<FieldValues>({ defaultValues: id ? {} : initialValues(collection, undefined, createDefaults) });
   const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting, dirtyFields } } = form;
   const [permissionAdvice, setPermissionAdvice] = useState<PermissionAdvice>("unknown");
-  const [readAdvice, setReadAdvice] = useState<PermissionAdvice | "checking">(id ? "checking" : "allowed");
+  const [readAdvice, setReadAdvice] = useState<PermissionAdvice>("unknown");
   const [saveError, setSaveError] = useState<string>();
   const [saveApplied, setSaveApplied] = useState(false);
   const watchedValues = form.watch();
@@ -742,14 +752,14 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   useEffect(() => {
     let active = true;
     if (!id || !table) {
-      setReadAdvice("allowed");
+      setReadAdvice("unknown");
       return;
     }
     if (!existing) {
       setReadAdvice("unknown");
       return;
     }
-    setReadAdvice("checking");
+    setReadAdvice("unknown");
     void db.canRead(table, id).then((advice) => {
       if (active) setReadAdvice(advice);
     }).catch(() => {
@@ -779,7 +789,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
   if (id && !existing) return <NotFoundPage message="This document may have been deleted or is no longer available." />;
-  if (id && readAdvice !== "allowed") return <div className="py-16 text-center text-sm text-muted-foreground" role={readAdvice === "denied" ? "alert" : "status"}>{readAdvice === "denied" ? "Your current session cannot read this document." : readAdvice === "checking" ? "Checking document access…" : "Jazz could not confirm read access. The document remains hidden."}</div>;
+  if (id && readAdvice === "denied") return <div className="py-16 text-center text-sm text-destructive" role="alert">Your current session cannot read this document.</div>;
 
   async function save(values: FieldValues) {
     if (!table) return;
@@ -821,7 +831,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         <Button variant="outline" size="icon" aria-label="Back to collection" onClick={() => navigate(`/admin/collections/${collection.slug}`)}><ArrowLeft size={16} /></Button>
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground">{collection.label} / {id ? "Edit" : "Create"}</p>
-          <h1 className="truncate font-heading text-2xl font-semibold uppercase tracking-wider">{title}</h1>
+          <h1 className="truncate text-[28px] font-normal leading-tight tracking-tight">{title}</h1>
         </div>
         {id && collection.timestamps && existing?.$updatedAt && <span className="hidden text-xs text-muted-foreground md:block">Updated {formatDate(existing.$updatedAt, true)}</span>}
       </div>
@@ -1012,7 +1022,7 @@ function RelationInput({
   const { data, isLoading } = useAll<AdminRecord>(query);
   const db = useDb() as AdminDatabase;
   const readPermissions = useRowReadPermissions(db, relatedTable, data ?? []);
-  const readableRelatedRows = (data ?? []).filter((row) => readPermissions[row.id] === "allowed");
+  const readableRelatedRows = (data ?? []).filter((row) => readPermissions[row.id] !== "denied");
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full">

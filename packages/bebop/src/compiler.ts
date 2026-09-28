@@ -69,6 +69,7 @@ export function compileAdminManifest(config: BebopConfig): string {
       ...(useAsTitle ? { useAsTitle } : {}),
       defaultColumns,
       listSearchableFields: definition.admin?.listSearchableFields ?? (useAsTitle ? [useAsTitle] : []),
+      sidebarFields: definition.admin?.sidebarFields ?? [],
     }] as const;
   });
 
@@ -232,6 +233,11 @@ function validateConfig(config: BebopConfig): void {
       }
       if (definition.fields[fieldName].kind !== "text") {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields field "${fieldName}" must be text.`);
+      }
+    }
+    for (const fieldName of adminOptions?.sidebarFields ?? []) {
+      if (!Object.hasOwn(definition.fields, fieldName)) {
+        throw new Error(`Collection "${collectionName}" admin.sidebarFields references unknown field "${fieldName}".`);
       }
     }
   }

@@ -18,6 +18,7 @@ export type BebopAdminCollection = {
   useAsTitle?: string;
   defaultColumns: readonly string[];
   listSearchableFields: readonly string[];
+  sidebarFields?: readonly string[];
 };
 
 export type BebopAdminManifest = {

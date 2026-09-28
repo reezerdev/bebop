@@ -72,6 +72,12 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "title",
         "slug"
+      ],
+      "sidebarFields": [
+        "author",
+        "publishedAt",
+        "published",
+        "category"
       ]
     }
   }

@@ -169,36 +169,36 @@
 }
 
 .admin-sidebar {
-  @apply fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200;
+  @apply fixed inset-y-0 left-0 z-40 flex w-68 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200;
 }
 .admin-sidebar-hidden { @apply -translate-x-full; }
-.admin-sidebar-header { @apply flex h-16 shrink-0 items-center px-4; }
-.admin-sidebar-scroll { @apply flex-1 overflow-y-auto px-5 py-6; }
-.admin-nav-heading { @apply mb-2 flex w-full items-center justify-between bg-transparent py-1 text-left text-sm text-muted-foreground hover:text-foreground; }
+.admin-sidebar-header { @apply flex h-12 shrink-0 items-center px-4; }
+.admin-sidebar-scroll { @apply flex-1 overflow-y-auto px-5 pt-1 pb-6; }
+.admin-nav-heading { @apply mb-1 flex w-full items-center justify-between bg-transparent py-1 text-left text-[13px] text-muted-foreground hover:text-foreground; }
 .admin-collection-nav { @apply flex flex-col; }
-.admin-nav-link { @apply flex min-h-10 items-center px-1.5 text-[15px] leading-6 text-sidebar-foreground no-underline transition-colors hover:text-foreground; }
+.admin-nav-link { @apply flex min-h-7 items-center text-[14px] leading-5 text-sidebar-foreground no-underline transition-colors hover:text-foreground; }
 .admin-nav-active { @apply font-medium text-foreground; }
-.admin-sidebar-footer { @apply flex items-center gap-3 border-t border-sidebar-border px-4 py-4; }
+.admin-sidebar-footer { @apply flex items-center gap-3 border-t border-sidebar-border px-4 py-3; }
 .admin-avatar { @apply flex size-8 shrink-0 items-center justify-center rounded-none bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground; }
-.admin-main { @apply min-h-svh pl-72 transition-[padding] duration-200; }
+.admin-main { @apply min-h-svh pl-68 transition-[padding] duration-200; }
 .admin-main-expanded { @apply pl-0; }
-.admin-topbar { @apply sticky top-0 z-20 flex h-16 items-center border-b bg-background px-6; }
+.admin-topbar { @apply sticky top-0 z-20 flex h-12 items-center bg-background px-6 lg:px-15; }
 .admin-brand-mark { @apply flex size-8 items-center justify-center rounded-none bg-foreground text-base font-bold lowercase text-background no-underline; }
 .admin-breadcrumbs { @apply flex items-center gap-3 text-sm font-medium; }
 .admin-breadcrumb-divider { @apply text-muted-foreground; }
-.admin-content { @apply mx-auto w-full max-w-[1440px] p-6 lg:p-9; }
+.admin-content { @apply mx-auto w-full max-w-[1440px] px-6 pt-2 pb-6 lg:px-15; }
 .admin-sidebar-expand { @apply mr-3; }
 .admin-mobile-menu, .admin-mobile-backdrop { @apply hidden; }
 .admin-collection-grid { @apply grid gap-4 sm:grid-cols-2 xl:grid-cols-3; }
 .admin-collection-card { @apply flex min-h-40 items-start justify-between rounded-none border border-border bg-card p-5 text-card-foreground transition-colors hover:border-foreground/20; }
 .admin-collection-title { @apply pt-1 text-base font-medium text-card-foreground no-underline hover:underline; }
 .admin-collection-add { @apply flex size-9 shrink-0 items-center justify-center rounded-none border border-border text-card-foreground no-underline transition-colors hover:bg-accent; }
-.admin-list-heading { @apply mb-6 flex flex-wrap items-center justify-between gap-3; }
-.admin-table-toolbar { @apply mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-3; }
+.admin-list-heading { @apply mb-4 flex flex-wrap items-center justify-start gap-3; }
+.admin-table-toolbar { @apply mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2; }
 .admin-table-menu { @apply relative; }
 .admin-table-menu > summary { list-style: none; }
 .admin-table-menu > summary::-webkit-details-marker { display: none; }
-.admin-table-menu-trigger { @apply flex h-9 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-sm text-secondary-foreground hover:bg-accent; }
+.admin-table-menu-trigger { @apply flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent; }
 .admin-table-menu-content { @apply absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg; }
 .admin-table-menu-label { @apply mb-1 px-2 py-1 text-xs font-medium text-muted-foreground; }
 .admin-menu-checkbox { @apply flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 text-sm hover:bg-accent; }
@@ -206,8 +206,9 @@
 .admin-filter-menu { @apply flex max-h-[70vh] w-64 flex-col gap-3 overflow-y-auto; }
 .admin-filter-field { @apply flex flex-col gap-1.5 px-1 text-xs font-medium text-muted-foreground; }
 .admin-table-section { @apply w-full overflow-x-auto; }
+.admin-table-section [data-slot="table"] { font-size: 13px; }
 .admin-table-cell { @apply whitespace-normal py-4 align-top; }
-.admin-sort-button { @apply inline-flex items-center gap-2 font-medium text-muted-foreground hover:text-foreground; }
+.admin-sort-button { @apply inline-flex items-center gap-2 font-normal text-muted-foreground hover:text-foreground; }
 .admin-checkbox { appearance: none; display: inline-grid; width: 1rem; height: 1rem; place-content: center; flex: none; cursor: pointer; border: 1px solid var(--input); background: transparent; }
 .admin-checkbox::before { content: ""; width: 0.45rem; height: 0.25rem; transform: rotate(-45deg) scale(0); border: solid var(--primary-foreground); border-width: 0 0 2px 2px; }
 .admin-checkbox:checked { border-color: var(--primary); background: var(--primary); }

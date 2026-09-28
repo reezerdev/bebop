@@ -111,7 +111,7 @@ async function generate(paths, { quiet = false } = {}) {
   // Compile outputs before writing so invalid config keeps the last valid
   // generated schema and permissions available to the dev server.
   const configModuleSpecifier = moduleSpecifier(paths.outputDirectory, paths.configPath);
-  const { schema, permissions, adminManifest, clientFactory } = compileArtifacts(config, configModuleSpecifier);
+  const { schema, permissions, authorizationPermissions, adminManifest, clientFactory } = compileArtifacts(config, configModuleSpecifier);
   await mkdir(paths.outputDirectory, { recursive: true });
 
   if (config.auth) await generateBetterAuthSchema(paths, config.auth);
@@ -132,12 +132,13 @@ async function generate(paths, { quiet = false } = {}) {
     writeIfChanged(path.join(paths.outputDirectory, "bebop-generated-client.ts"), clientFactory),
     writeIfChanged(path.join(paths.outputDirectory, "schema.ts"), jazzSchemaEntry),
     writeIfChanged(path.join(paths.outputDirectory, "permissions.ts"), permissions),
+    writeIfChanged(path.join(paths.outputDirectory, "bebop-generated-command-permissions.ts"), authorizationPermissions),
   ]);
 
   if (!quiet) {
     const output = path.relative(process.cwd(), paths.outputDirectory) || ".";
     const action = changed.some(Boolean) ? "Generated" : "Up to date";
-    console.log(`${action} bebop-generated-schema.ts, bebop-admin-manifest.ts, bebop-generated-client.ts, Jazz schema.ts entry point, and permissions.ts in ${output}`);
+    console.log(`${action} Bebop schema, admin manifest, typed client, Jazz schema entry point, and permission files in ${output}`);
   }
   return config;
 }

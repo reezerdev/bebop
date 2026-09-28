@@ -2,16 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useDb, useJazzAuth } from "jazz-tools/react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { BebopAdmin } from "@bebopdev/admin";
+import { createBebopFetchTransport } from "@bebopdev/core";
 import { authClient } from "../auth-client.ts";
 import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";
 import { PlaygroundPage } from "./PlaygroundPage.tsx";
+import { withAcyclicTaskParents } from "./task-parent.js";
 
 export function App() {
   const { logout } = useJazzAuth();
   const db = useDb();
-  const bebop = useMemo(() => createBebopClient(db), [db]);
+  const bebop = useMemo(() => withAcyclicTaskParents(createBebopClient(db, {
+    commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
+  })), [db]);
   const { data: authSession } = authClient.useSession();
   const currentUserId = authSession?.user.id ?? "";
   const currentUserName = authSession?.user.name?.trim() ?? "";

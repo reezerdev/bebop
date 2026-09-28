@@ -7,6 +7,7 @@ import type {
   Fields,
   StoredFields,
 } from "./bebop.ts";
+import { validateCollectionData } from "./validation.ts";
 
 type RequiredStoredKeys<TFields extends Fields> = {
   [TName in keyof StoredFields<TFields>]-?: {} extends Pick<StoredFields<TFields>, TName> ? never : TName;
@@ -42,25 +43,90 @@ export type BebopQueryOptions<TFields extends Fields> = {
   includeTimestamps?: boolean;
 };
 
-export type BebopMutationResult<TDocument> = {
-  doc: TDocument;
-  /** The mutation has been applied locally; call waitForGlobal for server confirmation. */
+export type BebopSearchOptions<TFields extends Fields> = {
+  search: string;
+  fields: readonly Extract<keyof StoredFields<TFields>, string>[];
+  where?: BebopQueryOptions<TFields>["where"];
+  orderBy?: BebopQueryOptions<TFields>["orderBy"];
+  limit?: number;
+  offset?: number;
+};
+
+type BebopLocalWrite = {
   durability: "local";
   write: WriteHandle<unknown, unknown>;
   waitForGlobal: () => Promise<void>;
 };
+type BebopConfirmedWrite = {
+  /** Command writes are returned only after Jazz confirms them globally. */
+  durability: "global";
+  waitForGlobal: () => Promise<void>;
+};
+
+export type BebopMutationResult<TDocument> = {
+  doc: TDocument;
+} & (BebopLocalWrite | BebopConfirmedWrite);
 
 export type BebopDeleteResult<TDocument> = {
   id: string;
   doc?: TDocument;
-  durability: "local";
-  write: WriteHandle<unknown, unknown>;
-  waitForGlobal: () => Promise<void>;
+} & (BebopLocalWrite | BebopConfirmedWrite);
+
+export type BebopCommandRequest = {
+  collection: string;
+  operation: "create" | "update" | "delete";
+  id?: string;
+  data?: Readonly<Record<string, unknown>>;
 };
+
+export type BebopCommandTransport = (request: BebopCommandRequest) => Promise<{
+  doc?: Readonly<Record<string, unknown>>;
+}>;
+
+export class BebopCommandError extends Error {
+  constructor(
+    message: string,
+    readonly fieldErrors?: Readonly<Record<string, string>>,
+    readonly status?: number,
+    readonly writeAccepted = false,
+  ) {
+    super(message);
+    this.name = "BebopCommandError";
+  }
+}
+
+export function createBebopFetchTransport(options: { basePath?: string; fetch?: typeof fetch } = {}): BebopCommandTransport {
+  const basePath = (options.basePath ?? "/api/bebop").replace(/\/$/, "");
+  const fetcher = options.fetch ?? globalThis.fetch;
+  return async ({ collection, operation, id, data }) => {
+    const path = `${basePath}/collections/${encodeURIComponent(collection)}${id ? `/${encodeURIComponent(id)}` : ""}`;
+    const response = await fetcher(path, {
+      method: operation === "create" ? "POST" : operation === "update" ? "PATCH" : "DELETE",
+      credentials: "same-origin",
+      headers: data ? { "content-type": "application/json" } : undefined,
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    const payload = await response.json().catch(() => ({})) as { message?: unknown; fieldErrors?: unknown; doc?: Record<string, unknown>; writeAccepted?: unknown };
+    if (!response.ok) {
+      const fieldErrors = payload.fieldErrors && typeof payload.fieldErrors === "object"
+        ? payload.fieldErrors as Record<string, string>
+        : undefined;
+      throw new BebopCommandError(
+        typeof payload.message === "string" ? payload.message : `Bebop command failed (${response.status}).`,
+        fieldErrors,
+        response.status,
+        payload.writeAccepted === true,
+      );
+    }
+    return { ...(payload.doc ? { doc: payload.doc } : {}) };
+  };
+}
 
 export type BebopCollectionClient<TFields extends Fields, TUpload extends boolean = false> = {
   query(options?: BebopQueryOptions<TFields>): QueryBuilder<BebopClientDocument<TFields, TUpload>>;
   queryIds(options?: Pick<BebopQueryOptions<TFields>, "where">): QueryBuilder<{ id: string }>;
+  search(options: BebopSearchOptions<TFields>): QueryBuilder<BebopClientDocument<TFields, TUpload>>;
+  searchIds(options: Pick<BebopSearchOptions<TFields>, "search" | "fields" | "where">): readonly QueryBuilder<{ id: string }>[];
   find(options?: BebopQueryOptions<TFields>): Promise<BebopClientDocument<TFields, TUpload>[]>;
   findById(id: string): Promise<BebopClientDocument<TFields, TUpload> | null>;
   create(data: CollectionCreateData<TFields> & (TUpload extends true ? { file: Blob } : object)): Promise<BebopMutationResult<BebopClientDocument<TFields, TUpload>>>;
@@ -109,6 +175,7 @@ type BebopTable = TableProxy<Record<string, unknown> & { id: string }, Record<st
   select(...fields: string[]): BebopQuery;
   where(input: Record<string, unknown>): BebopQuery;
 };
+type BebopAppWithUnion = { union(queries: Readonly<Record<string, BebopQuery>>): BebopQuery };
 type AdminUploadDocument = { fileId?: string; mimeType?: string };
 
 function nonnegativeInteger(value: number | undefined, name: string): number | undefined {
@@ -121,8 +188,9 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
   app: Record<TConfig["collections"][number]["slug"], object>;
   config: TConfig;
   db: Db;
+  commandTransport?: BebopCommandTransport;
 }): BebopClient<TConfig> {
-  const { app, config, db } = options;
+  const { app, config, db, commandTransport } = options;
   const collections: Record<string, BebopCollectionClient<Fields> & { readFile(id: string): Promise<Blob | null> }> = {};
 
   for (const definition of config.collections) {
@@ -132,6 +200,18 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
     const readLocalDocument = (id: string) => db.one(table.where({ id }));
+    const decodeCommandDocument = (value: Readonly<Record<string, unknown>>) => {
+      const document = { ...value };
+      for (const field of definition.fields) {
+        if (field.type === "date" && typeof document[field.name] === "string") {
+          document[field.name] = new Date(document[field.name] as string);
+        }
+      }
+      for (const name of ["$createdAt", "$updatedAt"]) {
+        if (typeof document[name] === "string") document[name] = new Date(document[name] as string);
+      }
+      return document as CollectionDocument<Fields>;
+    };
     const uploadTable = definition.upload ? (app as Record<string, unknown>)[`bebop_files_${collectionName}`] as BebopTable | undefined : undefined;
     const partTable = definition.upload ? (app as Record<string, unknown>)[`bebop_file_parts_${collectionName}`] as BebopTable | undefined : undefined;
     if (definition.upload && !uploadTable) throw new Error(`Generated Bebop app is missing file table for "${collectionName}".`);
@@ -155,6 +235,53 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         if (name !== "id" && !storedFields.has(name)) throw new Error(`Unknown ${collectionName} query field "${name}".`);
       }
       return where;
+    };
+    const searchableFields = definition.admin?.listSearchableFields ?? (
+      definition.admin?.useAsTitle ? [definition.admin.useAsTitle]
+        : definition.fields.some((field) => field.type !== "join" && field.name === "title") ? ["title"]
+          : []
+    );
+    const validateSearchFields = (fields: readonly string[]) => {
+      if (!fields.length) throw new Error(collectionName + " has no configured listSearchableFields.");
+      for (const name of fields) {
+        const field = definition.fields.find((candidate) => candidate.name === name);
+        const generatedTextField = definition.upload && (name === "filename" || name === "mimeType");
+        if (!searchableFields.includes(name) || (field?.type !== "text" && !generatedTextField)) {
+          throw new Error("Unknown " + collectionName + " searchable text field \"" + name + "\".");
+        }
+      }
+    };
+    const orderQuery = (result: BebopQuery, orderBy: BebopQueryOptions<Fields>["orderBy"]) => {
+      if (!orderBy) return result;
+      const field = String(orderBy.field);
+      if (field !== "id" && field !== "$createdAt" && field !== "$updatedAt" && !storedFields.has(field)) {
+        throw new Error("Unknown " + collectionName + " sort field \"" + field + "\".");
+      }
+      return result.orderBy(field, orderBy.direction);
+    };
+    const searchIds = (options: Pick<BebopSearchOptions<Fields>, "search" | "fields" | "where">) => {
+      const search = options.search.trim();
+      const fields = [...new Set(options.fields.map(String))];
+      validateSearchFields(fields);
+      const where = validatedWhere(options.where as Record<string, unknown> | undefined) ?? {};
+      if (!search) return [table.select("id").where(where) as QueryBuilder<{ id: string }>];
+      return fields.map((field) => table.select("id").where({ ...where, [field]: { contains: search } }) as QueryBuilder<{ id: string }>);
+    };
+    const searchPage = (options: BebopSearchOptions<Fields>) => {
+      const search = options.search.trim();
+      const fields = [...new Set(options.fields.map(String))];
+      validateSearchFields(fields);
+      const where = validatedWhere(options.where as Record<string, unknown> | undefined) ?? {};
+      const queries = search
+        ? Object.fromEntries(fields.map((field, index) => ["field_" + index, table.where({ ...where, [field]: { contains: search } })]))
+        : { all: table.where(where) };
+      let result = (app as unknown as BebopAppWithUnion).union(queries);
+      result = orderQuery(result, options.orderBy as BebopQueryOptions<Fields>["orderBy"]);
+      const limit = nonnegativeInteger(options.limit, "limit");
+      const offset = nonnegativeInteger(options.offset, "offset");
+      if (limit !== undefined) result = result.limit(limit);
+      if (offset !== undefined) result = result.offset(offset);
+      return result as QueryBuilder<CollectionDocument<Fields>>;
     };
     const validateFile = (file: unknown) => {
       if (!(file instanceof Blob)) throw new TypeError(`${collectionName} requires a file.`);
@@ -229,6 +356,8 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
 
     collections[collectionName] = {
       query,
+      search: searchPage,
+      searchIds,
       queryIds: (options = {}) => {
         let result = table.select("id");
         const where = validatedWhere(options.where as Record<string, unknown> | undefined);
@@ -242,6 +371,13 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         validateWriteData(input);
         if (!definition.upload && file !== undefined) throw new Error(`Unknown ${collectionName} write field "file".`);
         const mediaFile = definition.upload ? validateFile(file) : undefined;
+        await validateCollectionData(definition, input, "create");
+        if (definition.writeMode === "command") {
+          if (!commandTransport) throw new Error(`Collection "${collectionName}" uses writeMode "command" and requires a command transport.`);
+          const response = await commandTransport({ collection: collectionName, operation: "create", data: input });
+          if (!response.doc || typeof response.doc.id !== "string") throw new Error(`Command handler did not return the created ${collectionName} document.`);
+          return { doc: decodeCommandDocument(response.doc), durability: "global" as const, waitForGlobal: async () => {} };
+        }
         const context: CollectionChangeContext<Fields> = {
           operation: "create",
           data: { ...input } as Partial<StoredFields<Fields>>,
@@ -249,6 +385,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         const patch = await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
         validateWriteData(document);
+        await validateCollectionData(definition, document, "create");
         let staged: Awaited<ReturnType<typeof stageFile>> | undefined;
         let write: WriteHandle<unknown, unknown>;
         let doc: CollectionDocument<Fields>;
@@ -284,16 +421,24 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         if (!definition.upload && file !== undefined) throw new Error(`Unknown ${collectionName} write field "file".`);
         const mediaFile = file !== undefined ? validateFile(file) : undefined;
         const originalDoc = await readLocalDocument(id) as CollectionDocument<Fields> | null;
-        if (!originalDoc) throw new BebopDocumentNotFoundError(collectionName, id);
+        if (definition.writeMode !== "command" && !originalDoc) throw new BebopDocumentNotFoundError(collectionName, id);
+        await validateCollectionData(definition, input, "update", originalDoc ?? undefined);
+        if (definition.writeMode === "command") {
+          if (!commandTransport) throw new Error(`Collection "${collectionName}" uses writeMode "command" and requires a command transport.`);
+          const response = await commandTransport({ collection: collectionName, operation: "update", id, data: input });
+          if (!response.doc || typeof response.doc.id !== "string") throw new Error(`Command handler did not return the updated ${collectionName} document.`);
+          return { doc: decodeCommandDocument(response.doc), durability: "global" as const, waitForGlobal: async () => {} };
+        }
         const context: CollectionChangeContext<Fields> = {
           operation: "update",
           id,
           data: { ...input } as Partial<StoredFields<Fields>>,
-          originalDoc,
+          originalDoc: originalDoc!,
         };
         const patch = await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
         validateWriteData(document);
+        await validateCollectionData(definition, document, "update", originalDoc!);
         let staged: Awaited<ReturnType<typeof stageFile>> | undefined;
         let write: WriteHandle<unknown, unknown>;
         let changes = document;
@@ -322,7 +467,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         }
         const doc = { ...originalDoc, ...changes } as CollectionDocument<Fields>;
         try {
-          await hooks?.afterChange?.({ operation: "update", doc, originalDoc });
+          await hooks?.afterChange?.({ operation: "update", doc, originalDoc: originalDoc! });
         } catch (error) {
           throw new BebopHookError("afterChange", error, write);
         }
@@ -330,6 +475,11 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       },
 
       async delete(id) {
+        if (definition.writeMode === "command") {
+          if (!commandTransport) throw new Error(`Collection "${collectionName}" uses writeMode "command" and requires a command transport.`);
+          await commandTransport({ collection: collectionName, operation: "delete", id });
+          return { id, durability: "global" as const, waitForGlobal: async () => {} };
+        }
         const doc = await readLocalDocument(id) as CollectionDocument<Fields> | null ?? undefined;
         await hooks?.beforeDelete?.({ id, ...(doc ? { doc } : {}) });
         const oldFileId = (doc as AdminUploadDocument | undefined)?.fileId;

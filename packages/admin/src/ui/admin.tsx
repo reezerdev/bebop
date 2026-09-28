@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   Link,
@@ -59,6 +60,8 @@ export type BebopAdminClient = object & {
 type CollectionMutations = {
   query: (options?: { where?: Record<string, unknown>; orderBy?: { field: string; direction?: "asc" | "desc" }; limit?: number; offset?: number; includeTimestamps?: boolean }) => QueryBuilder<AdminRecord>;
   queryIds: (options?: { where?: Record<string, unknown> }) => QueryBuilder<{ id: string }>;
+  search: (options: { search: string; fields: readonly string[]; where?: Record<string, unknown>; orderBy?: { field: string; direction?: "asc" | "desc" }; limit?: number; offset?: number }) => QueryBuilder<AdminRecord>;
+  searchIds: (options: { search: string; fields: readonly string[]; where?: Record<string, unknown> }) => readonly QueryBuilder<{ id: string }>[];
   create: (data: Record<string, unknown>) => Promise<unknown>;
   update: (id: string, data: Record<string, unknown>) => Promise<unknown>;
   delete: (id: string) => Promise<unknown>;
@@ -173,30 +176,62 @@ function useAdminRows(client: BebopAdminClient, collectionSlug: string, options:
   page?: number;
   pageSize?: number;
   searchActive: boolean;
+  search?: string;
+  searchFields?: readonly string[];
   enabled?: boolean;
 }) {
   const operations = getMutations(client, collectionSlug);
-  const query = options.enabled === false ? undefined : operations?.query({
+  const offset = ((options.page ?? 1) - 1) * (options.pageSize ?? defaultPageSize);
+  const searchPageQuery = options.enabled === false || !options.searchActive ? undefined : operations?.search({
+    search: options.search ?? "",
+    fields: options.searchFields ?? [],
     where: options.where,
     orderBy: options.sort,
-    includeTimestamps: true,
-    ...(!options.searchActive && options.pageSize !== undefined
-      ? { limit: options.pageSize, offset: ((options.page ?? 1) - 1) * options.pageSize }
-      : {}),
+    limit: options.pageSize,
+    offset,
   });
+  const searchPage = useAll<AdminRecord>(searchPageQuery);
+  const pageIds = searchPage.data?.map((row) => row.id) ?? [];
+  const query = options.enabled === false ? undefined : options.searchActive
+    ? pageIds.length ? operations?.query({ where: { ...options.where, id: { in: pageIds } }, includeTimestamps: true }) : undefined
+    : operations?.query({
+      where: options.where,
+      orderBy: options.sort,
+      includeTimestamps: true,
+      ...(options.pageSize !== undefined ? { limit: options.pageSize, offset } : {}),
+    });
   const idsQuery = options.enabled === false || options.searchActive ? undefined : operations?.queryIds({ where: options.where });
-  const rows = useAll<AdminRecord>(query);
+  const docs = useAll<AdminRecord>(query);
   const ids = useAll<{ id: string }>(idsQuery);
-  return { rows, ids };
+  const docsById = new Map((docs.data ?? []).map((row) => [row.id, row]));
+  const orderedRows = options.searchActive ? pageIds.flatMap((id) => {
+    const row = docsById.get(id);
+    return row ? [row] : [];
+  }) : docs.data;
+  const rows = options.searchActive
+    ? { ...docs, data: orderedRows, isLoading: searchPage.isLoading || docs.isLoading, error: searchPage.error ?? docs.error }
+    : docs;
+  const searchIdQueries = options.enabled === false || !options.searchActive
+    ? []
+    : operations?.searchIds({ search: options.search ?? "", fields: options.searchFields ?? [], where: options.where }) ?? [];
+  return { rows, ids, searchPage, searchIdQueries };
 }
 
-function usePageRowPermissions(db: AdminDatabase, table: AdminTable | undefined, rows: readonly AdminRecord[]) {
+function SearchIdsObserver({ query, onIds }: { query?: QueryBuilder<{ id: string }>; onIds: (ids: readonly string[]) => void }) {
+  const { data } = useAll<{ id: string }>(query);
+  const ids = data?.map((row) => row.id) ?? [];
+  const fingerprint = ids.join("\u0000");
+  useEffect(() => { onIds(ids); }, [fingerprint, onIds]);
+  return null;
+}
+
+function usePageRowPermissions(db: AdminDatabase, table: AdminTable | undefined, rows: readonly AdminRecord[], writeMode: BebopAdminCollection["writeMode"]) {
   const [permissions, setPermissions] = useState<Record<string, { update: PermissionAdvice; delete: PermissionAdvice }>>({});
   const rowFingerprint = rows.map((row) => JSON.stringify(row)).join("\u0000");
 
   useEffect(() => {
     let active = true;
-    if (!table || rows.length === 0) {
+    if (!table || rows.length === 0 || writeMode === "command") {
       setPermissions((current) => Object.keys(current).length ? {} : current);
       return;
     }
@@ -215,7 +250,7 @@ function usePageRowPermissions(db: AdminDatabase, table: AdminTable | undefined,
       if (active) setPermissions(Object.fromEntries(entries));
     });
     return () => { active = false; };
-  }, [db, rowFingerprint, table]);
+  }, [db, rowFingerprint, table, writeMode]);
 
   return permissions;
 }
@@ -452,7 +487,7 @@ function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopA
   return <CollectionList key={collection.slug} app={app} client={client} collection={collection} manifest={manifest} relationOptions={relationOptions} />;
 }
 
-function CollectionList({ app, client, collection, manifest, relationOptions }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; manifest: BebopAdminManifest; relationOptions?: BebopAdminProps["relationOptions"] }) {
+function CollectionList({ app, client, collection, manifest, relationOptions, selectMode = false, onSelect, onCreate }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; manifest: BebopAdminManifest; relationOptions?: BebopAdminProps["relationOptions"]; selectMode?: boolean; onSelect?: (row: AdminRecord) => void; onCreate?: () => void }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const db = useDb() as AdminDatabase;
@@ -472,6 +507,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
   const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
   const [deleteError, setDeleteError] = useState<string>();
   const [operationError, setOperationError] = useState<string>();
+  const [searchIdsByField, setSearchIdsByField] = useState<Record<string, { scope: string; ids: readonly string[] }>>({});
   const [relatedOptions, setRelatedOptions] = useState<Record<string, readonly RelationOption[]>>({});
   const onRelatedOptions = useCallback((slug: string, options: readonly RelationOption[]) => {
     setRelatedOptions((current) => {
@@ -493,10 +529,10 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
   const storedSortField = sortField && sortField.kind !== "join"
     ? sortField.storageName
     : sort.field === "id" ? "id" : defaultSortField?.kind !== "join" ? defaultSortField?.storageName ?? "id" : "id";
-  const { rows: rowResult, ids: idResult } = useAdminRows(client, collection.slug, {
+  const { rows: rowResult, ids: idResult, searchIdQueries } = useAdminRows(client, collection.slug, {
     where: filterWhere,
     sort: { field: storedSortField, direction: sort.direction },
-    page, pageSize, searchActive,
+    page, pageSize, searchActive, search, searchFields: collection.listSearchableFields,
   });
   const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
   const rows = data ?? [];
@@ -515,41 +551,14 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
     }
     relatedIdsByCollection.set(field.relationTo, ids);
   }
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    const filtered = readableRows.filter((row) => {
-      const matchesSearch = !query || collection.listSearchableFields.some((fieldName) => {
-        const field = fieldByName(collection, fieldName);
-        const value = field ? valueFor(field, row) : row[fieldName];
-        const relationLabel = field?.kind === "relation"
-          ? displayRelationOptions[field.relationTo ?? ""]?.find((option) => option.id === value)?.name
-          : undefined;
-        return `${relationLabel ?? ""} ${String(value ?? "")}`.toLocaleLowerCase().includes(query);
-      }) || (!collection.listSearchableFields.length && row.id.toLocaleLowerCase().includes(query));
-      const matchesFilters = filterFields.every((field) => {
-        const selected = filters[field.name];
-        if (!selected) return true;
-        const value = valueFor(field, row);
-        return field.kind === "boolean" ? String(Boolean(value)) === selected : String(value ?? "") === selected;
-      });
-      return matchesSearch && matchesFilters;
-    });
-
-    const sortField = fieldByName(collection, sort.field);
-    filtered.sort((left, right) => {
-      const leftValue = sortField ? valueFor(sortField, left) : left[sort.field];
-      const rightValue = sortField ? valueFor(sortField, right) : right[sort.field];
-      const result = compareValues(leftValue, rightValue, sortField);
-      return sort.direction === "asc" ? result : -result;
-    });
-    return filtered;
-  }, [collection, displayRelationOptions, filterFields, filters, readableRows, search, sort]);
-  const totalRows = searchActive ? filteredRows.length : idResult.data?.length ?? 0;
+  const searchScope = `${search.trim()}\u0000${JSON.stringify(filterWhere)}`;
+  const searchCountIds = searchActive
+    ? Object.values(searchIdsByField).filter((entry) => entry.scope === searchScope).flatMap((entry) => entry.ids)
+    : [];
+  const totalRows = searchActive ? new Set(searchCountIds).size : idResult.data?.length ?? 0;
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
-  const pageRows = searchActive
-    ? filteredRows.slice((Math.min(page, pageCount) - 1) * pageSize, Math.min(page, pageCount) * pageSize)
-    : filteredRows;
-  const rowPermissions = usePageRowPermissions(db, table, pageRows);
+  const pageRows = readableRows;
+  const rowPermissions = usePageRowPermissions(db, table, pageRows, collection.writeMode);
   const deletablePageRows = pageRows.filter((row) => rowPermissions[row.id]?.delete !== "denied");
   const allPageSelected = deletablePageRows.length > 0 && deletablePageRows.every((row) => selectedIds.has(row.id));
   const selectedRows = readableRows.filter((row) => selectedIds.has(row.id));
@@ -561,6 +570,14 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, filters]);
   useEffect(() => { setSelectedIds(new Set()); }, [page, pageSize, sort]);
   useEffect(() => { if (idResult.data || searchActive) setPage((current) => Math.min(current, pageCount)); }, [idResult.data, pageCount, searchActive]);
+
+  const receiveSearchIds = useCallback((field: string, ids: readonly string[]) => {
+    setSearchIdsByField((current) => {
+      const previous = current[field];
+      if (previous?.scope === searchScope && previous.ids.length === ids.length && previous.ids.every((id, index) => id === ids[index])) return current;
+      return { ...current, [field]: { scope: searchScope, ids: [...ids] } };
+    });
+  }, [searchScope]);
 
   useEffect(() => {
     const defaults = collection.defaultColumns.length
@@ -608,6 +625,10 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
 
   return (
     <div>
+      {searchActive && searchIdQueries.map((query, index) => {
+        const fieldName = collection.listSearchableFields[index] ?? `search-${index}`;
+        return <SearchIdsObserver key={`${searchScope}:${fieldName}`} query={query} onIds={(ids) => receiveSearchIds(fieldName, ids)} />;
+      })}
       {[...relatedIdsByCollection].map(([slug, ids]) => (
         <RelatedCollectionLabels
           key={slug}
@@ -620,16 +641,16 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
       ))}
       <div className="admin-list-heading">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
-        <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
       <div className="admin-table-toolbar">
-        <div className="relative min-w-0 flex-1">
+        {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="h-8 pl-10 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
-        </div>
+        </div>}
         <div className="flex shrink-0 items-center gap-2">
-          {selectedRows.length > 0 && <Button variant="destructive" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedRows); }}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
+          {!selectMode && selectedRows.length > 0 && <Button variant="destructive" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedRows); }}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
           <details className="admin-table-menu">
             <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
             <div className="admin-table-menu-content">
@@ -697,9 +718,9 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">
+                  {!selectMode && <TableHead className="w-12">
                     <input type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} disabled={deletablePageRows.length === 0} onChange={togglePageSelection} />
-                  </TableHead>
+                  </TableHead>}
                   {columns.map((column) => {
                     const field = fieldByName(collection, column);
                     const active = sort.field === column;
@@ -717,10 +738,10 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
               </TableHeader>
               <TableBody>
                 {pageRows.length === 0 ? (
-                  <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 2 : 1)} className="py-8 text-center text-sm text-muted-foreground">No documents on this page.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 1 : 0) + (selectMode ? 0 : 1)} className="py-8 text-center text-sm text-muted-foreground">No documents on this page.</TableCell></TableRow>
                 ) : pageRows.map((row, rowIndex) => (
-                  <TableRow key={row.id} className={rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}>
-                    <TableCell className="w-12">
+                  <TableRow key={row.id} className={`${rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"} ${selectMode ? "cursor-pointer" : ""}`} onClick={selectMode ? () => onSelect?.(row) : undefined}>
+                    {!selectMode && <TableCell className="w-12" onClick={(event) => event.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="admin-checkbox"
@@ -729,14 +750,19 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
                         disabled={rowPermissions[row.id]?.delete === "denied"}
                         onChange={() => toggleRowSelection(row.id)}
                       />
-                    </TableCell>
+                    </TableCell>}
                     {columns.map((column) => {
                       const field = fieldByName(collection, column);
                       const value = field ? valueFor(field, row) : row[column];
                       const isTitle = titleColumn === column;
                       return (
                         <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
-                          {isTitle ? (
+                          {isTitle && selectMode ? (
+                            <button type="button" className="admin-media-picker-row-button" onClick={(event) => { event.stopPropagation(); onSelect?.(row); }}>
+                              {collection.upload && <MediaPreview client={client} collection={collection.slug} id={row.id} filename={String(row.filename ?? "")} mimeType={String(row.mimeType ?? "")} compact />}
+                              <span className="underline underline-offset-2 hover:text-primary">{formatCell(field, value, displayRelationOptions)}</span>
+                            </button>
+                          ) : isTitle ? (
                             <Link to={`/admin/collections/${collection.slug}/${row.id}`} className="underline underline-offset-2 hover:text-primary">
                               {formatCell(field, value, displayRelationOptions)}
                             </Link>
@@ -793,6 +819,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
                     const operations = getMutations(client, collection.slug);
                     if (!table || !operations) return;
                     const deletedIds: string[] = [];
+                    let allGlobal = true;
                     const clearDeletedSelection = () => setSelectedIds((current) => {
                       const next = new Set(current);
                       deletedIds.forEach((id) => next.delete(id));
@@ -800,19 +827,25 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
                     });
                     for (const row of pendingDelete) {
                       try {
-                        const advice = await db.canDelete(table, row.id);
+                        const advice = collection.writeMode === "command" ? "unknown" : await db.canDelete(table, row.id);
                         if (advice === "denied") throw new Error("Your current session cannot delete one or more selected documents.");
-                        await operations.delete(row.id);
+                        const result = await operations.delete(row.id) as { durability?: string };
+                        if (result.durability !== "global") allGlobal = false;
                         deletedIds.push(row.id);
                       } catch (error) {
-                        if (error instanceof Error && "localWriteApplied" in error) deletedIds.push(row.id);
+                        const localWriteApplied = error instanceof Error && "localWriteApplied" in error;
+                        const writeAccepted = error instanceof Error && "writeAccepted" in error && (error as Error & { writeAccepted?: boolean }).writeAccepted;
+                        if (localWriteApplied || writeAccepted) {
+                          deletedIds.push(row.id);
+                          if (writeAccepted) allGlobal = true;
+                        }
                         clearDeletedSelection();
                         if (deletedIds.length) {
                           setPendingDelete(null);
-                          setOperationError(`${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally before this operation stopped. ${error instanceof Error ? error.message : "The remaining documents could not be deleted."}`);
+                          setOperationError(`${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted${allGlobal ? "" : " locally"} before this operation stopped. ${error instanceof Error ? error.message : "The remaining documents could not be deleted."}`);
                           toast.add({
-                            type: "warning",
-                            title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally`,
+                            type: allGlobal ? "error" : "warning",
+                            title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted${allGlobal ? "" : " locally"}`,
                             description: "The remaining documents could not be deleted.",
                           });
                         } else {
@@ -827,8 +860,8 @@ function CollectionList({ app, client, collection, manifest, relationOptions }: 
                     setPendingDelete(null);
                     toast.add({
                       type: "success",
-                      title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted locally`,
-                      description: "Jazz sync may still be pending.",
+                      title: `${deletedIds.length} document${deletedIds.length === 1 ? "" : "s"} deleted${allGlobal ? "" : " locally"}`,
+                      description: allGlobal ? "Jazz confirmed the changes." : "Jazz sync may still be pending.",
                     });
                   });
                 }}
@@ -879,10 +912,22 @@ function resolveJoinContext(manifest: BebopAdminManifest, targetSlug: string, pa
   };
 }
 
-function DocumentEditor({ app, client, manifest, collection, id, createDefaults, joinContext, relationOptions }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"] }) {
+type MediaDialogState =
+  | { mode: "choose"; fieldName: string; collectionSlug: string }
+  | { mode: "create"; fieldName: string; collectionSlug: string; initialFile?: File; returnToChoose: boolean }
+  | { mode: "edit"; fieldName: string; collectionSlug: string; id: string };
+
+type EditorModalOptions = {
+  initialFile?: File;
+  onClose: () => void;
+  onComplete: (id: string) => void;
+};
+
+function DocumentEditor({ app, client, manifest, collection, id, createDefaults, joinContext, relationOptions, modal }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"]; modal?: EditorModalOptions }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
+  const mediaPortal = useRef<HTMLDivElement>(null);
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
   const documentQuery = id ? getMutations(client, collection.slug)?.query({ where: { id }, includeTimestamps: true }) : undefined;
@@ -897,8 +942,9 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const [readAdvice, setReadAdvice] = useState<PermissionAdvice>("unknown");
   const [saveError, setSaveError] = useState<string>();
   const [saveApplied, setSaveApplied] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File>();
+  const [selectedFile, setSelectedFile] = useState<File | undefined>(() => modal?.initialFile);
   const [fileError, setFileError] = useState<string>();
+  const [mediaDialog, setMediaDialog] = useState<MediaDialogState>();
   const joinReturnPath = joinContext && (!id || existing?.[joinContext.relationship.storageName] === joinContext.parentId)
     ? joinContext.returnTo
     : undefined;
@@ -920,7 +966,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position === "sidebar");
   const joinFields = collection.fields.filter((field): field is BebopAdminJoinField => field.kind === "join");
 
-  useEffect(() => { setDocumentBreadcrumb(id ? title : undefined); }, [id, setDocumentBreadcrumb, title]);
+  useEffect(() => { if (!modal) setDocumentBreadcrumb(id ? title : undefined); }, [id, modal, setDocumentBreadcrumb, title]);
 
   useEffect(() => {
     if (existing) reset(initialValues(collection, existing));
@@ -957,6 +1003,10 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
 
   useEffect(() => {
     let active = true;
+    if (collection.writeMode === "command") {
+      setPermissionAdvice("unknown");
+      return;
+    }
     if (!table || (id && !existing)) {
       setPermissionAdvice("unknown");
       return;
@@ -976,7 +1026,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       if (active) setPermissionAdvice("unknown");
     });
     return () => { active = false; };
-  }, [collection.upload, db, existing, id, serializedValuesKey, table]);
+  }, [collection.upload, collection.writeMode, db, existing, id, serializedValuesKey, table]);
 
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
@@ -993,7 +1043,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         if (validation) throw new Error(validation);
       }
       if (!table) throw new Error("The generated Bebop app is missing this collection.");
-      const advice = collection.upload ? "unknown" : id
+      const advice = collection.upload || collection.writeMode === "command" ? "unknown" : id
         ? await db.canUpdate(table, id, document)
         : await db.canInsert(table, document);
       setPermissionAdvice(advice);
@@ -1005,11 +1055,18 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         ? await operations.update(id, mutationData)
         : await operations.create(mutationData);
       const resultDoc = (result as { doc?: AdminRecord } | undefined)?.doc;
+      const globallyConfirmed = (result as { durability?: string } | undefined)?.durability === "global";
       toast.add({
         type: "success",
-        title: `${collection.labels.singular} ${id ? "updated" : "created"} locally`,
-        description: "Jazz sync may still be pending.",
+        title: `${collection.labels.singular} ${id ? "updated" : "created"}${globallyConfirmed ? "" : " locally"}`,
+        description: globallyConfirmed ? "Jazz confirmed the change." : "Jazz sync may still be pending.",
       });
+      if (modal) {
+        const completedId = typeof resultDoc?.id === "string" ? resultDoc.id : id;
+        if (!completedId) throw new Error("The saved media document did not return an ID.");
+        modal.onComplete(completedId);
+        return;
+      }
       if (joinReturnPath && joinContext && resultDoc?.[joinContext.relationship.storageName] === joinContext.parentId) {
         navigate(joinReturnPath);
       } else if (!id && joinFields.length > 0 && resultDoc?.id) {
@@ -1023,9 +1080,18 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       setSaveError(localWriteApplied
         ? `${(mutationFailure as Error).message} The local change was applied and may still sync.`
         : mutationFailure instanceof Error ? mutationFailure.message : "The document could not be saved.");
+      const fieldErrors = mutationFailure instanceof Error && "fieldErrors" in mutationFailure
+        ? (mutationFailure as Error & { fieldErrors?: Record<string, string> }).fieldErrors
+        : undefined;
+      for (const [field, message] of Object.entries(fieldErrors ?? {})) {
+        if (collection.fields.some((candidate) => candidate.kind !== "join" && candidate.name === field)) {
+          form.setError(field, { type: "bebop", message });
+        }
+      }
+      const writeAccepted = mutationFailure instanceof Error && "writeAccepted" in mutationFailure && (mutationFailure as Error & { writeAccepted?: boolean }).writeAccepted;
       toast.add({
-        type: localWriteApplied ? "warning" : "error",
-        title: localWriteApplied ? "Local change needs attention" : "Could not save document",
+        type: localWriteApplied || writeAccepted ? "warning" : "error",
+        title: writeAccepted ? "Saved, but an after hook failed" : localWriteApplied ? "Local change needs attention" : "Could not save document",
         description: mutationFailure instanceof Error ? mutationFailure.message : "The document could not be saved.",
       });
     }
@@ -1045,7 +1111,18 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             <Label htmlFor={`field-${field.name}`} className="text-[13px] font-normal normal-case tracking-normal">
               {field.label}{field.required && <span className="text-destructive">*</span>}
             </Label>
-            <FieldInput field={field} app={app} client={client} manifest={manifest} register={register} control={form.control} relationOptions={relationOptions} />
+            <FieldInput
+              field={field}
+              app={app}
+              client={client}
+              manifest={manifest}
+              register={register}
+              control={form.control}
+              relationOptions={relationOptions}
+              onCreateMedia={(file) => setMediaDialog({ mode: "create", fieldName: field.name, collectionSlug: field.relationTo ?? "", initialFile: file, returnToChoose: false })}
+              onChooseMedia={() => setMediaDialog({ mode: "choose", fieldName: field.name, collectionSlug: field.relationTo ?? "" })}
+              onEditMedia={(mediaId) => setMediaDialog({ mode: "edit", fieldName: field.name, collectionSlug: field.relationTo ?? "", id: mediaId })}
+            />
           </>
         )}
         {errors[field.name] && <p className="text-xs text-destructive" role="alert">{String(errors[field.name]?.message ?? "Invalid value")}</p>}
@@ -1055,18 +1132,18 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
 
   return (
     <div className="admin-editor">
-      <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1></div>
+      <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1>{modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>}</div>
       <form onSubmit={handleSubmit(save)}>
         <div className="admin-editor-meta">
           <div className="admin-editor-dates">
             {id && collection.timestamps ? <>
               <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(existing?.$updatedAt, true)}</span>
               <span><span className="text-muted-foreground">Created: </span>{formatDate(existing?.$createdAt, true)}</span>
-            </> : <span className="text-muted-foreground">New document</span>}
+            </> : <span className="text-muted-foreground">{modal ? `${id ? "Editing" : "Creating new"} ${collection.labels.singular}` : "New document"}</span>}
           </div>
           <div className="admin-editor-actions">
-            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : id ? "Save" : "Create"}</Button>
-            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
+            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : modal || id ? "Save" : "Create"}</Button>
+            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => modal ? modal.onClose() : navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
           </div>
         </div>
         {permissionAdvice === "denied" && <p className="admin-editor-message text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
@@ -1089,12 +1166,57 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
           </aside>}
         </fieldset>
       </form>
-      {joinFields.map((field) => id && existing
+      {!modal && joinFields.map((field) => id && existing
         ? <JoinFieldPanel key={field.name} app={app} client={client} manifest={manifest} source={collection} field={field} parentId={id} parentLabel={parentLabel} relationOptions={relationOptions} />
         : <section key={field.name} className="mt-8 border-t pt-6">
             <h2 className="font-heading text-base font-semibold uppercase tracking-wide">{field.label}</h2>
             <p className="mt-2 text-sm text-muted-foreground">Save this {collection.labels.singular.toLocaleLowerCase()} before managing {manifest.collections[field.collection]?.labels.plural.toLocaleLowerCase() ?? field.label.toLocaleLowerCase()}.</p>
           </section>)}
+      {mediaDialog && (() => {
+        const mediaCollection = manifest.collections[mediaDialog.collectionSlug];
+        if (!mediaCollection) return null;
+        const closeMediaDialog = () => {
+          if (mediaDialog.mode === "create" && mediaDialog.returnToChoose) {
+            setMediaDialog({ mode: "choose", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug });
+          } else setMediaDialog(undefined);
+        };
+        const selectMedia = (mediaId: string) => {
+          setValue(mediaDialog.fieldName, mediaId, { shouldDirty: true, shouldValidate: true });
+          setMediaDialog(undefined);
+        };
+        return <div className="admin-media-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMediaDialog(); }}>
+          <section ref={mediaPortal} className="admin-media-modal" role="dialog" aria-modal="true" aria-label={mediaCollection.labels.plural} onMouseDown={(event) => event.stopPropagation()}>
+            <AdminPortalContainer.Provider value={mediaPortal}>
+              {mediaDialog.mode === "choose" ? <div className="admin-media-picker">
+                <Button type="button" className="admin-media-picker-close" variant="ghost" size="icon" aria-label="Close media picker" onClick={closeMediaDialog}><X size={20} /></Button>
+                <CollectionList
+                  app={app}
+                  client={client}
+                  collection={mediaCollection}
+                  manifest={manifest}
+                  relationOptions={relationOptions}
+                  selectMode
+                  onSelect={(row) => selectMedia(row.id)}
+                  onCreate={() => setMediaDialog({ mode: "create", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug, returnToChoose: true })}
+                />
+              </div> : <DocumentEditor
+                key={`${mediaDialog.mode}:${mediaDialog.mode === "edit" ? mediaDialog.id : "new"}`}
+                app={app}
+                client={client}
+                manifest={manifest}
+                collection={mediaCollection}
+                id={mediaDialog.mode === "edit" ? mediaDialog.id : undefined}
+                relationOptions={relationOptions}
+                modal={{
+                  initialFile: mediaDialog.mode === "create" ? mediaDialog.initialFile : undefined,
+                  onClose: closeMediaDialog,
+                  onComplete: selectMedia,
+                }}
+              />}
+            </AdminPortalContainer.Provider>
+          </section>
+        </div>;
+      })()}
     </div>
   );
 }
@@ -1294,6 +1416,9 @@ function FieldInput({
   register,
   control,
   relationOptions,
+  onCreateMedia,
+  onChooseMedia,
+  onEditMedia,
 }: {
   field: BebopAdminStoredField;
   app: object;
@@ -1302,11 +1427,24 @@ function FieldInput({
   register: UseFormRegister<FieldValues>;
   control: Control<FieldValues>;
   relationOptions?: BebopAdminProps["relationOptions"];
+  onCreateMedia?: (file?: File) => void;
+  onChooseMedia?: () => void;
+  onEditMedia?: (id: string) => void;
 }) {
   const rules: RegisterOptions<FieldValues, string> = {
     required: field.required ? `${field.label} is required.` : false,
     validate: (value) => {
       if (typeof value === "string" && value.trim() === "") return !field.required || `${field.label} is required.`;
+      if (field.kind === "text" && typeof value === "string") {
+        if (field.minLength !== undefined && value.length < field.minLength) return `${field.label} must be at least ${field.minLength} characters.`;
+        if (field.maxLength !== undefined && value.length > field.maxLength) return `${field.label} must be at most ${field.maxLength} characters.`;
+      }
+      if ((field.kind === "number" || field.kind === "integer") && value !== "" && value !== undefined) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return `Enter a valid ${field.label.toLocaleLowerCase()}.`;
+        if (field.min !== undefined && number < field.min) return `${field.label} must be at least ${field.min}.`;
+        if (field.max !== undefined && number > field.max) return `${field.label} must be at most ${field.max}.`;
+      }
       if (field.kind === "relation" && value && relationOptions?.[field.relationTo ?? ""] && !relationOptions[field.relationTo ?? ""].some((option) => option.id === value)) return `Select a valid ${field.label.toLocaleLowerCase()}.`;
       if (field.kind === "json" && value) {
         try { JSON.parse(String(value)); } catch { return "Enter valid JSON."; }
@@ -1341,7 +1479,9 @@ function FieldInput({
     return <Controller control={control} name={field.name} rules={rules} render={({ field: input }) =>
       <UploadFieldInput field={field} client={client} collection={manifest.collections[field.relationTo ?? ""]}
         value={typeof input.value === "string" && input.value ? input.value : null}
-        onChange={input.onChange} onBlur={input.onBlur} inputRef={input.ref} />
+        onChange={input.onChange} onBlur={input.onBlur} inputRef={input.ref}
+        onCreateNew={(file) => onCreateMedia?.(file)} onChooseExisting={() => onChooseMedia?.()}
+        onEdit={(id) => onEditMedia?.(id)} />
     } />;
   }
   if (field.kind === "select") {
@@ -1352,11 +1492,14 @@ function FieldInput({
         rules={rules}
         render={({ field: input }) => (
           <Select value={typeof input.value === "string" && input.value ? input.value : null} onValueChange={input.onChange}>
-            <SelectTrigger id={`field-${field.name}`} ref={input.ref} onBlur={input.onBlur} className="w-full">
-              <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`}>
-                {(value: string | null) => value ? selectLabel(field, value) : `Select ${field.label.toLocaleLowerCase()}`}
-              </SelectValue>
-            </SelectTrigger>
+            <div className="relative">
+              <SelectTrigger id={`field-${field.name}`} ref={input.ref} onBlur={input.onBlur} className="w-full pr-14">
+                <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`}>
+                  {(value: string | null) => value ? selectLabel(field, value) : `Select ${field.label.toLocaleLowerCase()}`}
+                </SelectValue>
+              </SelectTrigger>
+              {!field.required && input.value && <ClearSelectionButton label={field.label} onClear={() => { input.onChange(""); input.onBlur(); }} />}
+            </div>
             <SelectContent>
               {field.options?.map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}
             </SelectContent>
@@ -1412,17 +1555,36 @@ function RelationInput({
   }));
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full">
-        <SelectValue placeholder={isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}>
-          {(selectedValue: string | null) => selectedValue
-            ? availableOptions.find((option) => option.id === selectedValue)?.name ?? selectedValue
-            : isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}
-        </SelectValue>
-      </SelectTrigger>
+      <div className="relative">
+        <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full pr-14">
+          <SelectValue placeholder={isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}>
+            {(selectedValue: string | null) => selectedValue
+              ? availableOptions.find((option) => option.id === selectedValue)?.name ?? selectedValue
+              : isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}
+          </SelectValue>
+        </SelectTrigger>
+        {!field.required && value && <ClearSelectionButton label={field.label} onClear={() => { onChange(null); onBlur(); }} />}
+      </div>
       <SelectContent>
         {availableOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
       </SelectContent>
     </Select>
+  );
+}
+
+function ClearSelectionButton({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className="absolute right-7 top-1/2 z-10 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+      aria-label={`Clear ${label}`}
+      title={`Clear ${label}`}
+      onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClear(); }}
+    >
+      <X aria-hidden="true" />
+    </Button>
   );
 }
 

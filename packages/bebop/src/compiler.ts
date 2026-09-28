@@ -73,6 +73,7 @@ export function normalizeConfig(config: BebopConfig) {
         name,
         fields,
         access: definition.access,
+        writeMode: definition.writeMode ?? "direct",
         upload: definition.upload ? {
           mimeTypes: typeof definition.upload === "object" ? definition.upload.mimeTypes ?? [] : [],
           maxFileSize: config.upload?.limits?.fileSize ?? 20 * 1024 * 1024,
@@ -166,6 +167,10 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
           ...(field.admin ? { admin: field.admin } : {}),
           ...("options" in field && field.options ? { options: field.options } : {}),
           ...("optionLabels" in field && field.optionLabels ? { optionLabels: field.optionLabels } : {}),
+          ...("minLength" in field && field.minLength !== undefined ? { minLength: field.minLength } : {}),
+          ...("maxLength" in field && field.maxLength !== undefined ? { maxLength: field.maxLength } : {}),
+          ...("min" in field && field.min !== undefined ? { min: field.min } : {}),
+          ...("max" in field && field.max !== undefined ? { max: field.max } : {}),
           ...("relationTo" in field && field.relationTo ? { relationTo: field.relationTo } : {}),
           ...("generated" in field && field.generated ? { generated: true } : {}),
         });
@@ -177,6 +182,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
       ...(useAsTitle ? { useAsTitle } : {}),
       defaultColumns,
       listSearchableFields,
+      writeMode: collection.writeMode,
       ...(collection.upload ? { upload: collection.upload } : {}),
     }] as const;
   });
@@ -187,13 +193,16 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
 function compilePermissionsFromModel(
   model: NormalizedConfig,
   configModuleSpecifier = "./bebop.config.js",
+  options: { blockCommandWrites?: boolean } = {},
 ): string {
-  const hasAccessCallbacks = model.collections.some((collection) => collection.access && collection.access !== "public");
+  const hasAccessCallbacks = model.collections.some((collection) => collection.access && collection.access !== "public" && collection.access !== "authenticated");
+  const hasAuthenticatedAccess = model.collections.some((collection) => collection.access === "authenticated");
   const hasUploads = model.collections.some((collection) => collection.upload);
   const grants = model.collections
     .flatMap((collection, index) => {
       const collectionName = collection.name;
       const access = collection.access;
+      const blockedCommandWrites = options.blockCommandWrites && collection.writeMode === "command";
       const fileRules = collection.upload ? [
         `  policy.bebop_files_${collectionName}.allowInsert.where({ ownerAccount: session.user.account });`,
         `  policy.bebop_files_${collectionName}.allowRead.where(allowedTo.read("media"));`,
@@ -204,24 +213,55 @@ function compilePermissionsFromModel(
         `  policy.bebop_file_parts_${collectionName}.allowUpdate.never();`,
         `  policy.bebop_file_parts_${collectionName}.allowDelete.where(allowedTo.delete("file"));`,
       ] : [];
-      if (!access) return fileRules;
       const operations = [
         ["read", "Read"],
         ["create", "Insert"],
         ["update", "Update"],
         ["delete", "Delete"],
       ] as const;
+      if (!access) {
+        return [
+          ...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.never();`),
+          ...fileRules,
+        ];
+      }
+      if (blockedCommandWrites) {
+        const accessBinding = access && access !== "public" && access !== "authenticated"
+          ? [`  const ${collectionName}Access: Exclude<CollectionDefinition["access"], "public" | "authenticated"> = bebopConfig.collections[${index}].access;`]
+          : [];
+        const reads = access === "public"
+          ? [`  policy.${collectionName}.allowRead.always();`]
+          : access === "authenticated"
+            ? [`  policy.${collectionName}.allowRead.where(authenticatedSession);`]
+            : access.read
+              ? operations.filter(([operation]) => operation === "read").map(([, operation]) => `  policy.${collectionName}.allow${operation}.where((row) => ${collectionName}Access.read!({ row, session, allOf, anyOf, exists, isCreator }) as never);`)
+              : [`  policy.${collectionName}.allowRead.never();`];
+        return [
+          ...accessBinding,
+          ...reads,
+          `  policy.${collectionName}.allowInsert.never();`,
+          `  policy.${collectionName}.allowUpdate.never();`,
+          `  policy.${collectionName}.allowDelete.never();`,
+          ...fileRules,
+        ];
+      }
       if (access === "public") {
         return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.always();`), ...fileRules];
       }
-      const rules: string[] = [`  const ${collectionName}Access: Exclude<CollectionDefinition["access"], "public"> = bebopConfig.collections[${index}].access;`];
+      if (access === "authenticated") {
+        return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`), ...fileRules];
+      }
+      const rules: string[] = [`  const ${collectionName}Access: Exclude<CollectionDefinition["access"], "public" | "authenticated"> = bebopConfig.collections[${index}].access;`];
       for (const [accessOperation, jazzOperation] of operations) {
-        if (!access[accessOperation]) continue;
-        rules.push(
-          `  if (${collectionName}Access?.${accessOperation}) {\n` +
-            `    policy.${collectionName}.allow${jazzOperation}.where((row) => ${collectionName}Access.${accessOperation}!({ row, session, allOf, anyOf, exists, isCreator }) as never);\n` +
-            `  }`,
-        );
+        if (access[accessOperation]) {
+          rules.push(
+            `  if (${collectionName}Access?.${accessOperation}) {\n` +
+              `    policy.${collectionName}.allow${jazzOperation}.where((row) => ${collectionName}Access.${accessOperation}!({ row, session, allOf, anyOf, exists, isCreator }) as never);\n` +
+              `  }`,
+          );
+        } else {
+          rules.push(`  policy.${collectionName}.allow${jazzOperation}.never();`);
+        }
       }
       return [...rules, ...fileRules];
     })
@@ -240,10 +280,17 @@ function compilePermissionsFromModel(
         `    return tablePolicy.exists.where(condition) as never;\n` +
         `  };\n`
     : "";
-  const permissionContext = hasAccessCallbacks ? "policy, session, allOf, anyOf, isCreator, allowedTo" : hasUploads ? "policy, session, anyOf, allowedTo" : "policy";
-  const appPermissions = `const appPermissions = s.definePermissions(app, ({ ${permissionContext} }) => {${existsHelper}\n${grants}\n});`;
+  const permissionContextNames = new Set<string>(["policy"]);
+  if (hasAccessCallbacks) for (const name of ["session", "allOf", "anyOf", "isCreator", "allowedTo"]) permissionContextNames.add(name);
+  else if (hasAuthenticatedAccess) permissionContextNames.add("session");
+  if (hasUploads) for (const name of ["session", "anyOf", "allowedTo"]) permissionContextNames.add(name);
+  const permissionContext = [...permissionContextNames].join(", ");
+  const authenticatedHelper = hasAuthenticatedAccess
+    ? `\n  const authenticatedSession = session.where({ authMode: { in: ["external", "local-first"] } });\n`
+    : "";
+  const appPermissions = `const appPermissions = s.definePermissions(app, ({ ${permissionContext} }) => {${existsHelper}${authenticatedHelper}\n${grants}\n});`;
 
-  return `// Generated from bebop.config.ts. Missing collection operations are denied by Jazz.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
+  return `// Generated from bebop.config.ts. Missing collection operations are explicitly denied.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
 }
 
 export function compileSchema(config: BebopConfig): string {
@@ -255,6 +302,10 @@ export function compileAdminManifest(config: BebopConfig): string {
 }
 
 export function compilePermissions(config: BebopConfig, configModuleSpecifier = "./bebop.config.js"): string {
+  return compilePermissionsFromModel(normalizeConfig(config), configModuleSpecifier, { blockCommandWrites: true });
+}
+
+export function compileCommandPermissions(config: BebopConfig, configModuleSpecifier = "./bebop.config.js"): string {
   return compilePermissionsFromModel(normalizeConfig(config), configModuleSpecifier);
 }
 
@@ -263,13 +314,14 @@ export function compileArtifacts(config: BebopConfig, configModuleSpecifier = ".
   return {
     schema: compileSchemaFromModel(model),
     adminManifest: compileAdminManifestFromModel(model),
-    permissions: compilePermissionsFromModel(model, configModuleSpecifier),
+    permissions: compilePermissionsFromModel(model, configModuleSpecifier, { blockCommandWrites: true }),
+    authorizationPermissions: compilePermissionsFromModel(model, configModuleSpecifier),
     clientFactory: compileClientFactory(configModuleSpecifier),
   };
 }
 
 export function compileClientFactory(configModuleSpecifier = "./bebop.config.js"): string {
-  return `// Generated from bebop.config.ts. Do not edit this file.\nimport { createBebopClient as createClient } from "@bebopdev/core";\nimport type { Db } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\nimport bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\nexport function createBebopClient(db: Db) {\n  return createClient({ app, config: bebopConfig, db });\n}\n`;
+  return `// Generated from bebop.config.ts. Do not edit this file.\nimport { createBebopClient as createClient } from "@bebopdev/core";\nimport type { BebopCommandTransport } from "@bebopdev/core";\nimport type { Db } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\nimport bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\nexport function createBebopClient(db: Db, options: { commandTransport?: BebopCommandTransport } = {}) {\n  return createClient({ app, config: bebopConfig, db, ...options });\n}\n`;
 }
 
 function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>): string {
@@ -343,10 +395,16 @@ function validateConfig(config: BebopConfig): void {
       );
     }
 
-    if (definition.access !== undefined && definition.access !== "public" && (typeof definition.access !== "object" || definition.access === null)) {
-      throw new Error(`Collection "${collectionName}" access must be "public" or an operation callback object.`);
+    if (definition.writeMode !== undefined && definition.writeMode !== "direct" && definition.writeMode !== "command") {
+      throw new Error(`Collection "${collectionName}" writeMode must be "direct" or "command".`);
     }
-    if (definition.access && definition.access !== "public") {
+    if (definition.writeMode === "command" && definition.upload) {
+      throw new Error(`Collection "${collectionName}" cannot combine writeMode "command" with Upload in this release.`);
+    }
+    if (definition.access !== undefined && definition.access !== "public" && definition.access !== "authenticated" && (typeof definition.access !== "object" || definition.access === null)) {
+      throw new Error(`Collection "${collectionName}" access must be "authenticated", "public", or an operation callback object.`);
+    }
+    if (definition.access && definition.access !== "public" && definition.access !== "authenticated") {
       for (const operation of ["read", "create", "update", "delete"] as const) {
         const rule = definition.access[operation];
         if (rule !== undefined && typeof rule !== "function") {
@@ -384,6 +442,35 @@ function validateConfig(config: BebopConfig): void {
 
       if (field.label !== undefined && !field.label.trim()) {
         throw new Error(`Field "${collectionName}.${fieldName}" label cannot be empty.`);
+      }
+
+      if (field.type === "text") {
+        for (const key of ["minLength", "maxLength"] as const) {
+          const value = field[key];
+          if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+            throw new Error(`Field "${collectionName}.${fieldName}" ${key} must be a non-negative safe integer.`);
+          }
+        }
+        if (field.minLength !== undefined && field.maxLength !== undefined && field.minLength > field.maxLength) {
+          throw new Error(`Field "${collectionName}.${fieldName}" minLength cannot exceed maxLength.`);
+        }
+        if (field.validate !== undefined && typeof field.validate !== "function") {
+          throw new Error(`Field "${collectionName}.${fieldName}" validate must be a callback.`);
+        }
+      }
+      if (field.type === "number") {
+        for (const key of ["min", "max"] as const) {
+          const value = field[key];
+          if (value !== undefined && !Number.isFinite(value)) {
+            throw new Error(`Field "${collectionName}.${fieldName}" ${key} must be a finite number.`);
+          }
+        }
+        if (field.min !== undefined && field.max !== undefined && field.min > field.max) {
+          throw new Error(`Field "${collectionName}.${fieldName}" min cannot exceed max.`);
+        }
+        if (field.validate !== undefined && typeof field.validate !== "function") {
+          throw new Error(`Field "${collectionName}.${fieldName}" validate must be a callback.`);
+        }
       }
 
       if (fieldNames.has(fieldName)) {

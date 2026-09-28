@@ -40,7 +40,8 @@ export default defineConfig({
       slug: "workspaceMemberships",
       labels: { singular: "Workspace Membership", plural: "Workspace Memberships" },
       timestamps: true,
-      access: "public",
+      access: "authenticated",
+      writeMode: "command",
       admin: {
         useAsTitle: "user",
         defaultColumns: ["user", "workspace", "role", "status"],
@@ -65,7 +66,7 @@ export default defineConfig({
       slug: "tasks",
       labels: { singular: "Task", plural: "Tasks" },
       timestamps: true,
-      access: "public",
+      access: "authenticated",
       admin: {
         useAsTitle: "name",
         defaultColumns: ["name", "workspace", "status", "assignee", "dueAt"],

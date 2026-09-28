@@ -20,6 +20,10 @@ export type BebopAdminStoredField = BebopAdminFieldBase & BebopAdminFieldOptions
   kind: BebopAdminStoredFieldKind;
   storageName: string;
   required: boolean;
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
   options?: readonly string[];
   optionLabels?: Readonly<Record<string, string>>;
   relationTo?: string;
@@ -43,6 +47,7 @@ export type BebopAdminCollection = {
   useAsTitle?: string;
   defaultColumns: readonly string[];
   listSearchableFields: readonly string[];
+  writeMode: "direct" | "command";
   upload?: { mimeTypes: readonly string[]; maxFileSize: number };
 };
 

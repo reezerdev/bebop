@@ -35,6 +35,33 @@ const ownedConfig = defineConfig({
   })],
 });
 
+const workspaceMembershipConfig = defineConfig({
+  collections: [
+    collection({
+      slug: "workspaces",
+      fields: [{ name: "name", type: "text", required: true }],
+      access: {
+        read: ({ row, session, exists }) => {
+          return exists("workspaceMemberships", {
+            workspaceId: row.id,
+            userAccount: session.user.account,
+            status: "active",
+          });
+        },
+      },
+    }),
+    collection({
+      slug: "workspaceMemberships",
+      fields: [
+        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
+        { name: "userAccount", type: "text", required: true },
+        { name: "status", type: "select", options: ["active", "pending"] },
+      ],
+    }),
+  ],
+});
+void workspaceMembershipConfig;
+
 declare const ownedClient: BebopClient<typeof ownedConfig>;
 if (false) {
   void ownedClient.ownedPosts.create({ ownerId: "user-1" });

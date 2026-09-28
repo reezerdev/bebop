@@ -25,7 +25,7 @@ export default defineConfig({
 });
 ```
 
-`@bebopdev/cli` reads this config to generate the Jazz schema and admin manifest. The exported `createBebopClient` factory provides typed queries and lifecycle-aware create, update, and delete methods. Lifecycle hooks run in the client; use trusted server code for authoritative side effects.
+`@bebopdev/cli` reads this config to generate the Jazz schema, admin manifest, typed client, and direct/command permissions. The exported `createBebopClient` factory provides typed queries and lifecycle-aware create, update, and delete methods. See the [Local API guide](../../docs/local-api.md) for filters, search, pagination, and durability, and the [access control guide](../../docs/access-control.md) for direct and command writes. Lifecycle hooks in direct mode run in the client; use the `./server` handler and a host-supplied attributed writer for authoritative validation and hooks.
 
 ## Uploads
 

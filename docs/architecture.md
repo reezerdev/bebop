@@ -1,30 +1,39 @@
 # Bebop architecture
 
-## Current boundaries
+Bebop is an application framework with a small, first-party admin for direct editing of app data. The host application owns authentication, server deployment, and the decision to expose `/admin`; Bebop owns collection configuration, generated metadata, validation, the typed local API, and the admin screens. It is not intended to grow into a publishing suite.
 
 ```text
 bebop.config.ts ──> @bebopdev/core compiler ──> Jazz schema and permissions
                                       ├────> admin manifest
-                                      └────> typed client factory
+                                      ├────> typed Local API factory
+                                      └────> command authorization policy
 
-host app ──> auth, router, JazzProvider ──> @bebopdev/admin
-                                     └────> shared Bebop client ──> Jazz
+host app ──> auth + route + JazzProvider ──> @bebopdev/admin
+        └──> mounted command handler ──> Jazz backend
 ```
 
-The config is the only collection definition. The CLI normalizes and validates it once per generation and emits the schema, permissions, admin manifest, and client factory. `@bebopdev/core` owns that compiler and the collection client. `@bebopdev/admin` owns its screens, components, and scoped CSS. The playground is an integration host and keeps `/` separate from `/admin`.
+The CLI compiles one config into `bebop-generated-schema.ts`, `bebop-admin-manifest.ts`, `bebop-generated-client.ts`, `permissions.ts`, and `bebop-generated-command-permissions.ts`. `schema.ts` is Jazz's conventional re-export entry point. Generated files are outputs; edit the config and regenerate them.
 
-This follows Payload's useful separation between collection config, generated metadata, and a first-party admin, while keeping Jazz's sync and permission model explicit. The package boundary matters more than splitting the current small codebase into more packages.
+## Access and host authentication
 
-## Reads and writes
+Jazz permissions enforce collection and row access. Missing access rules deny operations. `access: "public"` explicitly grants all four CRUD operations; `access: "authenticated"` grants them to non-anonymous Jazz sessions; object rules specify each allowed operation. Missing operations in an object remain denied. The admin uses Jazz `can*` results to guide buttons and screens, while Jazz decides whether a write is accepted.
 
-The generated client exposes `query`, `queryIds`, `find`, `findById`, `create`, `update`, and `delete` per collection. The playground and admin use it for collection reads and mutations. The admin still uses Jazz `can*` advice for interface guidance; Jazz policies make the final access decision. `canAccessAdmin` is an independent host decision about entering the panel.
+The host makes a separate decision about entering the admin and passes it as `canAccessAdmin`. That is not a collection permission and does not replace Jazz policies. See [access control and server writes](./access-control.md) for the direct and command modes and a workspace membership rule.
 
-The mutation path is `before hook → local Jazz write → after hook`. Successful method returns mean the write and after hook completed locally. The returned `durability: "local"` makes that state explicit. Call `waitForGlobal()` to await global persistence; a rejection may arrive through that promise or `onMutationError`. An `afterChange` or `afterDelete` failure throws `BebopHookError`, which carries the write handle because the local write already happened. Direct Jazz writes bypass Bebop hooks.
+## Direct and command writes
 
-Collection lists query only the current row page, but read IDs for the total count. Configured text search currently loads the filtered collection and searches it in the browser. This is an intentional first-version limit; an indexed search/count adapter is needed for large datasets.
+`writeMode` defaults to `"direct"`. The generated client validates locally, runs `beforeChange`, applies the optimistic Jazz write, then runs `afterChange`. A returned mutation has `durability: "local"` and `waitForGlobal()` for confirmation. Later Jazz rejection is delivered by `waitForGlobal()` and the client's `onMutationError` listener. Direct mode is local-first and works offline; Bebop validators and hooks are convenience and can be bypassed by calling Jazz directly. Jazz's schema and policy remain authoritative.
 
-## Next security milestone
+`writeMode: "command"` makes the generated browser policy deny insert, update, and delete. The host mounts `createBebopHandler` from `@bebopdev/core/server` and supplies request authentication, request-scoped authorization and a trusted attributed writer. The handler checks configured Jazz access, validates before and after `beforeChange`, performs the write, waits for global confirmation, and then runs the after hook. Command writes need a connection. The host must bind the attributed writer to the same verified actor, protect the route against CSRF where relevant, and keep privileged backend objects on the server. See [command host setup](./access-control.md#command-collections).
 
-Current hooks run in the browser and can run offline. They are suitable for local transformations and interface behavior. They cannot be trusted for authoritative validation or external side effects. A future command collection mode should deny direct client writes in Jazz, verify the caller at a backend boundary, run validation and hooks there, await global acceptance, and dispatch external effects through an idempotent outbox. The project should implement and test that whole path together rather than expose a command setting before it is secure.
+Command mode does not support upload-enabled collections yet. Upload's local-first client behavior remains documented separately in the core package README while that feature settles.
 
-Jazz is pinned to `2.0.0-alpha.57`. For a schema change, regenerate artifacts, run `pnpm --filter @bebopdev/playground exec bebop validate`, and review the Jazz migration before merging. Keep generated files in sync with their source config.
+## Queries and scale
+
+The generated collection client exposes `query`, `queryIds`, `search`, `searchIds`, `find`, and `findById`, plus create/update/delete. Queries use Jazz filters, sorting, and offset/limit pagination. Search runs `contains` filters through a Jazz query union instead of downloading document rows for browser-side text scanning. The admin requests a page of matching documents; it also subscribes to ID-only matches to compute an exact count and deduplicate count results across searchable fields. Jazz evaluates query subscriptions and synchronizes their results to local replicas.
+
+The supported v1 list/search target is collections up to 10,000 documents. That is a product target, not a Jazz hard limit or a benchmark guarantee. Avoid `find()` on an unbounded collection in an interactive screen; use paginated `query()` or `search()`. Search fields must be configured text fields. The implementation and query operators are pinned to `jazz-tools@2.0.0-alpha.57`; see the [Local API contract](./local-api.md).
+
+## Schema evolution
+
+The playground pins `jazz-tools@2.0.0-alpha.57`. For every config change, regenerate artifacts, run `bebop validate`, inspect the generated schema diff and follow the pinned Jazz migration behavior. Compatible additions such as optional fields should preserve existing rows. Renames, removals, required-field additions, and type changes need a reviewed migration or backfill. Bebop never resets local data as a schema migration strategy. The [schema evolution walkthrough](./schema-evolution.md) exercises an additive change against existing data.

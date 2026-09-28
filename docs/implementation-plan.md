@@ -1,101 +1,62 @@
-# Bebop implementation plan
+# Bebop v1 implementation scope
 
-## Goal
+## Product goal
 
-Build a TypeScript headless CMS whose collection configuration compiles to Jazz v2 tables, relations, and permissions. Bebop owns the developer-facing configuration, validation, lifecycle, and typed CRUD API; Jazz owns storage, queries, sync, and the final authorization decision for direct client operations.
+Bebop is an application framework with a simple admin panel that helps developers and support staff edit application data. The host application owns login, hosting, route access, and product-specific authorization decisions. Bebop supplies typed collection config, Jazz schema and permissions, a Local API, and first-party editing screens.
 
-The first release is a useful CMS with a first-party admin interface, demonstrated by a small host app. The admin UI lives in `@bebopdev/admin`; the playground only integrates it.
+V1 is not a complete content publishing platform. It does not include drafts, revision history, Trash, localization, a rich-text authoring suite, or generic REST/GraphQL APIs. Upload support is a separate feature in progress and is not part of this release foundation plan.
 
-## Ground rules
+## Release work
 
-1. **One schema source:** `bebop.config.ts` defines collections. Generated `bebop-generated-schema.ts`, `bebop-admin-manifest.ts`, Jazz's `schema.ts` entry point, and `permissions.ts` are outputs, never separately edited sources.
-2. **Compilable access:** use a declarative access DSL that can be translated to Jazz policies. Reject unsupported rules during generation. Do not accept arbitrary `({ user }) => boolean` functions as security rules.
-3. **Explicit write paths:**
-   - `direct` collections use Jazz client writes and can work offline. Jazz schema and permissions are authoritative. Bebop SDK validation improves feedback but must not be presented as a server guarantee.
-   - `command` collections send writes through a Bebop backend when authoritative validation or before/after hooks are required. Deny direct client writes in generated Jazz permissions. The backend verifies the user and access rule, validates and transforms data, writes with backend authority and user attribution, then waits for server durability before reporting success. These writes require a connection.
-4. **Durable effects:** external `afterChange`/`afterDelete` effects belong only to command collections. Use an idempotent job or outbox record keyed by mutation ID; do not imply exactly-once delivery.
-5. **Keep Jazz replaceable at the boundary:** Bebop's config and public types should not expose Jazz internals. The adapter may still be the only database implementation in v1.
-6. **Pin the Jazz alpha version:** keep Jazz-specific generation behind the Bebop package boundary and verify generated code against the pinned release before upgrading.
+### 1. Permissions and host integration
 
-## Proposed public API
+- Preserve deny-by-default access when a collection has no rule.
+- Support `access: "authenticated"` for non-anonymous Jazz sessions and explicit `access: "public"` for open data.
+- Compile row-level operation callbacks to the pinned Jazz policy API. Missing operations remain denied.
+- Use Jazz `can*` advice to guide admin screens, while keeping Jazz enforcement authoritative.
+- Document the separate host decision to allow entry to `/admin`.
+- Include a public demo policy, an authenticated demo, and a workspace-membership access example.
 
-```ts
-import { defineConfig } from '@bebopdev/core'
+### 2. Direct and trusted writes
 
-export default defineConfig({
-  collections: [
-    {
-      slug: 'workspaces',
-      labels: { singular: 'Workspace', plural: 'Workspaces' },
-      fields: [{ name: 'name', type: 'text', required: true }],
-    },
-    {
-      slug: 'tasks',
-      labels: { singular: 'Task', plural: 'Tasks' },
-      admin: { useAsTitle: 'name' },
-      fields: [
-        { name: 'name', type: 'text', required: true },
-        { name: 'workspace', type: 'relationship', relationTo: 'workspaces', required: true },
-        { name: 'status', type: 'select', options: ['todo', 'done'] },
-      ],
-    },
-  ],
-})
-```
+- Default collections to `writeMode: "direct"`: local-first writes can run offline and Jazz validates final permissions.
+- Treat Bebop custom validators and hooks in direct mode as client-side feedback; direct Jazz calls can bypass them.
+- Add `writeMode: "command"` to deny direct browser mutations and route writes through a host-mounted Request/Response handler.
+- Require the host to authenticate the request, prevent CSRF where applicable, bind the authorization session to the actor, and provide a trusted writer with attribution to that same user.
+- Recheck access and validation on the server, run change hooks, write with Jazz, and report success after global confirmation.
+- Keep Better Auth as an example host integration; keep other identity systems host-owned.
 
-Collection slugs and select values retain literal types; `find`, `findById`, `create`, `update`, and `delete` infer their input and result from the config. A relationship is declared with Payload's `relationship` field type while the generated Jazz schema stores its UUID in a `<name>Id` column. Access callbacks and client-side lifecycle hooks are configured on each collection.
+### 3. Validation
 
-## Milestones
+- Add required checks, text length limits, numeric bounds and integer validation, plus typed custom field validators.
+- Run validation in admin forms and the shared client.
+- Revalidate command writes at the trusted handler boundary.
+- Preserve Jazz schema and access checks for direct writes; clearly state that direct custom callbacks are bypassable.
 
-| Stage | Deliverable | Exit criteria |
-| --- | --- | --- |
-| 0. Jazz feasibility spike | Pin one Jazz v2 alpha; build a minimal app with two related tables, row permissions, a local write, a rejected write, a backend request, and a schema change. | Confirm the supported DSL, type inference, durability waits, permission behavior, and migration workflow. Record any Jazz limitation that changes the design. |
-| 1. Config and compiler | Define collections and the first fields: text, number, integer, boolean, date, select, JSON, and single relation. Add config checks and deterministic generation of `bebop-generated-schema.ts`, Jazz's `schema.ts` entry point, `permissions.ts`, and a metadata manifest. | Example config generates valid Jazz artifacts; invalid relation targets, field names, or access expressions fail with useful diagnostics; generation is repeatable. |
-| 2. Admin UI package | Build `@bebopdev/admin` with shadcn/ui, a Payload-style dashboard, collection lists, and generated create/edit forms. Generate the admin manifest from config and mount the package at `/admin` in the playground. | Every supported field kind renders and persists; configured list columns/search fields work; the package ships its own CSS; direct `/admin` navigation works. |
-| 3. Typed headless API | Implement typed find/findById/create/update/delete, filtering, sort, and pagination over the generated Jazz app. Add direct-mode validation and a clear pending/accepted/rejected mutation result. | Type checks reject wrong collection fields; CRUD and relation queries work; offline direct writes reconcile or report authority rejection. |
-| 4. Security and command lifecycle | Compile a small access DSL for public, authenticated, owner, and row-field conditions. Add command-mode endpoint, authoritative validation, `beforeValidate`, `beforeChange`, `beforeDelete`, and durable effect dispatch. | Unauthorized read/write attempts fail in policy and API tests; direct writes to command collections fail; retries do not duplicate external effects. |
-| 5. Extensibility and release | Extend the starter `bebop` CLI with migration generation and plugin workflows. Add a minimal plugin contract for deterministic collection/field contributions and named hooks. Publish a runnable example and API documentation. | Two example plugins compose without collisions; a schema change produces a reviewed Jazz migration; a new developer can start and exercise the sample without editing generated files. |
+### 4. Stable typed Local API and search
 
-### Stage 0 questions to settle before broad implementation
+- Document the generated client as the v1 Local API: query builders, filters, sort, pagination, relationships, joins, uploads, and durability.
+- Search configured text fields with Jazz `contains` queries and query unions instead of scanning full document rows in the browser.
+- Deduplicate multi-field search matches, sort and paginate results, and bound document rows to the requested page. Exact counts use ID-only queries because the pinned Jazz API does not expose a count aggregate.
+- Support interactive lists and search for collections up to 10,000 documents as a target, not as a performance guarantee. Measure larger or unusually large records before adopting.
+- Verify each query and permission behavior against `jazz-tools@2.0.0-alpha.57`.
 
-- Can the pinned Jazz release express every proposed access helper as a server-enforced policy? If not, shrink the DSL.
-- Which Jazz durability tier should a successful command response promise? Define this in the API and test it against rejection and disconnect cases.
-- How should command mode authenticate callers in the example app? Choose one supported Jazz account/JWT flow and keep provider-specific auth outside the core.
-- Can generated TypeScript schema preserve field and relation inference without unacceptable editor latency? Test this on a realistic sample, not only one table.
-- What behavior should a client see when a relation target is missing, unreadable, or not yet synced?
+### 5. Schema evolution and release workflow
 
-## Workspace shape
+- Document schema changes against the pinned Jazz release.
+- Walk through adding an optional collection field while preserving existing local rows.
+- Require a reviewed migration or backfill for incompatible schema changes.
+- Never make a reset the default migration path.
+- Verify that a clean temporary install can generate, validate, type-check, and run the basic example with pnpm.
 
-```text
-apps/
-  playground/  React app and Bebop config; exercises the workspace package
-packages/
-  bebop/       config DSL, field definitions, and first Jazz compiler
-  admin/       first-party React admin and shadcn/ui components
-docs/
-  implementation-plan.md
-examples/      add standalone examples later
-```
+## Acceptance
 
-Keep the config/compiler and UI in separate packages. The admin package owns its UI and private Jazz adapter; the playground is an integration fixture. Add `examples/` when there are separate examples to maintain.
+- An omitted access rule produces no permission grants; `authenticated`, explicit `public`, and row-level rules compile to the expected Jazz policy.
+- Admin entry control remains a host decision, independent from collection access.
+- Direct writes remain local-first, with later global failures observable; command writes reject direct browser writes and enforce host session, access, validation, hooks, attribution, and global confirmation.
+- Built-in and custom validation produce useful field errors in admin/client flows and command writes cannot bypass them.
+- Search covers all configured text fields, applies filters before union, deduplicates matches, sorts and paginates, and limits full documents to one page. ID-only exact count behavior is covered at the 10,000-record target.
+- The schema walkthrough demonstrates a compatible additive change with existing data preserved under the pinned Jazz version.
+- A clean install can generate, validate, run, and type-check the basic example; package checks use pnpm.
 
-## Verification
-
-- Compiler golden tests for field mappings, relation names, policy output, and deterministic generation.
-- Type-level tests for required/optional fields, select literals, collection keys, relation results, and invalid CRUD inputs.
-- Integration tests against the pinned Jazz release for permission filtering, old/new row updates, offline rejection, durability, and migrations.
-- End-to-end example: a user creates a workspace and task, a member reads it, and an unauthorized edit fails.
-
-## Outside the first release
-
-Media, rich text, drafts/versioning, localization, webhooks as a generic plugin surface, collaborative editing, and field-level access. These can follow the same generated metadata and runtime contracts once the first admin release is stable.
-
-## Current Jazz references
-
-- [Tables and relations](https://jazz.tools/docs/schemas/defining-tables)
-- [Permissions and server enforcement](https://jazz.tools/docs/auth/permissions)
-- [Local writes and durability](https://jazz.tools/docs/writing/writing-data)
-- [Migrations](https://jazz.tools/docs/schemas/migrations)
-- [Column types](https://jazz.tools/docs/schemas/column-types)
-
-These references describe the current Jazz v2 alpha and should be rechecked when Stage 0 begins.
+The detailed contracts and commands are in [access control](./access-control.md), the [Local API guide](./local-api.md), and the [schema evolution walkthrough](./schema-evolution.md). The example upload field remains outside this v1 foundation plan.

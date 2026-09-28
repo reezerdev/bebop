@@ -224,7 +224,7 @@
 .admin-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
 .admin-table-pagination { @apply flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground; }
 
-.admin-editor-heading { @apply flex min-h-20 items-center border-b border-border pb-4; }
+.admin-editor-heading { @apply flex min-h-20 items-center justify-between gap-4 border-b border-border pb-4; }
 .admin-editor-heading h1 { @apply min-w-0 text-[32px] font-normal leading-tight tracking-tight; }
 .admin-editor-meta { @apply flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border py-3; }
 .admin-editor-dates { @apply flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]; }
@@ -246,10 +246,19 @@
 .admin-upload-hint { @apply text-xs text-muted-foreground; }
 .admin-upload-error { @apply w-full text-xs text-destructive; }
 .admin-upload-field { @apply flex flex-col gap-3; }
-.admin-upload-selected { @apply flex flex-col gap-3 border border-border bg-muted/30 p-3 text-sm; }
+.admin-upload-selected { @apply flex min-h-16 items-center gap-3 border border-border bg-muted/30 px-3 py-2 text-sm; }
+.admin-upload-selected-details { @apply flex min-w-0 flex-1 flex-col gap-1; }
+.admin-upload-selected-actions { @apply flex shrink-0 items-center gap-1; }
+.admin-media-thumbnail { @apply size-10 shrink-0 border border-border bg-background object-contain; }
+.admin-media-thumbnail-placeholder { @apply flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground; }
+.admin-media-picker-row-button { @apply inline-flex min-w-0 items-center gap-3 text-left; }
 .admin-media-preview { @apply flex flex-col items-start gap-2; }
 .admin-media-preview img { @apply max-h-64 max-w-full border border-border object-contain; }
 .admin-media-download { @apply inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2; }
+.admin-media-modal-backdrop { @apply fixed inset-0 z-[60] overflow-hidden bg-black/70; }
+.admin-media-modal { @apply relative h-full w-full overflow-y-auto border border-border bg-background text-foreground shadow-2xl; }
+.admin-media-picker { @apply relative min-h-full px-6 py-8 lg:px-15; }
+.admin-media-picker-close { @apply absolute right-4 top-4 z-10; }
 
 @media (max-width: 767px) {
   .admin-sidebar { @apply -translate-x-full; }
@@ -262,6 +271,7 @@
   .admin-topbar { @apply px-3; }
   .admin-mobile-menu { @apply mr-2 inline-flex; }
   .admin-content { @apply p-4; }
+  .admin-media-picker { @apply px-4 py-5; }
   .admin-table-toolbar { @apply items-stretch; }
   .admin-table-toolbar > div:first-child { @apply basis-full; }
   .admin-table-toolbar > div:last-child { @apply ml-auto; }

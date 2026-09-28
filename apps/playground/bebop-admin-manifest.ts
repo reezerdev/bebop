@@ -50,6 +50,7 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "filename"
       ],
+      "writeMode": "direct",
       "upload": {
         "mimeTypes": [
           "image/*"
@@ -104,7 +105,8 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "name",
         "slug"
-      ]
+      ],
+      "writeMode": "direct"
     },
     "workspaceMemberships": {
       "slug": "workspaceMemberships",
@@ -176,7 +178,8 @@ export const bebopAdminManifest = {
       ],
       "listSearchableFields": [
         "user"
-      ]
+      ],
+      "writeMode": "command"
     },
     "tasks": {
       "slug": "tasks",
@@ -339,7 +342,8 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "name",
         "content"
-      ]
+      ],
+      "writeMode": "direct"
     }
   }
 } as const;

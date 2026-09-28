@@ -11,8 +11,29 @@ export type FieldOptions = {
   };
 };
 
-export type TextField = FieldOptions & { type: "text" };
-export type NumberField = FieldOptions & { type: "number"; integer?: boolean };
+type FieldValidationContext = {
+  operation: "create" | "update";
+  data: Readonly<Record<string, unknown>>;
+  originalDoc?: Readonly<Record<string, unknown>>;
+};
+type FieldValidator<TValue> = BivariantCallback<
+  [value: TValue | undefined, context: FieldValidationContext],
+  true | string | Promise<true | string>
+>;
+
+export type TextField = FieldOptions & {
+  type: "text";
+  minLength?: number;
+  maxLength?: number;
+  validate?: FieldValidator<string>;
+};
+export type NumberField = FieldOptions & {
+  type: "number";
+  integer?: boolean;
+  min?: number;
+  max?: number;
+  validate?: FieldValidator<number>;
+};
 export type CheckboxField = FieldOptions & { type: "checkbox" };
 export type DateField = FieldOptions & { type: "date" };
 export type JsonField = FieldOptions & { type: "json" };
@@ -156,8 +177,10 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */
   timestamps?: boolean;
   admin?: CollectionAdminOptions;
-  /** Jazz row-level access predicates. Use "public" to grant all operations; omitted operations are denied. */
-  access?: "public" | CollectionAccess<TFields>;
+  /** Jazz row-level access predicates. Omitted access denies every operation. */
+  access?: "authenticated" | "public" | CollectionAccess<TFields>;
+  /** Direct writes are local-first. Command writes go through the host's trusted Bebop handler. */
+  writeMode?: "direct" | "command";
   /** Client-side lifecycle callbacks run by the generated Bebop mutation client. */
   hooks?: CollectionHooks<TFields>;
 };

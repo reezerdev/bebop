@@ -23,6 +23,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     }
   },
   "peerDependencies": {
@@ -35,6 +39,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.types.json",
     "prepack": "pnpm run build",
     "test": "tsx --test test/*.test.ts"
   }

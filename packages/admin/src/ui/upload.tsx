@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useAll } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
-import { Download, ImagePlus } from "lucide-react";
+import { Download, FileText, ImagePlus, Pencil, X } from "lucide-react";
 import { Button } from "../components/ui/button.js";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.js";
-import { useToastManager } from "../components/ui/toast.js";
 import type { BebopAdminCollection, BebopAdminStoredField } from "../types.js";
 
 type MediaRow = { id: string; filename: string; mimeType: string; filesize: number };
@@ -56,12 +54,13 @@ export function UploadDropzone({ onFile, accept, disabled, label = "Create New",
   </div>;
 }
 
-export function MediaPreview({ client, collection, id, filename, mimeType }: {
+export function MediaPreview({ client, collection, id, filename, mimeType, compact = false }: {
   client: object;
   collection: string;
   id: string;
   filename?: string;
   mimeType?: string;
+  compact?: boolean;
 }) {
   const [url, setUrl] = useState<string>();
   const [error, setError] = useState<string>();
@@ -83,14 +82,17 @@ export function MediaPreview({ client, collection, id, filename, mimeType }: {
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [client, collection, id]);
   if (error) return <p className="text-xs text-destructive" role="alert">{error}</p>;
-  if (!url) return <p className="text-xs text-muted-foreground">Loading file…</p>;
+  if (!url) return compact ? <span className="admin-media-thumbnail-placeholder"><FileText size={18} /></span> : <p className="text-xs text-muted-foreground">Loading file…</p>;
+  if (compact) return mimeType?.startsWith("image/")
+    ? <img className="admin-media-thumbnail" src={url} alt="" />
+    : <span className="admin-media-thumbnail-placeholder"><FileText size={18} /></span>;
   return <div className="admin-media-preview">
     {mimeType?.startsWith("image/") && <img src={url} alt={filename ?? "Uploaded image"} />}
     <a href={url} download={filename || "download"} className="admin-media-download"><Download size={14} /> {filename || "Download file"}</a>
   </div>;
 }
 
-export function UploadFieldInput({ field, client, collection, value, onChange, onBlur, inputRef }: {
+export function UploadFieldInput({ field, client, collection, value, onChange, onBlur, inputRef, onCreateNew, onChooseExisting, onEdit }: {
   field: BebopAdminStoredField;
   client: object;
   collection: BebopAdminCollection | undefined;
@@ -98,38 +100,47 @@ export function UploadFieldInput({ field, client, collection, value, onChange, o
   onChange: (value: string | null) => void;
   onBlur: () => void;
   inputRef: (instance: HTMLButtonElement | null) => void;
+  onCreateNew: (file?: File) => void;
+  onChooseExisting: () => void;
+  onEdit: (id: string) => void;
 }) {
-  const toast = useToastManager();
   const operations = mediaOperations(client, field.relationTo ?? "");
-  const { data: media, isLoading } = useAll<MediaRow>(operations?.query());
-  const [showExisting, setShowExisting] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { data: media } = useAll<MediaRow>(operations?.query());
   const [error, setError] = useState<string>();
   const selected = media?.find((row) => row.id === value);
-  async function upload(file: File) {
+  function requestCreate(file?: File) {
+    setError(undefined);
+    if (!file) { onCreateNew(); return; }
     const validation = validateSelectedFile(file, collection?.upload);
     if (validation) { setError(validation); return; }
-    if (!operations) { setError("The media collection is unavailable."); return; }
-    setError(undefined);
-    setBusy(true);
-    try {
-      const result = await operations.create({ file });
-      onChange(result.doc.id);
-      toast.add({ type: "success", title: "Media created locally", description: "Save this document to use the file. Jazz sync may still be pending." });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not upload file.");
-    } finally { setBusy(false); }
+    onCreateNew(file);
   }
+  const [dragging, setDragging] = useState(false);
   return <div className="admin-upload-field">
-    {value && <div className="admin-upload-selected">
-      <div className="flex items-center justify-between gap-3"><span>{selected?.filename ?? value}</span><Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>Remove</Button></div>
-      {selected && <MediaPreview client={client} collection={field.relationTo ?? ""} id={value} filename={selected.filename} mimeType={selected.mimeType} />}
-    </div>}
-    <UploadDropzone onFile={(file) => void upload(file)} accept={collection?.upload?.mimeTypes.join(",")}
-      disabled={busy} chooseExisting={() => setShowExisting((current) => !current)} error={error} />
-    {showExisting && <Select value={value} onValueChange={(id) => { onChange(id); setShowExisting(false); }}>
-      <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full"><SelectValue placeholder={isLoading ? "Loading media…" : "Select a file"} /></SelectTrigger>
-      <SelectContent>{media?.map((row) => <SelectItem key={row.id} value={row.id}>{row.filename}</SelectItem>)}</SelectContent>
-    </Select>}
+    {value ? <div className="admin-upload-selected">
+      <MediaPreview client={client} collection={field.relationTo ?? ""} id={value} filename={selected?.filename} mimeType={selected?.mimeType} compact />
+      <div className="admin-upload-selected-details">
+        <span className="truncate">{selected?.filename ?? value}</span>
+        {selected && <span className="text-xs text-muted-foreground">{Math.max(1, Math.ceil(selected.filesize / 1024))} KB{selected.mimeType ? ` — ${selected.mimeType}` : ""}</span>}
+      </div>
+      <div className="admin-upload-selected-actions">
+        <Button type="button" variant="ghost" size="icon-xs" aria-label={`Edit ${selected?.filename ?? "media"}`} title="Edit media" onClick={() => onEdit(value)}><Pencil size={14} /></Button>
+        <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${selected?.filename ?? "media"}`} title="Remove from field" onClick={() => { onChange(null); onBlur(); }}><X size={15} /></Button>
+      </div>
+    </div> : <>
+      <div className={`admin-upload-dropzone ${dragging ? "admin-upload-dragging" : ""}`}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) requestCreate(file); }}>
+        <div className="admin-upload-actions">
+          <Button type="button" variant="secondary" size="sm" onClick={() => requestCreate()}><ImagePlus size={15} /> Create New</Button>
+          <span className="text-muted-foreground">or</span>
+          <Button type="button" variant="secondary" size="sm" onClick={onChooseExisting}>Choose from existing</Button>
+        </div>
+        <span className="admin-upload-hint">or drag and drop a file</span>
+      </div>
+    </>}
+    {error && <p className="admin-upload-error" role="alert">{error}</p>}
+    <button id={`field-${field.name}`} type="button" className="sr-only" tabIndex={-1} ref={inputRef} onBlur={onBlur} aria-label={`Select ${field.label}`} />
   </div>;
 }

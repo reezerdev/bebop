@@ -3,6 +3,8 @@ import test from "node:test";
 import type { Db } from "jazz-tools";
 import { defineConfig } from "../src/bebop.ts";
 import { BebopHookError, createBebopClient } from "../src/client.ts";
+import { BebopValidationError } from "../src/validation.ts";
+import { createBebopHandler } from "../src/server.ts";
 import { compileAdminManifest, compileArtifacts, compileClientFactory, compilePermissions, compileSchema, normalizeConfig } from "../src/compiler.ts";
 
 test("admin manifest includes the configured title and field positions", () => {
@@ -68,18 +70,28 @@ test("permission generation compiles configured Jazz rules and leaves omitted op
   assert.match(permissions, /import bebopConfig from "\.\/config\.js"/);
   assert.match(permissions, /policy\.posts\.allowRead\.where/);
   assert.match(permissions, /policy\.posts\.allowInsert\.where/);
-  assert.doesNotMatch(permissions, /allowUpdate|allowDelete|\.always\(\)/);
+  assert.match(permissions, /policy\.posts\.allowUpdate\.never\(\)/);
+  assert.match(permissions, /policy\.posts\.allowDelete\.never\(\)/);
+  assert.doesNotMatch(permissions, /\.always\(\)/);
   assert.equal(permissions, compilePermissions(config, "./config.js"));
 });
 
-test("permissions with no configured rules do not create implicit grants", () => {
+test("omitted and empty access rules explicitly deny every operation", () => {
   const config = defineConfig({
-    collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }],
+    collections: [
+      { slug: "posts", fields: [{ name: "title", type: "text" }] },
+      { slug: "privateNotes", access: {}, fields: [{ name: "body", type: "text" }] },
+    ],
   });
 
   const permissions = compilePermissions(config);
-  assert.doesNotMatch(permissions, /allow(Read|Insert|Update|Delete)|\.always\(\)/);
-  assert.match(permissions, /Missing collection operations are denied/);
+  for (const collection of ["posts", "privateNotes"]) {
+    for (const operation of ["Read", "Insert", "Update", "Delete"]) {
+      assert.match(permissions, new RegExp(`policy\\.${collection}\\.allow${operation}\\.never\\(\\)`));
+    }
+  }
+  assert.doesNotMatch(permissions, /\.always\(\)/);
+  assert.match(permissions, /Missing collection operations are explicitly denied/);
 });
 
 test("public access grants all operations without empty callbacks", () => {
@@ -96,17 +108,299 @@ test("public access grants all operations without empty callbacks", () => {
   assert.equal(permissions, compilePermissions(config));
 });
 
+test("authenticated access grants only non-anonymous Jazz sessions", () => {
+  const config = defineConfig({
+    collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }], access: "authenticated" }],
+  });
+  const permissions = compilePermissions(config);
+  assert.match(permissions, /session\.where\(\{ authMode: \{ in: \["external", "local-first"\] \} \}\)/);
+  for (const operation of ["Read", "Insert", "Update", "Delete"]) {
+    assert.match(permissions, new RegExp(`policy\\.posts\\.allow${operation}\\.where\\(authenticatedSession\\)`));
+  }
+  assert.doesNotMatch(permissions, /allow.*\.always\(\)/);
+});
+
+test("permission helpers include those needed by auth and uploads together", () => {
+  const config = defineConfig({ collections: [
+    { slug: "media", upload: true, access: "public", fields: [{ name: "alt", type: "text" }] },
+    { slug: "tasks", access: "authenticated", fields: [{ name: "title", type: "text" }] },
+  ] });
+  const permissions = compilePermissions(config);
+  assert.match(permissions, /\(\{ policy, session, anyOf, allowedTo \}\)/);
+  assert.match(permissions, /policy\.tasks\.allowRead\.where\(authenticatedSession\)/);
+  assert.match(permissions, /policy\.bebop_files_media\.allowDelete\.where\(anyOf/);
+});
+
+test("command collections deny browser writes and retain a separate request authorization policy", () => {
+  const config = defineConfig({ collections: [{
+    slug: "privateNotes",
+    writeMode: "command",
+    access: "public",
+    fields: [{ name: "body", type: "text", required: true }],
+  }] });
+  const artifacts = compileArtifacts(config);
+  assert.match(artifacts.permissions, /policy\.privateNotes\.allowRead\.always\(\)/);
+  for (const operation of ["Insert", "Update", "Delete"]) {
+    assert.match(artifacts.permissions, new RegExp(`policy\\.privateNotes\\.allow${operation}\\.never\\(\\)`));
+    assert.match(artifacts.authorizationPermissions, new RegExp(`policy\\.privateNotes\\.allow${operation}\\.always\\(\\)`));
+  }
+  assert.match(artifacts.adminManifest, /"writeMode": "command"/);
+  assert.equal(artifacts.authorizationPermissions, compileArtifacts(config).authorizationPermissions);
+});
+
+test("text and numeric validation constraints are checked in the shared client", async () => {
+  const config = defineConfig({ collections: [{
+    slug: "posts",
+    fields: [
+      { name: "title", type: "text", required: true, minLength: 3, maxLength: 8, validate: (value) => value?.includes("bad") ? "Choose a different title." : true },
+      { name: "rank", type: "number", min: 1, max: 5 },
+    ],
+  }] });
+  const fake = createFakeDb();
+  const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
+
+  await assert.rejects(client.posts.create({ title: "ab", rank: 2 }), (error: unknown) => {
+    assert.ok(error instanceof BebopValidationError);
+    assert.equal(error.fieldErrors.title, "Title must be at least 3 characters.");
+    return true;
+  });
+  await assert.rejects(client.posts.create({ title: "bad", rank: 2 }), (error: unknown) => {
+    assert.ok(error instanceof BebopValidationError);
+    assert.equal(error.fieldErrors.title, "Choose a different title.");
+    return true;
+  });
+  await assert.rejects(client.posts.create({ title: "valid", rank: 6 }), (error: unknown) => {
+    assert.ok(error instanceof BebopValidationError);
+    assert.equal(error.fieldErrors.rank, "Rank must be at most 5.");
+    return true;
+  });
+  assert.equal(fake.rows.size, 0);
+  assert.throws(() => compileSchema(defineConfig({ collections: [{
+    slug: "posts", fields: [{ name: "rank", type: "number", min: 6, max: 2 }],
+  }] })), /min cannot exceed max/);
+});
+
+test("command client delegates mutations and reports global durability", async () => {
+  const config = defineConfig({ collections: [{
+    slug: "posts", writeMode: "command", access: "public",
+    fields: [{ name: "title", type: "text", required: true }],
+  }] });
+  const fake = createFakeDb();
+  const requests: unknown[] = [];
+  const client = createBebopClient({
+    app: fake.app as never,
+    config,
+    db: fake.db,
+    commandTransport: async (request) => {
+      requests.push(request);
+      return { doc: { id: "server-1", title: "Saved", $createdAt: new Date().toISOString() } };
+    },
+  });
+  const created = await client.posts.create({ title: "Saved" });
+  assert.equal(created.durability, "global");
+  await created.waitForGlobal();
+  assert.equal(created.doc.id, "server-1");
+  assert.equal(fake.rows.size, 0);
+  assert.deepEqual(requests, [{ collection: "posts", operation: "create", data: { title: "Saved" } }]);
+});
+
+test("search builds filtered Jazz union pages and per-field ID queries", () => {
+  const config = defineConfig({ collections: [{
+    slug: "tasks",
+    fields: [{ name: "name", type: "text" }, { name: "content", type: "text" }, { name: "status", type: "select", options: ["todo", "done"] }],
+    admin: { listSearchableFields: ["name", "content"] },
+  }] });
+  const fake = createFakeDb();
+  let arms: Record<string, { condition: Record<string, unknown> }> = {};
+  const unionOperations: unknown[][] = [];
+  const unionQuery = {
+    orderBy: (field: string, direction?: string) => { unionOperations.push(["orderBy", field, direction]); return unionQuery; },
+    limit: (value: number) => { unionOperations.push(["limit", value]); return unionQuery; },
+    offset: (value: number) => { unionOperations.push(["offset", value]); return unionQuery; },
+  };
+  const app = { tasks: fake.app.posts, union: (queries: Record<string, { condition: Record<string, unknown> }>) => { arms = queries; return unionQuery; } };
+  const client = createBebopClient({ app: app as never, config, db: fake.db });
+  client.tasks.search({ search: "jazz", fields: ["name", "content"], where: { status: "todo" }, orderBy: { field: "name", direction: "desc" }, limit: 25, offset: 50 });
+  assert.deepEqual(Object.keys(arms), ["field_0", "field_1"]);
+  assert.deepEqual(arms.field_0?.condition, { status: "todo", name: { contains: "jazz" } });
+  assert.deepEqual(arms.field_1?.condition, { status: "todo", content: { contains: "jazz" } });
+  assert.deepEqual(unionOperations, [["orderBy", "name", "desc"], ["limit", 25], ["offset", 50]]);
+  const ids = client.tasks.searchIds({ search: "jazz", fields: ["name", "content"], where: { status: "todo" } });
+  assert.equal(ids.length, 2);
+  assert.deepEqual((ids[0] as unknown as { operations: unknown[][] }).operations, [
+    ["select", "id"], ["where", { status: "todo", name: { contains: "jazz" } }],
+  ]);
+});
+
+test("multi-field search pages 10,000 rows, deduplicates matches, and counts with IDs only", async () => {
+  type Row = { id: string; name: string; content: string; status: string };
+  type Query = {
+    columns: string[];
+    condition: Record<string, unknown>;
+    order?: { field: string; direction: string };
+    limitValue?: number;
+    offsetValue?: number;
+    arms?: Query[];
+    where: (condition: Record<string, unknown>) => Query;
+    orderBy: (field: string, direction?: string) => Query;
+    limit: (value: number) => Query;
+    offset: (value: number) => Query;
+    execute: (rows: readonly Row[]) => Record<string, unknown>[];
+  };
+  const data: Row[] = Array.from({ length: 10_000 }, (_, index) => ({
+    id: `task-${String(index).padStart(5, "0")}`,
+    name: `Task ${String(index).padStart(5, "0")}${index % 101 === 0 ? " needle" : ""}`,
+    content: `Content ${String(index).padStart(5, "0")}${index % 37 === 0 ? " needle" : ""}`,
+    status: index % 3 === 0 ? "done" : "todo",
+  }));
+  const matches = (row: Row, condition: Record<string, unknown>) => Object.entries(condition).every(([field, expected]) => {
+    if (expected && typeof expected === "object" && "contains" in expected) {
+      return String(row[field as keyof Row]).includes(String((expected as { contains: unknown }).contains));
+    }
+    return row[field as keyof Row] === expected;
+  });
+  const makeQuery = (columns: string[], condition: Record<string, unknown> = {}): Query => {
+    const query: Query = {
+      columns,
+      condition,
+      where(next) { query.condition = { ...query.condition, ...next }; return query; },
+      orderBy(field, direction = "asc") { query.order = { field, direction }; return query; },
+      limit(value) { query.limitValue = value; return query; },
+      offset(value) { query.offsetValue = value; return query; },
+      execute(rows) {
+        let found = rows.filter((row) => matches(row, query.condition));
+        if (query.order) {
+          const { field, direction } = query.order;
+          found = [...found].sort((left, right) => String(left[field as keyof Row]).localeCompare(String(right[field as keyof Row])) * (direction === "desc" ? -1 : 1));
+        }
+        found = found.slice(query.offsetValue ?? 0, query.limitValue === undefined ? undefined : (query.offsetValue ?? 0) + query.limitValue);
+        return found.map((row) => columns.length === 1 && columns[0] === "id" ? { id: row.id } : { ...row });
+      },
+    };
+    return query;
+  };
+  const table = {
+    where: (condition: Record<string, unknown>) => makeQuery(["*"], condition),
+    select: (...columns: string[]) => makeQuery(columns),
+  };
+  const app = {
+    tasks: table,
+    union: (arms: Record<string, Query>) => {
+      const query = makeQuery(["*"]);
+      query.arms = Object.values(arms);
+      query.orderBy = (field, direction = "asc") => { query.order = { field, direction }; return query; };
+      query.limit = (value) => { query.limitValue = value; return query; };
+      query.offset = (value) => { query.offsetValue = value; return query; };
+      query.execute = (rows) => {
+        const unique = new Map<string, Row>();
+        for (const arm of query.arms ?? []) for (const row of arm.execute(rows) as Row[]) unique.set(row.id, row);
+        let found = [...unique.values()];
+        if (query.order) {
+          const { field, direction } = query.order;
+          found.sort((left, right) => String(left[field as keyof Row]).localeCompare(String(right[field as keyof Row])) * (direction === "desc" ? -1 : 1));
+        }
+        found = found.slice(query.offsetValue ?? 0, query.limitValue === undefined ? undefined : (query.offsetValue ?? 0) + query.limitValue);
+        return found.map((row) => ({ ...row }));
+      };
+      return query;
+    },
+  };
+  const fakeDb = {
+    all: async (query: Query) => query.execute(data),
+    one: async () => null,
+    onMutationError: () => () => {},
+  } as unknown as Db;
+  const config = defineConfig({ collections: [{
+    slug: "tasks",
+    fields: [
+      { name: "name", type: "text" },
+      { name: "content", type: "text" },
+      { name: "status", type: "select", options: ["todo", "done"] },
+    ],
+    admin: { listSearchableFields: ["name", "content"] },
+  }] });
+  const client = createBebopClient({ app: app as never, config, db: fakeDb });
+  const options = {
+    search: "needle",
+    fields: ["name", "content"] as const,
+    where: { status: "todo" },
+    orderBy: { field: "name", direction: "asc" as const },
+    limit: 20,
+    offset: 30,
+  };
+  const page = await fakeDb.all(client.tasks.search(options) as unknown as Query) as Row[];
+  const expected = data
+    .filter((row) => row.status === "todo" && (row.name.includes("needle") || row.content.includes("needle")))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .slice(30, 50);
+  assert.equal(page.length, 20);
+  assert.deepEqual(page.map((row) => row.id), expected.map((row) => row.id));
+
+  const idPages = await Promise.all(client.tasks.searchIds(options).map((query) => fakeDb.all(query as unknown as Query)));
+  const ids = new Set(idPages.flatMap((items) => items.map((item) => String(item.id))));
+  assert.equal(ids.size, data.filter((row) => row.status === "todo" && (row.name.includes("needle") || row.content.includes("needle"))).length);
+  assert.ok(idPages.flat().every((row) => Object.keys(row).length === 1 && "id" in row));
+});
+
+test("command handler checks access, runs hooks, and responds only after global confirmation", async () => {
+  const order: string[] = [];
+  const config = defineConfig({ collections: [{
+    slug: "tasks", writeMode: "command", access: "public",
+    fields: [{ name: "title", type: "text", required: true, minLength: 3 }],
+    hooks: {
+      beforeChange: ({ data }) => { order.push("before"); return { title: `${data.title} updated` }; },
+      afterChange: () => { order.push("after"); },
+    },
+  }] });
+  const fake = createFakeDb();
+  const authDb = {
+    one: async () => null,
+    canInsert: async () => "allowed",
+    canUpdate: async () => "allowed",
+    canDelete: async () => "allowed",
+  };
+  const writeDb = {
+    insert: (_table: unknown, data: Record<string, unknown>) => {
+      order.push("local");
+      return {
+        value: { id: "task-1", ...data },
+        wait: async ({ tier }: { tier: string }) => { order.push(tier); },
+      };
+    },
+    one: async () => null,
+  };
+  const handle = createBebopHandler({
+    app: { tasks: fake.app.posts } as never,
+    config,
+    resolveSession: async () => ({ authorizationDb: authDb as never, writeDb: writeDb as never, userId: "user-1" }),
+  });
+  const response = await handle(new Request("https://example.test/api/bebop/collections/tasks", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New task" }),
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(order, ["before", "local", "global", "after"]);
+  assert.equal((await response.json() as { doc: { title: string } }).doc.title, "New task updated");
+});
+
 test("permission callbacks can build correlated exists rules against another collection", () => {
   const config = defineConfig({
     collections: [{
-      slug: "posts",
-      fields: [{ name: "title", type: "text" }],
+      slug: "workspaces",
+      fields: [{ name: "name", type: "text" }],
       access: {
-        read: ({ row, exists }) => exists("members", { postId: row.id, role: "editor" }),
+        read: ({ row, session, exists }) => exists("workspaceMemberships", {
+          workspaceId: row.id,
+          userAccount: session.user.account,
+          status: "active",
+        }),
       },
     }, {
-      slug: "members",
-      fields: [{ name: "postId", type: "text" }, { name: "role", type: "text" }],
+      slug: "workspaceMemberships",
+      fields: [
+        { name: "workspace", type: "relationship", relationTo: "workspaces" },
+        { name: "userAccount", type: "text" },
+        { name: "status", type: "select", options: ["active", "pending"] },
+      ],
     }],
   });
 
@@ -114,6 +408,26 @@ test("permission callbacks can build correlated exists rules against another col
   assert.match(permissions, /const exists = \(collectionName: string/);
   assert.match(permissions, /Unknown collection in access\.exists\(\): \$\{collectionName\}/);
   assert.match(permissions, /read!\(\{ row, session, allOf, anyOf, exists, isCreator \}\)/);
+  const observed: unknown[] = [];
+  const access = config.collections[0]?.access;
+  if (access && access !== "public" && access !== "authenticated") {
+    access.read?.({
+      row: { id: "workspace-1" } as never,
+      session: { user: { account: "account-1" } } as never,
+      allOf: (() => ({}) as never),
+      anyOf: (() => ({}) as never),
+      exists: (collectionName, condition) => {
+        observed.push(collectionName, condition);
+        return {} as never;
+      },
+      isCreator: {} as never,
+    });
+  }
+  assert.deepEqual(observed, ["workspaceMemberships", {
+    workspaceId: "workspace-1",
+    userAccount: "account-1",
+    status: "active",
+  }]);
 });
 
 test("one normalized config produces deterministic compiler artifacts", () => {

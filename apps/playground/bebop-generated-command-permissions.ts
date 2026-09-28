@@ -23,9 +23,9 @@ const appPermissions = s.definePermissions(app, ({ policy, session, anyOf, allow
   policy.workspaces.allowUpdate.always();
   policy.workspaces.allowDelete.always();
   policy.workspaceMemberships.allowRead.where(authenticatedSession);
-  policy.workspaceMemberships.allowInsert.never();
-  policy.workspaceMemberships.allowUpdate.never();
-  policy.workspaceMemberships.allowDelete.never();
+  policy.workspaceMemberships.allowInsert.where(authenticatedSession);
+  policy.workspaceMemberships.allowUpdate.where(authenticatedSession);
+  policy.workspaceMemberships.allowDelete.where(authenticatedSession);
   policy.tasks.allowRead.where(authenticatedSession);
   policy.tasks.allowInsert.where(authenticatedSession);
   policy.tasks.allowUpdate.where(authenticatedSession);

@@ -1,6 +1,6 @@
 # Examples
 
-Each directory in `examples/` is a standalone app with its own `package.json` and npm lockfile. Copy one folder, or download the repository ZIP and use the example folder you want; install its published npm dependencies and run it without the Bebop workspace.
+Each directory in `examples/` is a standalone app with its own `package.json`. Copy one folder or download the repository ZIP and install its published dependencies with pnpm.
 
 ## Basic
 
@@ -9,8 +9,8 @@ Each directory in `examples/` is a standalone app with its own `package.json` an
 From a downloaded copy of `examples/basic`:
 
 ```sh
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open `http://127.0.0.1:5174/` for the playground or `http://127.0.0.1:5174/admin` for Bebop Admin. The app generates its Jazz schema on startup and saves data locally in the browser.

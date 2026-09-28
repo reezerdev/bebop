@@ -3,8 +3,10 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
 import { jazzAdapter } from "jazz-tools/better-auth-adapter";
+import { createBebopHandler } from "@bebopdev/core/server";
 import { app } from "./bebop-generated-schema.js";
-import permissions from "./permissions.js";
+import commandPermissions from "./bebop-generated-command-permissions.js";
+import bebopConfig from "./bebop.config.ts";
 import { authOptions } from "./auth-options.ts";
 
 type AuthServerConfig = {
@@ -24,7 +26,9 @@ export async function createAuthServer(config: AuthServerConfig) {
 
   const jazzSession = await createJazzSession({
     app,
-    permissions,
+    // Keep command grants in this server-only session. The browser receives
+    // permissions.ts, which denies direct writes to command collections.
+    permissions: commandPermissions,
     appId: config.appId,
     driver: { type: "memory" },
     serverUrl: config.serverUrl,
@@ -50,8 +54,38 @@ export async function createAuthServer(config: AuthServerConfig) {
     }),
   });
 
+  const commandHandler = createBebopHandler({
+    app,
+    config: bebopConfig,
+    async resolveSession(request) {
+      const origin = request.headers.get("origin");
+      if (!origin || origin !== new URL(request.url).origin) return null;
+
+      const headers = request.headers;
+      const session = await auth.api.getSession({
+        headers,
+        query: { disableCookieCache: true },
+      });
+      if (!session) return null;
+
+      // Exchange the verified Better Auth cookie for a short-lived JWT that
+      // Jazz verifies via the configured Better Auth JWKS endpoint.
+      const { token } = await auth.api.getToken({ headers });
+      const jazzRequest = new Request(request.url, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const client = snapshot.client!;
+      return {
+        authorizationDb: await client.forRequest(jazzRequest),
+        writeDb: await client.withAttributionForRequest(jazzRequest),
+        userId: session.user.id,
+      };
+    },
+  });
+
   return {
     handler: toNodeHandler(auth.handler),
+    commandHandler,
     async listUsers(request: IncomingMessage, response: ServerResponse) {
       response.setHeader("content-type", "application/json");
       response.setHeader("cache-control", "no-store");

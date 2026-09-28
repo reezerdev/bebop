@@ -1,11 +1,45 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import react from "@vitejs/plugin-react";
 import { jazzPlugin } from "jazz-tools/dev/vite";
 import { getBetterAuthURL } from "./auth-config.ts";
 
 const projectDirectory = path.dirname(fileURLToPath(import.meta.url));
+
+function toWebRequest(request: IncomingMessage): Promise<Request> {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (typeof value === "string") headers.set(name, value);
+    else if (Array.isArray(value)) headers.set(name, value.join(", "));
+  }
+
+  const host = request.headers.host ?? "127.0.0.1";
+  const url = new URL(request.url ?? "/", `http://${host}`);
+  const method = request.method ?? "GET";
+  if (method === "GET" || method === "HEAD") return Promise.resolve(new Request(url, { method, headers }));
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    request.once("error", reject);
+    request.once("end", () => {
+      try {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve(new Request(url, { method, headers, ...(body ? { body } : {}) }));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+async function sendWebResponse(response: Response, target: ServerResponse): Promise<void> {
+  target.statusCode = response.status;
+  response.headers.forEach((value, name) => target.setHeader(name, value));
+  target.end(Buffer.from(await response.arrayBuffer()));
+}
 
 function betterAuthPlugin(): Plugin {
   return {
@@ -18,7 +52,8 @@ function betterAuthPlugin(): Plugin {
         const requestPath = new URL(request.url ?? "/", "http://localhost").pathname;
         const isAuthRoute = requestPath === "/api/auth" || requestPath.startsWith("/api/auth/");
         const isUsersRoute = requestPath === "/api/bebop/users";
-        if (!isAuthRoute && !isUsersRoute) {
+        const isCommandRoute = requestPath.startsWith("/api/bebop/collections/");
+        if (!isAuthRoute && !isUsersRoute && !isCommandRoute) {
           next();
           return;
         }
@@ -32,9 +67,13 @@ function betterAuthPlugin(): Plugin {
         );
 
         void authServerPromise
-          .then(({ handler, listUsers }) => isUsersRoute ? listUsers(request, response) : handler(request, response))
+          .then(async ({ handler, listUsers, commandHandler }) => {
+            if (isUsersRoute) return listUsers(request, response);
+            if (isCommandRoute) return sendWebResponse(await commandHandler(await toWebRequest(request)), response);
+            return handler(request, response);
+          })
           .catch((error: unknown) => {
-            console.error("[bebop auth] Could not serve Better Auth request:", error);
+            console.error("[bebop auth] Could not serve auth or Bebop command request:", error);
             if (!response.headersSent) {
               response.statusCode = 500;
               response.setHeader("content-type", "application/json");

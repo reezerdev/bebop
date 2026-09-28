@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useAll } from "jazz-tools/react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
-import { app } from "../bebop-generated-schema.js";
 import type { createBebopClient } from "../bebop-generated-client.js";
 
 const categories = ["announcement", "guide", "story"] as const;
@@ -38,7 +37,7 @@ export function PlaygroundPage({
   currentUserName: string;
   authors: readonly AuthorOption[];
 }) {
-  const { data: posts } = useAll(app.posts.select("*", "$createdAt", "$updatedAt"));
+  const { data: posts } = useAll(client.posts.query({ includeTimestamps: true }));
   const [mutationError, setMutationError] = useState<string>();
   const { register, handleSubmit, reset, setValue, formState: { errors, dirtyFields, isSubmitting } } = useForm<PostFormValues>({
     defaultValues: {

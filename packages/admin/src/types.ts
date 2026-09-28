@@ -6,6 +6,7 @@ export type BebopAdminField = {
   label: string;
   kind: BebopAdminFieldKind;
   required: boolean;
+  admin?: { position?: "main" | "sidebar" };
   options?: readonly string[];
   relationTo?: string;
 };
@@ -18,7 +19,6 @@ export type BebopAdminCollection = {
   useAsTitle?: string;
   defaultColumns: readonly string[];
   listSearchableFields: readonly string[];
-  sidebarFields?: readonly string[];
 };
 
 export type BebopAdminManifest = {

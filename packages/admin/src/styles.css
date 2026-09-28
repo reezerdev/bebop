@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/noto-sans";
@@ -51,7 +52,7 @@
   --font-heading: 'Playfair Display Variable', serif;
 }
 
-:root {
+.bebop-admin {
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -87,7 +88,7 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-.dark {
+.dark .bebop-admin, .bebop-admin.dark {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -123,7 +124,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.dark) {
+  :root:not(.light):not(.dark) .bebop-admin {
     color-scheme: dark;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
@@ -160,12 +161,16 @@
 }
 
 @layer base {
-  * { @apply border-border outline-ring/50; }
-  body { @apply font-sans bg-background text-foreground; }
-  button, a, input, select, textarea { @apply focus-visible:outline-none; }
-  html {
-    @apply font-sans;
-  }
+  body:has(.bebop-admin) { margin: 0; }
+  .bebop-admin, .bebop-admin *, .bebop-admin *::before, .bebop-admin *::after { box-sizing: border-box; }
+  .bebop-admin { @apply font-sans bg-background text-foreground; }
+  .bebop-admin * { @apply border-border outline-ring/50; }
+  .bebop-admin h1, .bebop-admin h2, .bebop-admin h3, .bebop-admin p { margin: 0; }
+  .bebop-admin button, .bebop-admin a, .bebop-admin input, .bebop-admin select, .bebop-admin textarea { @apply focus-visible:outline-none; font: inherit; }
+  .bebop-admin button, .bebop-admin input, .bebop-admin select, .bebop-admin textarea { margin: 0; padding: 0; border: 0; color: inherit; background: transparent; }
+  .bebop-admin button { cursor: pointer; }
+  .bebop-admin a { color: inherit; text-decoration: none; }
+  .bebop-admin table { border-collapse: collapse; border-spacing: 0; }
 }
 
 .admin-sidebar {
@@ -216,6 +221,23 @@
 .admin-checkbox:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
 .admin-table-pagination { @apply flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground; }
+
+.admin-editor-heading { @apply flex min-h-20 items-center border-b border-border pb-4; }
+.admin-editor-heading h1 { @apply min-w-0 text-[32px] font-normal leading-tight tracking-tight; }
+.admin-editor-meta { @apply flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border py-3; }
+.admin-editor-dates { @apply flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]; }
+.admin-editor-actions { @apply ml-auto flex items-center gap-2; }
+.admin-editor-message { @apply border-b border-border py-3 text-[13px]; }
+.admin-editor-grid { @apply grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]; min-width: 0; margin: 0; padding: 0; border: 0; }
+.admin-editor-grid-single { @apply lg:grid-cols-1; }
+.admin-editor-main { @apply min-w-0 space-y-6 py-7 lg:pr-10; }
+.admin-editor-side { @apply min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l lg:pl-8; }
+.admin-editor-field { @apply flex flex-col gap-2; }
+.admin-editor-checkbox-label { @apply flex min-h-10 cursor-pointer items-center gap-2 text-[13px]; }
+.admin-editor [data-slot="input"], .admin-editor [data-slot="select-trigger"] { @apply h-10 w-full border border-input bg-muted/50 px-3 py-2 text-[13px]; }
+.admin-editor [data-slot="textarea"] { @apply min-h-32 w-full border border-input bg-muted/50 px-3 py-2 text-[13px]; }
+.admin-editor-document-id { @apply flex flex-col gap-1 border-t border-border pt-5 text-xs text-muted-foreground; }
+.admin-editor-document-id code { @apply break-all text-foreground; }
 
 @media (max-width: 767px) {
   .admin-sidebar { @apply -translate-x-full; }

@@ -2,6 +2,7 @@ import type { PermissionExpressionInput, RowContext, SessionContext } from "jazz
 
 export type FieldOptions = {
   required?: boolean;
+  admin?: { position?: "main" | "sidebar" };
 };
 
 export type TextField = FieldOptions & { kind: "text" };
@@ -31,7 +32,9 @@ export type FieldDefinition =
 
 export type Fields = Record<string, FieldDefinition>;
 
-type FieldValue<TField> = TField extends { kind: "text" | "select" | "relation" }
+type FieldValue<TField> = TField extends { kind: "select"; options: readonly (infer TOption extends string)[] }
+  ? TOption
+  : TField extends { kind: "text" | "relation" }
   ? string
   : TField extends { kind: "number" | "integer" }
     ? number
@@ -117,7 +120,6 @@ export type CollectionAdminOptions = {
   useAsTitle?: string;
   defaultColumns?: readonly string[];
   listSearchableFields?: readonly string[];
-  sidebarFields?: readonly string[];
 };
 export type CollectionDefinition<TFields extends Fields = Fields> = {
   fields: TFields;

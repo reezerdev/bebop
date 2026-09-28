@@ -44,7 +44,7 @@ export function App() {
 
   return <Routes>
     <Route path="/" element={<PlaygroundPage client={bebop} logout={() => logout()} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
-    <Route path="/admin/*" element={<BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />} />
+    <Route path="/admin/*" element={<BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={Boolean(authSession?.user)} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;
 }

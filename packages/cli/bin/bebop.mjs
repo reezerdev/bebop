@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { watch } from "node:fs";
-import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
+import { collectConfigDependencies } from "../lib/config-dependencies.mjs";
 
 const usage = `Usage:
   bebop generate [--config <path>] [--out-dir <path>]
@@ -74,10 +74,10 @@ async function loadConfig(configPath) {
 }
 
 async function loadCompiler(configPath) {
-  const { compileSchema, compilePermissions, compileAdminManifest, compileClientFactory } = await tsImport("@bebop/core", {
+  const { compileArtifacts } = await tsImport("@bebop/core", {
     parentURL: pathToFileURL(configPath).href,
   });
-  return { compileSchema, compilePermissions, compileAdminManifest, compileClientFactory };
+  return compileArtifacts;
 }
 
 function moduleSpecifier(fromDirectory, targetFile) {
@@ -106,15 +106,12 @@ async function writeIfChanged(filePath, content) {
 
 async function generate(paths, { quiet = false } = {}) {
   const config = await loadConfig(paths.configPath);
-  const { compileSchema, compilePermissions, compileAdminManifest, compileClientFactory } = await loadCompiler(paths.configPath);
+  const compileArtifacts = await loadCompiler(paths.configPath);
 
   // Compile outputs before writing so invalid config keeps the last valid
   // generated schema and permissions available to the dev server.
-  const schema = compileSchema(config);
   const configModuleSpecifier = moduleSpecifier(paths.outputDirectory, paths.configPath);
-  const permissions = compilePermissions(config, configModuleSpecifier);
-  const adminManifest = compileAdminManifest(config);
-  const clientFactory = compileClientFactory(configModuleSpecifier);
+  const { schema, permissions, adminManifest, clientFactory } = compileArtifacts(config, configModuleSpecifier);
   await mkdir(paths.outputDirectory, { recursive: true });
 
   if (config.auth) await generateBetterAuthSchema(paths, config.auth);
@@ -205,21 +202,28 @@ async function dev(paths, commandArgs) {
   const command = commandArgs.length ? commandArgs[0] : "vite";
   const args = commandArgs.length ? commandArgs.slice(1) : ["--host", "127.0.0.1"];
 
-  const watchedFiles = new Set([paths.configPath]);
+  const configEntries = [paths.configPath];
   if (config.auth) {
-    watchedFiles.add(
+    configEntries.push(
       path.resolve(paths.configDirectory, config.auth.generateConfig ?? "auth-generate.ts"),
     );
-    watchedFiles.add(path.resolve(paths.configDirectory, "auth-options.ts"));
+    configEntries.push(path.resolve(paths.configDirectory, "auth-options.ts"));
   }
-  const watchedDirectories = new Map();
-  for (const watchedFile of watchedFiles) {
-    const directory = path.dirname(watchedFile);
-    if (!watchedDirectories.has(directory)) watchedDirectories.set(directory, new Set());
-    watchedDirectories.get(directory).add(watchedFile);
-  }
-  const watchedNames = [...watchedFiles].map((file) => path.relative(process.cwd(), file));
-  console.log(`Watching ${watchedNames.join(", ")} for schema changes`);
+  const fingerprint = async (file) => {
+    try {
+      const info = await stat(file);
+      return `${info.mtimeMs}:${info.size}`;
+    } catch (error) {
+      if (error.code === "ENOENT") return "missing";
+      throw error;
+    }
+  };
+  let watchedFiles = new Map();
+  const syncWatchers = async () => {
+    const nextFiles = await collectConfigDependencies(configEntries);
+    watchedFiles = new Map(await Promise.all([...nextFiles].map(async (file) => [file, await fingerprint(file)])));
+    console.log(`Watching ${[...nextFiles].map((file) => path.relative(process.cwd(), file)).join(", ")} for schema changes`);
+  };
 
   let timer;
   let generating = false;
@@ -233,7 +237,10 @@ async function dev(paths, commandArgs) {
       }
       generating = true;
       try {
-        await generate(paths);
+        // A fresh process reloads imported collection modules as well as the root config.
+        const code = await run(process.execPath, [fileURLToPath(import.meta.url), "generate", "--config", paths.configPath, "--out-dir", paths.outputDirectory]);
+        if (code !== 0) console.error(`Could not regenerate the schema (exit code ${code}).`);
+        await syncWatchers();
       } catch (error) {
         console.error(`Could not regenerate the schema: ${error.message}`);
       } finally {
@@ -246,14 +253,28 @@ async function dev(paths, commandArgs) {
     }, 120);
   };
 
-  const watchers = [...watchedDirectories].map(([directory, files]) => {
-    const watcher = watch(directory, (_event, filename) => {
-      if (filename && files.has(path.resolve(directory, filename.toString()))) scheduleGeneration();
-    });
-    watcher.on("error", (error) => console.error(`Config watcher error: ${error.message}`));
-    return watcher;
-  });
-  const closeWatchers = () => watchers.forEach((watcher) => watcher.close());
+  await syncWatchers();
+  let polling = false;
+  const poll = setInterval(() => {
+    if (polling) return;
+    polling = true;
+    void (async () => {
+      try {
+        for (const [file, previous] of watchedFiles) {
+          const current = await fingerprint(file);
+          if (current !== previous) {
+            watchedFiles.set(file, current);
+            scheduleGeneration();
+          }
+        }
+      } catch (error) {
+        console.error(`Config watcher error: ${error.message}`);
+      } finally {
+        polling = false;
+      }
+    })();
+  }, 500);
+  const closeWatchers = () => clearInterval(poll);
 
   const child = spawn(command, args, { cwd: process.cwd(), stdio: "inherit" });
   let stopping = false;

@@ -18,6 +18,9 @@ export const bebopAdminManifest = {
           "label": "Author",
           "kind": "relation",
           "required": true,
+          "admin": {
+            "position": "sidebar"
+          },
           "relationTo": "better_auth_user"
         },
         {
@@ -39,14 +42,20 @@ export const bebopAdminManifest = {
           "storageName": "publishedAt",
           "label": "Published At",
           "kind": "date",
-          "required": false
+          "required": false,
+          "admin": {
+            "position": "sidebar"
+          }
         },
         {
           "name": "published",
           "storageName": "published",
           "label": "Published",
           "kind": "boolean",
-          "required": false
+          "required": false,
+          "admin": {
+            "position": "sidebar"
+          }
         },
         {
           "name": "category",
@@ -54,6 +63,9 @@ export const bebopAdminManifest = {
           "label": "Category",
           "kind": "select",
           "required": false,
+          "admin": {
+            "position": "sidebar"
+          },
           "options": [
             "announcement",
             "guide",
@@ -72,12 +84,6 @@ export const bebopAdminManifest = {
       "listSearchableFields": [
         "title",
         "slug"
-      ],
-      "sidebarFields": [
-        "author",
-        "publishedAt",
-        "published",
-        "category"
       ]
     }
   }

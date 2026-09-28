@@ -9,5 +9,8 @@
   "dependencies": {
     "@bebop/core": "workspace:*",
     "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
   }
 }

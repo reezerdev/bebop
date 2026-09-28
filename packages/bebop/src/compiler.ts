@@ -2,26 +2,64 @@ import type { BebopConfig, FieldDefinition } from "./bebop.ts";
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-export function compileSchema(config: BebopConfig): string {
+export function normalizeConfig(config: BebopConfig) {
   validateConfig(config);
+  return {
+    auth: config.auth,
+    collections: Object.entries(config.collections).map(([name, definition]) => {
+      const fields = Object.entries(definition.fields).map(([fieldName, field]) => ({
+        name: fieldName,
+        storageName: field.kind === "relation" ? `${fieldName}Id` : fieldName,
+        label: humanize(fieldName),
+        kind: field.kind,
+        required: Boolean(field.required),
+        definition: field,
+        ...(field.admin?.position ? { admin: { position: field.admin.position } } : {}),
+        ...(field.kind === "select" ? { options: field.options } : {}),
+        ...(field.kind === "relation" ? { relationTo: field.to } : {}),
+      }));
+      const fieldNames = fields.map((field) => field.name);
+      const useAsTitle = definition.admin?.useAsTitle ?? (fieldNames.includes("title") ? "title" : undefined);
+      return {
+        name,
+        fields,
+        access: definition.access,
+        admin: {
+          label: definition.admin?.label ?? humanize(name),
+          timestamps: definition.timestamps !== false,
+          useAsTitle,
+          defaultColumns: definition.admin?.defaultColumns ?? [
+            ...(useAsTitle ? [useAsTitle] : []),
+            ...fieldNames.filter((fieldName) => fieldName !== useAsTitle),
+          ].slice(0, 4),
+          listSearchableFields: definition.admin?.listSearchableFields ?? (useAsTitle ? [useAsTitle] : []),
+        },
+      };
+    }),
+  };
+}
 
-  const tables = Object.entries(config.collections).map(([collectionName, definition]) => {
+type NormalizedConfig = ReturnType<typeof normalizeConfig>;
+
+function compileSchemaFromModel(model: NormalizedConfig): string {
+
+  const tables = model.collections.map((collection) => {
     const columns: string[] = [];
     const relations: string[] = [];
 
-    for (const [fieldName, field] of Object.entries(definition.fields)) {
+    for (const field of collection.fields) {
       if (field.kind === "relation") {
-        const columnName = `${fieldName}Id`;
+        const columnName = field.storageName;
         const optional = field.required ? "" : ".optional()";
         columns.push(`${JSON.stringify(columnName)}: s.uuid()${optional}`);
         relations.push(
-          `${JSON.stringify(fieldName)}: s.rel(${JSON.stringify(field.to)}, ${JSON.stringify(columnName)})`,
+          `${JSON.stringify(field.name)}: s.rel(${JSON.stringify(field.relationTo)}, ${JSON.stringify(columnName)})`,
         );
         continue;
       }
 
       columns.push(
-        `${JSON.stringify(fieldName)}: ${compileFieldType(field)}${field.required ? "" : ".optional()"}`,
+        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { kind: "relation" }>)}${field.required ? "" : ".optional()"}`,
       );
     }
 
@@ -29,63 +67,49 @@ export function compileSchema(config: BebopConfig): string {
       ? `{\n      ${relations.join(",\n      ")}\n    }`
       : "{}";
 
-    return `  ${JSON.stringify(collectionName)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
+    return `  ${JSON.stringify(collection.name)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
   });
 
-  const authImport = config.auth
+  const authImport = model.auth
     ? 'import { schema as betterAuthSchema } from "./schema-better-auth/schema.js";\n'
     : "";
-  const entries = [...(config.auth ? ["  ...betterAuthSchema"] : []), ...tables];
+  const entries = [...(model.auth ? ["  ...betterAuthSchema"] : []), ...tables];
 
   return `// Generated in bebop-generated-schema.ts from bebop.config.ts. Edit that file, then run bebop generate.\nimport { schema as s } from "jazz-tools";\n${authImport}\nconst schema = {\n${entries.join(",\n")}\n} as const;\n\ntype AppSchema = s.Schema<typeof schema>;\nexport const app: s.App<AppSchema> = s.defineApp(schema);\n`;
 }
 
-export function compileAdminManifest(config: BebopConfig): string {
-  validateConfig(config);
-
-  const collections = Object.entries(config.collections).map(([collectionName, definition]) => {
-    const fields = Object.entries(definition.fields).map(([fieldName, field]) => ({
-      name: fieldName,
-      storageName: field.kind === "relation" ? `${fieldName}Id` : fieldName,
-      label: humanize(fieldName),
-      kind: field.kind,
-      required: Boolean(field.required),
-      ...(field.kind === "select" ? { options: field.options } : {}),
-      ...(field.kind === "relation" ? { relationTo: field.to } : {}),
+function compileAdminManifestFromModel(model: NormalizedConfig): string {
+  const collections = model.collections.map((collection) => {
+    const { label, timestamps, useAsTitle, defaultColumns, listSearchableFields } = collection.admin;
+    const fields = collection.fields.map(({ name, storageName, label: fieldLabel, kind, required, ...rest }) => ({
+      name, storageName, label: fieldLabel, kind, required,
+      ...(rest.admin ? { admin: rest.admin } : {}),
+      ...(rest.options ? { options: rest.options } : {}),
+      ...(rest.relationTo ? { relationTo: rest.relationTo } : {}),
     }));
-    const fieldNames = Object.keys(definition.fields);
-    const inferredTitle = fieldNames.includes("title") ? "title" : undefined;
-    const useAsTitle = definition.admin?.useAsTitle ?? inferredTitle;
-    const defaultColumns = definition.admin?.defaultColumns ?? [
-      ...(useAsTitle ? [useAsTitle] : []),
-      ...fieldNames.filter((fieldName) => fieldName !== useAsTitle),
-    ].slice(0, 4);
-
-    return [collectionName, {
-      slug: collectionName,
-      label: definition.admin?.label ?? humanize(collectionName),
+    return [collection.name, {
+      slug: collection.name,
+      label,
       fields,
-      timestamps: definition.timestamps !== false,
+      timestamps,
       ...(useAsTitle ? { useAsTitle } : {}),
       defaultColumns,
-      listSearchableFields: definition.admin?.listSearchableFields ?? (useAsTitle ? [useAsTitle] : []),
-      sidebarFields: definition.admin?.sidebarFields ?? [],
+      listSearchableFields,
     }] as const;
   });
 
   return `// Generated from bebop.config.ts. Do not edit this file.\nexport const bebopAdminManifest = ${JSON.stringify({ collections: Object.fromEntries(collections) }, null, 2)} as const;\n`;
 }
 
-export function compilePermissions(
-  config: BebopConfig,
+function compilePermissionsFromModel(
+  model: NormalizedConfig,
   configModuleSpecifier = "./bebop.config.js",
 ): string {
-  validateConfig(config);
-
-  const hasAccessRules = Object.values(config.collections).some((definition) => definition.access);
-  const grants = Object.entries(config.collections)
-    .flatMap(([collectionName, definition]) => {
-      const access = definition.access;
+  const hasAccessRules = model.collections.some((collection) => collection.access);
+  const grants = model.collections
+    .flatMap((collection) => {
+      const collectionName = collection.name;
+      const access = collection.access;
       if (!access) return [];
       const rules: string[] = [`  const ${collectionName}Access = bebopConfig.collections.${collectionName}.access;`];
       const operations = [
@@ -106,7 +130,7 @@ export function compilePermissions(
     })
     .join("\n");
 
-  const authImport = config.auth
+  const authImport = model.auth
     ? 'import { permissions as betterAuthPermissions } from "./schema-better-auth/schema.js";\n'
     : "";
   const configImport = hasAccessRules
@@ -121,7 +145,29 @@ export function compilePermissions(
     : "";
   const appPermissions = `const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf, isCreator }) => {${existsHelper}\n${grants}\n});`;
 
-  return `// Generated from bebop.config.ts. Missing collection operations are denied by Jazz.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${config.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
+  return `// Generated from bebop.config.ts. Missing collection operations are denied by Jazz.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
+}
+
+export function compileSchema(config: BebopConfig): string {
+  return compileSchemaFromModel(normalizeConfig(config));
+}
+
+export function compileAdminManifest(config: BebopConfig): string {
+  return compileAdminManifestFromModel(normalizeConfig(config));
+}
+
+export function compilePermissions(config: BebopConfig, configModuleSpecifier = "./bebop.config.js"): string {
+  return compilePermissionsFromModel(normalizeConfig(config), configModuleSpecifier);
+}
+
+export function compileArtifacts(config: BebopConfig, configModuleSpecifier = "./bebop.config.js") {
+  const model = normalizeConfig(config);
+  return {
+    schema: compileSchemaFromModel(model),
+    adminManifest: compileAdminManifestFromModel(model),
+    permissions: compilePermissionsFromModel(model, configModuleSpecifier),
+    clientFactory: compileClientFactory(configModuleSpecifier),
+  };
 }
 
 export function compileClientFactory(configModuleSpecifier = "./bebop.config.js"): string {
@@ -216,6 +262,9 @@ function validateConfig(config: BebopConfig): void {
       if (field.kind === "select" && field.options.length === 0) {
         throw new Error(`Select field "${collectionName}.${fieldName}" must have at least one option.`);
       }
+      if (field.admin?.position !== undefined && field.admin.position !== "main" && field.admin.position !== "sidebar") {
+        throw new Error(`Field "${collectionName}.${fieldName}" admin.position must be "main" or "sidebar".`);
+      }
     }
 
     const adminOptions = definition.admin;
@@ -233,11 +282,6 @@ function validateConfig(config: BebopConfig): void {
       }
       if (definition.fields[fieldName].kind !== "text") {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields field "${fieldName}" must be text.`);
-      }
-    }
-    for (const fieldName of adminOptions?.sidebarFields ?? []) {
-      if (!Object.hasOwn(definition.fields, fieldName)) {
-        throw new Error(`Collection "${collectionName}" admin.sidebarFields references unknown field "${fieldName}".`);
       }
     }
   }

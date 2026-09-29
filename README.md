@@ -1,6 +1,6 @@
 # Bebop
 
-Bebop is an application framework with a simple admin panel for editing app data. Developers define collections once; Bebop compiles a typed Local API, Jazz schema and permissions, and first-party admin screens. The host app owns authentication, server deployment, and its policy for entering `/admin`.
+Bebop is an application framework with a simple admin panel for editing app data. Developers define collections once; Bebop compiles a typed Local API, Jazz schema and permissions, and first-party admin screens. Bebop includes a Better Auth integration; the host app owns server deployment and its policy for entering `/admin`.
 
 Bebop v1 is for direct editing and support workflows. It is not a full content publishing platform. Drafts, revisions, Trash, localization, and rich-text authoring are outside this release foundation. Upload support is in progress and documented separately.
 
@@ -65,7 +65,7 @@ Set `labels.singular` and `labels.plural` to control document and collection nam
 
 Use `permissions` for Jazz-style, per-operation rules. Each callback receives a `rule` builder, typed `session`, and read-only `collections.<slug>.exists.where(...)` helpers. Inside `rule.where((row) => ...)`, `row` is a typed policy reference for the candidate row; update rules also expose `whereOld` and `whereNew`. Every operation must be granted explicitly; omitted operations are denied. The playground keeps Workspaces and Media public with explicit `rule.always()` grants, routes Membership writes through the Better Auth command handler, and limits Task access to active Workspace members. The older `access` option remains supported for compatibility and is deprecated.
 
-The host also decides whether a user may enter `/admin` and passes that result as `canAccessAdmin`. Admin entry and collection access are separate decisions.
+The Better Auth integration checks admin status before mounting `/admin`. By default, only users accepted by Better Auth's Admin plugin can enter; an auth collection can customize the rule with `access.admin`, which receives the authenticated `req.user` and `req.isAdmin`. Other auth providers can mount `createBebopAdminAccessHandler` with their verified session resolver, or pass their own `canAccessAdmin` result to `BebopAdmin`.
 
 Collections default to `writeMode: "direct"`: shared-client mutations are local-first and work offline. Bebop validation and lifecycle hooks improve feedback but can be bypassed by direct Jazz writes. Jazz permissions remain authoritative, and mutation results expose `waitForGlobal()` plus later sync errors. Choose `writeMode: "command"` when custom validation and hooks must run at a trusted server boundary; the host mounts a `createBebopHandler` endpoint and binds its verified actor to the attributed Jazz writer. See the [access control guide](./docs/access-control.md).
 
@@ -73,13 +73,15 @@ Collections default to `writeMode: "direct"`: shared-client mutations are local-
 
 The CLI generates `bebop-generated-schema.ts`, `bebop-admin-manifest.ts`, `bebop-generated-client.ts`, `permissions.ts`, and `bebop-generated-command-permissions.ts`. Keep config as the source and do not edit generated files. Use the generated `createBebopClient(db)` in app code and pass the client and manifest to `BebopAdmin`.
 
-The admin uses Base UI components with shadcn/ui's Sera style, Neutral palette, and square corners. Its compiled styles ship with `@bebopdev/admin`, so a host does not need to configure Tailwind. The host provides its router, `JazzProvider`, authentication screens, user name/email, logout action, and `canAccessAdmin` decision.
+The admin uses Base UI components with shadcn/ui's Sera style, Neutral palette, and square corners. Its compiled styles ship with `@bebopdev/admin`, so a host does not need to configure Tailwind. The host provides its router, `JazzProvider`, authentication screens, user name/email, logout action, and `canAccessAdmin` decision. The playground resolves that decision from the server at `/api/bebop/admin-access`.
 
 The typed client supports filtered/sorted queries, offset/limit pagination, multi-field Jazz query-union search, `find`, `findById`, and CRUD methods. Its v1 list/search target is collections up to 10,000 documents; the admin retrieves one page of documents and uses ID-only query subscriptions for exact counts. Read the [Local API contract](./docs/local-api.md) for query and durability details.
 
-## Better Auth playground
+## Better Auth
 
-The playground demonstrates email/password sign-in through Better Auth and Jazz's Better Auth adapter. Copy [`apps/playground/.env.example`](./apps/playground/.env.example) to `.env`, set `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET`, then run `pnpm generate` and `pnpm dev`. Generate a secret with `openssl rand -base64 32`. The host integration is in [`auth.ts`](./apps/playground/auth.ts), [`vite.config.ts`](./apps/playground/vite.config.ts), and [`auth-client.ts`](./apps/playground/auth-client.ts).
+Declare an auth collection with `auth: true`; its slug becomes the relationship target and admin collection name. Bebop builds the Better Auth schema and installs the JWT and Admin plugins, so apps use `relationTo: "users"` instead of addressing the internal `better_auth_user` table. The host still owns its Better Auth request handler, secret, and public URL; Bebop's server helper evaluates admin entry access. See the [Better Auth users guide](./packages/bebop/README.md#better-auth-users) and the [playground host integration](./apps/playground/README.md).
+
+The playground has email/password sign-in, Jazz's Better Auth adapter, and the protected Users list. Copy [`apps/playground/.env.example`](./apps/playground/.env.example) to `.env`, set `BETTER_AUTH_URL` and a private `BETTER_AUTH_SECRET`, and run `pnpm generate` and `pnpm dev`. To grant a user admin access to `/admin` and the Users collection, set `BETTER_AUTH_ADMIN_USER_IDS` to a trusted Better Auth user ID. Generate a secret with `openssl rand -base64 32`.
 
 For CLI commands, run `pnpm --filter @bebopdev/playground exec bebop generate` and `pnpm --filter @bebopdev/playground exec bebop validate`. `bebop dev` accepts a custom server command after `--`; without one, it starts Vite on `127.0.0.1`.
 

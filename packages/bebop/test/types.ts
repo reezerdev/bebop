@@ -1,4 +1,5 @@
 import { collection, defineConfig } from "../src/bebop.ts";
+import { createBebopBetterAuthClient } from "../src/auth-client.ts";
 import type { BebopClient } from "../src/client.ts";
 
 const config = defineConfig({
@@ -107,4 +108,17 @@ if (false) {
   void uploadClient.tasks.create({ image: "id" });
   // @ts-expect-error Ordinary collections have no file reader.
   void uploadClient.tasks.readFile("id");
+}
+
+const authConfig = defineConfig({ collections: [
+  collection({ slug: "users", auth: true, fields: [] }),
+  collection({ slug: "tasks", fields: [{ name: "author", type: "relationship", relationTo: "users" }] }),
+] });
+declare const authClient: BebopClient<typeof authConfig>;
+const betterAuthClient = createBebopBetterAuthClient();
+if (false) {
+  void authClient.tasks.create({ authorId: "user-1" });
+  // @ts-expect-error Better Auth's user model is not exposed as a Jazz CRUD collection.
+  void authClient.users.find();
+  void betterAuthClient.admin.listUsers({ query: { limit: 10, offset: 0 } });
 }

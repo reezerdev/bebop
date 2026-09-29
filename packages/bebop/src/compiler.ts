@@ -19,7 +19,8 @@ function selectOptionValue(option: string | { label: string; value: string }): s
 export function normalizeConfig(config: BebopConfig) {
   validateConfig(config);
   return {
-    auth: config.auth,
+    auth: config.collections.some((definition) => definition.auth),
+    authCollection: config.collections.find((definition) => definition.auth)?.slug,
     collections: config.collections.map((definition) => {
       const name = definition.slug;
       const pluralLabel = definition.labels?.plural ?? definition.admin?.label ?? humanize(name);
@@ -67,10 +68,14 @@ export function normalizeConfig(config: BebopConfig) {
         : [];
       const fields = [...configuredFields, ...generatedFields];
       const storedFields = fields.filter((field) => field.kind !== "join");
-      const fieldNames = storedFields.map((field) => field.name);
-      const useAsTitle = definition.admin?.useAsTitle ?? (fieldNames.includes("title") ? "title" : definition.upload ? "filename" : undefined);
+      const fieldNames = [
+        ...(definition.auth ? ["name", "email", "emailVerified", "image", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt"] : []),
+        ...storedFields.map((field) => field.name),
+      ];
+      const useAsTitle = definition.admin?.useAsTitle ?? (definition.auth ? "name" : fieldNames.includes("title") ? "title" : definition.upload ? "filename" : undefined);
       return {
         name,
+        ...(definition.auth ? { auth: true as const } : {}),
         fields,
         access: definition.access,
         permissions: definition.permissions,
@@ -83,11 +88,13 @@ export function normalizeConfig(config: BebopConfig) {
           labels: { singular: singularLabel, plural: pluralLabel },
           timestamps: definition.timestamps !== false,
           useAsTitle,
-          defaultColumns: definition.admin?.defaultColumns ?? [
-            ...(useAsTitle ? [useAsTitle] : []),
-            ...fieldNames.filter((fieldName) => fieldName !== useAsTitle),
-          ].slice(0, 4),
-          listSearchableFields: definition.admin?.listSearchableFields ?? (useAsTitle ? [useAsTitle] : []),
+          defaultColumns: definition.admin?.defaultColumns ?? (definition.auth
+            ? ["name", "email", "role", "createdAt"]
+            : [
+                ...(useAsTitle ? [useAsTitle] : []),
+                ...fieldNames.filter((fieldName) => fieldName !== useAsTitle && fieldName !== "id"),
+              ].slice(0, 4)),
+          listSearchableFields: definition.admin?.listSearchableFields ?? (definition.auth ? ["name", "email"] : useAsTitle ? [useAsTitle] : []),
         },
       };
     }),
@@ -98,7 +105,7 @@ type NormalizedConfig = ReturnType<typeof normalizeConfig>;
 
 function compileSchemaFromModel(model: NormalizedConfig): string {
 
-  const tables = model.collections.map((collection) => {
+  const tables = model.collections.filter((collection) => !collection.auth).map((collection) => {
     const columns: string[] = [];
     const relations: string[] = [];
 
@@ -114,7 +121,7 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
         const optional = field.required ? "" : ".optional()";
         columns.push(`${JSON.stringify(columnName)}: s.uuid()${optional}`);
         relations.push(
-          `${JSON.stringify(field.name)}: s.rel(${JSON.stringify(field.relationTo)}, ${JSON.stringify(columnName)})`,
+          `${JSON.stringify(field.name)}: s.rel(${JSON.stringify(field.relationTo === model.authCollection ? "better_auth_user" : field.relationTo)}, ${JSON.stringify(columnName)})`,
         );
         continue;
       }
@@ -149,7 +156,7 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
 function compileAdminManifestFromModel(model: NormalizedConfig): string {
   const collections = model.collections.map((collection) => {
     const { labels, timestamps, useAsTitle, defaultColumns, listSearchableFields } = collection.admin;
-    const fields = collection.fields.map((field) => field.kind === "join"
+    const configuredFields = collection.fields.map((field) => field.kind === "join"
       ? {
           name: field.name,
           label: field.label,
@@ -175,6 +182,20 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
           ...("relationTo" in field && field.relationTo ? { relationTo: field.relationTo } : {}),
           ...("generated" in field && field.generated ? { generated: true } : {}),
         });
+    const authFields = collection.auth ? [
+      { name: "id", storageName: "id", label: "ID", kind: "text", required: true },
+      { name: "name", storageName: "name", label: "Name", kind: "text", required: true },
+      { name: "email", storageName: "email", label: "Email", kind: "text", required: true },
+      { name: "emailVerified", storageName: "emailVerified", label: "Email verified", kind: "boolean", required: true },
+      { name: "image", storageName: "image", label: "Image", kind: "text", required: false },
+      { name: "role", storageName: "role", label: "Role", kind: "select", required: false, options: ["user", "admin"] },
+      { name: "banned", storageName: "banned", label: "Banned", kind: "boolean", required: false },
+      { name: "banReason", storageName: "banReason", label: "Ban reason", kind: "text", required: false },
+      { name: "banExpires", storageName: "banExpires", label: "Ban expires", kind: "date", required: false },
+      { name: "createdAt", storageName: "createdAt", label: "Created at", kind: "date", required: true },
+      { name: "updatedAt", storageName: "updatedAt", label: "Updated at", kind: "date", required: true },
+    ] : [];
+    const fields = [...authFields, ...configuredFields];
     return [collection.name, {
       slug: collection.name,
       labels,
@@ -184,6 +205,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
       defaultColumns,
       listSearchableFields,
       writeMode: collection.writeMode,
+      ...(collection.auth ? { auth: true as const } : {}),
       ...(collection.upload ? { upload: collection.upload } : {}),
     }] as const;
   });
@@ -234,8 +256,10 @@ function compileCollectionPermissionHelpers(model: NormalizedConfig): string {
     ...model.collections.map((collection) => collection.name),
     ...(model.auth ? ["better_auth_user", "better_auth_session", "better_auth_account", "better_auth_verification", "better_auth_jwks"] : []),
   ];
-  const collections = collectionNames.map((name) =>
-    `    ${JSON.stringify(name)}: { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.${name}.exists.where(input as never) } }`,
+  const collectionAliases = new Map(collectionNames.map((name) => [name, name]));
+  if (model.authCollection) collectionAliases.set(model.authCollection, "better_auth_user");
+  const collections = [...collectionAliases].map(([name, policyName]) =>
+    `    ${JSON.stringify(name)}: { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.${policyName}.exists.where(input as never) } }`,
   ).join(",\n");
   return `\n  const bebopCollections = {\n${collections}\n  };\n` +
     `  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }) => ({\n` +
@@ -264,18 +288,21 @@ function compilePermissionsFromModel(
     ["update", "Update"],
     ["delete", "Delete"],
   ] as const;
-  const hasCollectionPermissions = model.collections.some((collection) => collection.permissions !== undefined);
-  const hasAccessCallbacks = model.collections.some((collection) => collection.access && collection.access !== "public" && collection.access !== "authenticated");
-  const hasAuthenticatedAccess = model.collections.some((collection) => {
+  const appCollections = model.collections.filter((collection) => !collection.auth);
+  const hasCollectionPermissions = appCollections.some((collection) => collection.permissions !== undefined);
+  const hasAccessCallbacks = appCollections.some((collection) => collection.access && collection.access !== "public" && collection.access !== "authenticated");
+  const hasAuthenticatedAccess = appCollections.some((collection) => {
     if (collection.permissions !== undefined) return false;
     const access = collection.access;
     return access === undefined || access === "authenticated" || (
       typeof access === "object" && operations.some(([operation]) => access[operation] === undefined)
     );
   });
-  const hasUploads = model.collections.some((collection) => collection.upload);
+  const hasUploads = appCollections.some((collection) => collection.upload);
   const grants = model.collections
-    .flatMap((collection, index) => {
+    .map((collection, index) => ({ collection, index }))
+    .filter(({ collection }) => !collection.auth)
+    .flatMap(({ collection, index }) => {
       const collectionName = collection.name;
       const access = collection.access;
       const permissions = collection.permissions;
@@ -351,8 +378,11 @@ function compilePermissionsFromModel(
     ? `import bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n${hasAccessCallbacks ? 'import type { CollectionDefinition } from "@bebopdev/core";\n' : ""}`
     : "";
   const existsHelper = hasAccessCallbacks
-    ? `\n  const exists = (collectionName: string, condition: Record<string, unknown>) => {\n` +
-        `    const tablePolicy = (policy as unknown as Record<string, { exists: { where(input: Record<string, unknown>): unknown } }>)[collectionName];\n` +
+    ? (model.authCollection
+        ? `\n  const authCollectionAlias = ${JSON.stringify({ [model.authCollection]: "better_auth_user" })};\n`
+        : "\n") +
+        `  const exists = (collectionName: string, condition: Record<string, unknown>) => {\n` +
+        `    const tablePolicy = (policy as unknown as Record<string, { exists: { where(input: Record<string, unknown>): unknown } }>)[${model.authCollection ? `authCollectionAlias[collectionName as keyof typeof authCollectionAlias] ?? collectionName` : "collectionName"}];\n` +
         `    if (!tablePolicy) throw new Error(\`Unknown collection in access.exists(): \${collectionName}\`);\n` +
         `    return tablePolicy.exists.where(condition) as never;\n` +
         `  };\n`
@@ -368,7 +398,7 @@ function compilePermissionsFromModel(
   const collectionPermissionHelpers = hasCollectionPermissions ? compileCollectionPermissionHelpers(model) : "";
   const appPermissions = `const appPermissions = s.definePermissions(app, ({ ${permissionContext} }) => {${existsHelper}${authenticatedHelper}${collectionPermissionHelpers}\n${grants}\n});`;
 
-  return `// Generated from bebop.config.ts. Unspecified legacy access defaults to authenticated sessions; omitted Jazz permission operations are denied.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
+  return `// Generated from bebop.config.ts. Unspecified access defaults to authenticated sessions; omitted Jazz permission operations are denied.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;
 }
 
 export function compileSchema(config: BebopConfig): string {
@@ -395,7 +425,24 @@ export function compileArtifacts(config: BebopConfig, configModuleSpecifier = ".
     permissions: compilePermissionsFromModel(model, configModuleSpecifier, { blockCommandWrites: true }),
     authorizationPermissions: compilePermissionsFromModel(model, configModuleSpecifier),
     clientFactory: compileClientFactory(configModuleSpecifier),
+    ...(model.auth ? { authGenerateConfig: compileBetterAuthGenerateConfig(configModuleSpecifier) } : {}),
   };
+}
+
+export function compileBetterAuthGenerateConfig(configModuleSpecifier = "./bebop.config.js"): string {
+  return `// Generated from bebop.config.ts. Do not edit this file.\n` +
+    `import { schema as s } from "jazz-tools";\n` +
+    `import { createBebopBetterAuth } from "@bebopdev/core/server";\n` +
+    `import bebopConfig from ${JSON.stringify(configModuleSpecifier)};\n\n` +
+    `export const auth = createBebopBetterAuth({\n` +
+    `  config: bebopConfig,\n` +
+    `  baseURL: process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:5173",\n` +
+    `  secret: process.env.BETTER_AUTH_SECRET ?? "bebop-schema-generation-placeholder-secret",\n` +
+    `  jazz: {\n` +
+    `    db: async () => { throw new Error("Better Auth schema generation cannot query the database."); },\n` +
+    `    schema: s.defineApp({}).wasmSchema,\n` +
+    `  },\n` +
+    `});\n`;
 }
 
 export function compileClientFactory(configModuleSpecifier = "./bebop.config.js"): string {
@@ -431,8 +478,9 @@ function validateConfig(config: BebopConfig): void {
     throw new Error("upload.limits.fileSize must be a positive safe integer.");
   }
 
-  if (config.auth && config.auth.provider !== "better-auth") {
-    throw new Error(`Unsupported authentication provider "${config.auth.provider}".`);
+  const authCollections = collections.filter((collection) => collection.auth === true);
+  if (authCollections.length > 1) {
+    throw new Error("Only one collection can set auth: true because a Better Auth instance has one user model.");
   }
 
   if (new Set(collectionNames).size !== collectionNames.length) {
@@ -441,6 +489,9 @@ function validateConfig(config: BebopConfig): void {
 
   for (const definition of collections) {
     const collectionName = definition.slug;
+    if (definition.auth !== undefined && definition.auth !== true) {
+      throw new Error(`Collection "${collectionName}" auth must be true when using Better Auth.`);
+    }
     if (!namePattern.test(collectionName)) {
       throw new Error(`Invalid collection name "${collectionName}". Use letters, numbers, and underscores.`);
     }
@@ -456,14 +507,33 @@ function validateConfig(config: BebopConfig): void {
       }
     }
 
-    if (config.auth && collectionName.startsWith("better_auth_")) {
+    if (authCollections.length && collectionName.startsWith("better_auth_")) {
       throw new Error(
         `Collection name "${collectionName}" uses the reserved Better Auth table prefix "better_auth_".`,
       );
     }
 
-    if (!Array.isArray(definition.fields) || definition.fields.length === 0) {
-      throw new Error(`Collection "${collectionName}" must define at least one field.`);
+    if (!Array.isArray(definition.fields) || (definition.fields.length === 0 && !definition.auth)) {
+      throw new Error(`Collection "${collectionName}" must define at least one field unless it is the auth collection.`);
+    }
+    if (definition.auth && (definition.upload || definition.writeMode === "command" || definition.permissions !== undefined || definition.hooks !== undefined)) {
+      throw new Error(`Auth collection "${collectionName}" is managed by Better Auth and cannot define upload, command writes, Jazz permissions, or lifecycle hooks.`);
+    }
+    if (definition.auth && (definition.access === "public" || definition.access === "authenticated")) {
+      throw new Error(`Auth collection "${collectionName}" may use only access.admin; Better Auth manages the other access operations.`);
+    }
+    if (definition.auth && definition.access && definition.access !== "public" && definition.access !== "authenticated") {
+      const unsupportedAuthAccess = ["read", "create", "update", "delete"] as const;
+      const authAccess = definition.access;
+      const operation = typeof authAccess === "object" && authAccess !== null
+        ? unsupportedAuthAccess.find((name) => authAccess[name] !== undefined)
+        : undefined;
+      if (operation) {
+        throw new Error(`Auth collection "${collectionName}" cannot define access.${operation}; Better Auth manages its data access. Use access.admin for admin panel entry.`);
+      }
+    }
+    if (!definition.auth && definition.access && definition.access !== "public" && definition.access !== "authenticated" && definition.access.admin !== undefined) {
+      throw new Error(`Collection "${collectionName}" can define access.admin only when it has auth: true.`);
     }
     const fields = definition.fields as Fields;
 
@@ -491,6 +561,9 @@ function validateConfig(config: BebopConfig): void {
         if (rule !== undefined && typeof rule !== "function") {
           throw new Error(`Collection "${collectionName}" access.${operation} must be a callback.`);
         }
+      }
+      if (definition.access.admin !== undefined && typeof definition.access.admin !== "function") {
+        throw new Error(`Collection "${collectionName}" access.admin must be a callback.`);
       }
     }
     if (definition.permissions !== undefined && (typeof definition.permissions !== "object" || definition.permissions === null || Array.isArray(definition.permissions))) {
@@ -522,7 +595,10 @@ function validateConfig(config: BebopConfig): void {
     }
 
     const storedNames = new Set<string>(["id", ...(definition.upload ? ["filename", "mimeType", "filesize", "fileId"] : [])]);
-    const fieldNames = new Set<string>(definition.upload ? ["filename", "mimeType", "filesize"] : []);
+    const fieldNames = new Set<string>([
+      ...(definition.upload ? ["filename", "mimeType", "filesize"] : []),
+      ...(definition.auth ? ["name", "email", "emailVerified", "image", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt"] : []),
+    ]);
     for (const field of fields) {
       const fieldName = field.name;
       if (!["text", "number", "checkbox", "date", "json", "select", "relationship", "upload", "join"].includes(field.type)) {
@@ -534,6 +610,22 @@ function validateConfig(config: BebopConfig): void {
 
       if (field.label !== undefined && !field.label.trim()) {
         throw new Error(`Field "${collectionName}.${fieldName}" label cannot be empty.`);
+      }
+      if (field.type !== "join" && field.auth !== undefined && (!definition.auth || typeof field.auth !== "object" || field.auth === null || (field.auth.input !== undefined && typeof field.auth.input !== "boolean"))) {
+        throw new Error(`Field "${collectionName}.${fieldName}" auth options are only supported on auth collections and auth.input must be a boolean.`);
+      }
+
+      if (definition.auth) {
+        const reservedAuthFields = new Set([
+          "id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt",
+          "role", "banned", "banReason", "banExpires",
+        ]);
+        if (reservedAuthFields.has(fieldName)) {
+          throw new Error(`Field "${collectionName}.${fieldName}" is provided by Better Auth; define only custom user fields in the auth collection.`);
+        }
+        if (!["text", "number", "checkbox", "date", "json", "select"].includes(field.type)) {
+          throw new Error(`Auth field "${collectionName}.${fieldName}" must be a scalar text, number, checkbox, date, json, or select field.`);
+        }
       }
 
       if (field.type === "text") {
@@ -578,7 +670,7 @@ function validateConfig(config: BebopConfig): void {
         storedNames.add(storageName);
       }
 
-      if (field.type === "relationship" && !collectionNames.includes(field.relationTo) && !(config.auth?.provider === "better-auth" && field.relationTo === "better_auth_user")) {
+      if (field.type === "relationship" && !collectionNames.includes(field.relationTo)) {
         throw new Error(`Relation "${collectionName}.${fieldName}" targets unknown collection "${field.relationTo}".`);
       }
       if (field.type === "upload" && !collections.some((candidate) => candidate.slug === field.relationTo && candidate.upload)) {
@@ -653,10 +745,14 @@ function validateConfig(config: BebopConfig): void {
       }
     }
     for (const fieldName of adminOptions?.listSearchableFields ?? []) {
+      if (definition.auth && fieldName !== "name" && fieldName !== "email") {
+        throw new Error(`Collection "${collectionName}" Better Auth list search supports only the "name" and "email" fields.`);
+      }
       if (!fieldNames.has(fieldName)) {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields references unknown field "${fieldName}".`);
       }
       if (definition.upload && (fieldName === "filename" || fieldName === "mimeType")) continue;
+      if (definition.auth && (fieldName === "name" || fieldName === "email")) continue;
       if (fields.find((field: FieldDefinition) => field.name === fieldName)?.type !== "text") {
         throw new Error(`Collection "${collectionName}" admin.listSearchableFields field "${fieldName}" must be text.`);
       }

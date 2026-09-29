@@ -4,7 +4,9 @@ import type { Db } from "jazz-tools";
 import { defineConfig } from "../src/bebop.ts";
 import { BebopHookError, createBebopClient } from "../src/client.ts";
 import { BebopValidationError } from "../src/validation.ts";
+import { createBebopAdminAccessHandler } from "../src/admin-access.ts";
 import { createBebopHandler } from "../src/server.ts";
+import { createBebopBetterAuth } from "../src/auth.ts";
 import { compileAdminManifest, compileArtifacts, compileClientFactory, compilePermissions, compileSchema, normalizeConfig } from "../src/compiler.ts";
 
 test("admin manifest includes the configured title and field positions", () => {
@@ -36,6 +38,61 @@ test("admin manifest includes the configured title and field positions", () => {
   })), /admin\.position must be "main" or "sidebar"/);
 });
 
+test("admin access defaults to Better Auth admin status and supports an auth collection callback", async () => {
+  const defaultHandler = createBebopAdminAccessHandler({
+    config: defineConfig({ collections: [{ slug: "users", auth: true, fields: [] }] }),
+    resolveSession: async () => ({ user: { id: "admin-1", name: "Ada", email: "ada@example.test", role: "admin" }, isAdmin: true }),
+  });
+  const defaultResponse = await defaultHandler(new Request("https://example.test/api/bebop/admin-access"));
+  assert.equal(defaultResponse.status, 200);
+  assert.deepEqual(await defaultResponse.json(), { allowed: true });
+
+  const observed: unknown[] = [];
+  const config = defineConfig({
+    collections: [{
+      slug: "users",
+      auth: true,
+      fields: [],
+      access: {
+        admin: ({ req: { user, isAdmin, url } }) => {
+          observed.push({ id: user.id, role: user.role, isAdmin, url });
+          return isAdmin && user.role !== "suspended";
+        },
+      },
+    }],
+  });
+  const handler = createBebopAdminAccessHandler({
+    config,
+    resolveSession: async () => ({ user: { id: "user-1", name: "Ada", email: "ada@example.test", role: "admin" }, isAdmin: true }),
+  });
+
+  const response = await handler(new Request("https://example.test/api/bebop/admin-access"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { allowed: true });
+  assert.deepEqual(observed, [{ id: "user-1", role: "admin", isAdmin: true, url: "https://example.test/api/bebop/admin-access" }]);
+
+  const deniedHandler = createBebopAdminAccessHandler({
+    config: defineConfig({ collections: [{ slug: "users", auth: true, fields: [] }] }),
+    resolveSession: async () => ({ user: { id: "user-2", name: "Sam", email: "sam@example.test", role: "user" }, isAdmin: false }),
+  });
+  const denied = await deniedHandler(new Request("https://example.test/api/bebop/admin-access"));
+  assert.equal(denied.status, 403);
+  assert.deepEqual(await denied.json(), { allowed: false });
+});
+
+test("admin access denies unauthenticated requests and rejects non-GET methods", async () => {
+  const config = defineConfig({ collections: [{ slug: "users", auth: true, fields: [] }] });
+  const handler = createBebopAdminAccessHandler({ config, resolveSession: async () => null });
+
+  const unauthenticated = await handler(new Request("https://example.test/api/bebop/admin-access"));
+  assert.equal(unauthenticated.status, 401);
+  assert.deepEqual(await unauthenticated.json(), { allowed: false });
+
+  const wrongMethod = await handler(new Request("https://example.test/api/bebop/admin-access", { method: "POST" }));
+  assert.equal(wrongMethod.status, 405);
+  assert.equal(wrongMethod.headers.get("allow"), "GET");
+});
+
 test("collection labels default from the slug and reject empty overrides", () => {
   const config = defineConfig({
     collections: [
@@ -52,6 +109,75 @@ test("collection labels default from the slug and reject empty overrides", () =>
   assert.throws(() => compileAdminManifest(defineConfig({
     collections: [{ slug: "posts", labels: { singular: " " }, fields: [{ name: "title", type: "text" }] }],
   })), /labels\.singular cannot be empty/);
+});
+
+test("auth collections map to Better Auth's user model and generate protected admin configuration", () => {
+  const config = defineConfig({ collections: [
+    {
+      slug: "members",
+      auth: true,
+      fields: [{ name: "department", type: "text", auth: { input: true } }],
+      admin: { defaultColumns: ["name", "email", "department"], listSearchableFields: ["name", "email"] },
+    },
+    {
+      slug: "tasks",
+      fields: [{ name: "owner", type: "relationship", relationTo: "members" }],
+      permissions: { read: ({ collections, rule }) => { rule.where(collections.members.exists.where({ id: "user-1" })); } },
+    },
+  ] });
+  const artifacts = compileArtifacts(config, "./bebop.config.js");
+  assert.deepEqual(artifacts, compileArtifacts(config, "./bebop.config.js"));
+  assert.match(artifacts.schema, /\.\.\.betterAuthSchema/);
+  assert.doesNotMatch(artifacts.schema, /"members": s\.table/);
+  assert.match(artifacts.schema, /s\.rel\("better_auth_user", "ownerId"\)/);
+  assert.match(artifacts.adminManifest, /"auth": true/);
+  assert.match(artifacts.adminManifest, /"slug": "members"/);
+  assert.match(artifacts.adminManifest, /"name": "email"/);
+  assert.match(artifacts.permissions, /policy\.better_auth_user\.exists\.where/);
+  assert.match(artifacts.authGenerateConfig!, /createBebopBetterAuth/);
+  assert.match(artifacts.authGenerateConfig!, /schema generation cannot query the database/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "users", auth: true, fields: [] },
+    { slug: "members", auth: true, fields: [] },
+  ] })), /Only one collection can set auth/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "users", auth: "true" as unknown as true, fields: [] },
+  ] })), /auth must be true/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "users", auth: true, fields: [], access: { read: () => true } },
+  ] })), /cannot define access\.read/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "tasks", fields: [{ name: "title", type: "text" }], access: { admin: () => true } },
+  ] })), /access\.admin only when it has auth: true/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "users", auth: true, fields: [{ name: "role", type: "text" }] },
+  ] })), /provided by Better Auth/);
+  assert.throws(() => compileAdminManifest(defineConfig({ collections: [
+    { slug: "users", auth: true, fields: [], admin: { listSearchableFields: ["department"] } },
+  ] })), /search supports only the "name" and "email" fields/);
+});
+
+test("Better Auth helper installs Bebop fields and built-in JWT and Admin plugins", () => {
+  const auth = createBebopBetterAuth({
+    config: defineConfig({ collections: [{
+      slug: "users",
+      auth: true,
+      fields: [
+        { name: "department", type: "text" },
+        { name: "publicCode", type: "text", auth: { input: true } },
+      ],
+    }] }),
+    baseURL: "http://127.0.0.1:3000",
+    secret: "bebop-test-secret-that-is-at-least-32-characters-long",
+    jazz: { db: async () => ({} as never), schema: {} as never },
+  });
+
+  const fields = auth.options.user?.additionalFields as Record<string, { input?: boolean; type?: string }>;
+  assert.equal(fields.department.type, "string");
+  assert.equal(fields.department.input, false);
+  assert.equal(fields.publicCode.input, true);
+  assert.deepEqual(auth.options.plugins?.map((plugin) => plugin.id), ["jwt", "admin"]);
+  assert.equal(typeof auth.api.getToken, "function");
 });
 
 test("permission generation compiles configured Jazz rules and defaults omitted operations to authenticated sessions", () => {

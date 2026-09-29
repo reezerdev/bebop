@@ -16,10 +16,52 @@ export function App() {
   const bebop = useMemo(() => withAcyclicTaskParents(createBebopClient(db, {
     commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
   })), [db]);
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const currentUserId = authSession?.user.id ?? "";
   const currentUserName = authSession?.user.name?.trim() ?? "";
+  const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
+  const [canManageUsers, setCanManageUsers] = useState(false);
   const [users, setUsers] = useState<readonly { id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (isAuthPending) {
+      setCanAccessAdmin(null);
+      return () => { active = false; };
+    }
+    setCanAccessAdmin(null);
+    if (!currentUserId) {
+      setCanAccessAdmin(false);
+      return () => { active = false; };
+    }
+
+    void fetch("/api/bebop/admin-access", { credentials: "same-origin" })
+      .then(async (response) => {
+        const result = await response.json() as { allowed?: boolean };
+        if (active) setCanAccessAdmin(response.ok && result.allowed === true);
+      })
+      .catch(() => {
+        if (active) setCanAccessAdmin(false);
+      });
+
+    return () => { active = false; };
+  }, [currentUserId, isAuthPending]);
+
+  useEffect(() => {
+    let active = true;
+    setCanManageUsers(false);
+    if (!currentUserId) return () => { active = false; };
+
+    void authClient.admin.listUsers({ query: { limit: 1, offset: 0 } })
+      .then((response) => {
+        if (active) setCanManageUsers(Boolean(response.data) && !response.error);
+      })
+      .catch(() => {
+        if (active) setCanManageUsers(false);
+      });
+
+    return () => { active = false; };
+  }, [currentUserId]);
 
   useEffect(() => {
     setUsers([]);
@@ -43,7 +85,7 @@ export function App() {
     const current = currentUserId ? [{ id: currentUserId, name: currentUserName || "Current user" }] : [];
     return [...current, ...users.filter((user) => user.id !== currentUserId)];
   }, [currentUserId, currentUserName, users]);
-  const relationOptions = useMemo(() => ({ better_auth_user: authorOptions }), [authorOptions]);
+  const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
   const createDefaults = useMemo(() => ({
     tasks: { author: currentUserId, assignee: currentUserId, status: "todo" },
     workspaceMemberships: { user: currentUserId, role: "member", status: "active" },
@@ -51,7 +93,12 @@ export function App() {
 
   return <Routes>
     <Route path="/" element={<PlaygroundPage client={bebop} logout={() => logout()} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
-    <Route path="/admin/*" element={<BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={Boolean(authSession?.user)} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />} />
+    <Route
+      path="/admin/*"
+      element={canAccessAdmin === null
+        ? <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 text-foreground"><p role="status">Checking admin access…</p></main>
+        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />}
+    />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;
 }

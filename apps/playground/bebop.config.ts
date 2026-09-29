@@ -1,9 +1,22 @@
-import { collection, defineConfig, betterAuth } from "@bebopdev/core";
+import { collection, defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
-  auth: betterAuth(),
   upload: { limits: { fileSize: 20 * 1024 * 1024 } },
   collections: [
+    collection({
+      slug: "users",
+      auth: true,
+      access: {
+        admin: ({ req: { user, isAdmin } }) => user.role === "admin" || isAdmin,
+      },
+      labels: { singular: "User", plural: "Users" },
+      admin: {
+        useAsTitle: "name",
+        defaultColumns: ["name", "email", "role", "createdAt"],
+        listSearchableFields: ["name", "email"],
+      },
+      fields: [],
+    }),
     collection({
       slug: "media",
       labels: { singular: "Media", plural: "Media" },
@@ -63,7 +76,7 @@ export default defineConfig({
       },
       fields: [
         { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
-        { name: "user", type: "relationship", relationTo: "better_auth_user", required: true },
+        { name: "user", type: "relationship", relationTo: "users", required: true },
         { name: "role", type: "select", required: true, options: [
           { label: "Admin", value: "admin" },
           { label: "Manager", value: "manager" },
@@ -142,7 +155,7 @@ export default defineConfig({
           { label: "Urgent", value: "urgent" },
         ], admin: { position: "sidebar" } },
         { name: "parentTask", type: "relationship", relationTo: "tasks", admin: { position: "sidebar" } },
-        { name: "author", type: "relationship", relationTo: "better_auth_user", required: true, admin: { position: "sidebar" } },
+        { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
         { name: "status", type: "select", options: [
           { label: "Backlog", value: "backlog" },
           { label: "To Do", value: "todo" },
@@ -150,7 +163,7 @@ export default defineConfig({
           { label: "In Review", value: "in-review" },
           { label: "Done", value: "done" },
         ], admin: { position: "sidebar" } },
-        { name: "assignee", type: "relationship", relationTo: "better_auth_user", admin: { position: "sidebar" } },
+        { name: "assignee", type: "relationship", relationTo: "users", admin: { position: "sidebar" } },
         { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
         { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
       ],

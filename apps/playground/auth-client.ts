@@ -1,6 +1,4 @@
-import { createAuthClient } from "better-auth/react";
-import { jwtClient } from "better-auth/client/plugins";
+import { createBebopBetterAuthClient } from "@bebopdev/core/auth-client";
+import type { auth as generatedAuth } from "./bebop-generated-auth.js";
 
-export const authClient = createAuthClient({
-  plugins: [jwtClient()],
-});
+export const authClient = createBebopBetterAuthClient<typeof generatedAuth.options>();

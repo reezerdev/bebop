@@ -41,6 +41,8 @@ export type BebopAdminField = BebopAdminStoredField | BebopAdminJoinField;
 
 export type BebopAdminCollection = {
   slug: string;
+  /** The collection is backed by Better Auth's protected user APIs. */
+  auth?: true;
   labels: { singular: string; plural: string };
   fields: readonly BebopAdminField[];
   timestamps: boolean;

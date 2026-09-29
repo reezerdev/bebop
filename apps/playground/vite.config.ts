@@ -52,8 +52,10 @@ function betterAuthPlugin(): Plugin {
         const requestPath = new URL(request.url ?? "/", "http://localhost").pathname;
         const isAuthRoute = requestPath === "/api/auth" || requestPath.startsWith("/api/auth/");
         const isUsersRoute = requestPath === "/api/bebop/users";
+        const isAdminSetupRoute = requestPath === "/api/bebop/admin-setup";
+        const isAdminAccessRoute = requestPath === "/api/bebop/admin-access";
         const isCommandRoute = requestPath.startsWith("/api/bebop/collections/");
-        if (!isAuthRoute && !isUsersRoute && !isCommandRoute) {
+        if (!isAuthRoute && !isUsersRoute && !isAdminSetupRoute && !isAdminAccessRoute && !isCommandRoute) {
           next();
           return;
         }
@@ -67,8 +69,10 @@ function betterAuthPlugin(): Plugin {
         );
 
         void authServerPromise
-          .then(async ({ handler, listUsers, commandHandler }) => {
+          .then(async ({ handler, listUsers, adminSetupStatus, adminAccessHandler, commandHandler }) => {
             if (isUsersRoute) return listUsers(request, response);
+            if (isAdminSetupRoute) return adminSetupStatus(request, response);
+            if (isAdminAccessRoute) return sendWebResponse(await adminAccessHandler(await toWebRequest(request)), response);
             if (isCommandRoute) return sendWebResponse(await commandHandler(await toWebRequest(request)), response);
             return handler(request, response);
           })

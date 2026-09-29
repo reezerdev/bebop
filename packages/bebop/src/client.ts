@@ -135,7 +135,7 @@ export type BebopCollectionClient<TFields extends Fields, TUpload extends boolea
 } & (TUpload extends true ? { readFile(id: string): Promise<Blob | null> } : object);
 
 export type BebopClient<TConfig extends BebopConfig> = {
-  [TCollection in TConfig["collections"][number] as TCollection["slug"]]: BebopCollectionClient<TCollection["fields"], TCollection extends { upload: true | object } ? true : false>;
+  [TCollection in TConfig["collections"][number] as TCollection extends { auth: true } ? never : TCollection["slug"]]: BebopCollectionClient<TCollection["fields"], TCollection extends { upload: true | object } ? true : false>;
 } & {
   onMutationError(listener: (event: MutationErrorEvent) => void): () => void;
 };
@@ -185,7 +185,7 @@ function nonnegativeInteger(value: number | undefined, name: string): number | u
 }
 
 export function createBebopClient<const TConfig extends BebopConfig>(options: {
-  app: Record<TConfig["collections"][number]["slug"], object>;
+  app: object;
   config: TConfig;
   db: Db;
   commandTransport?: BebopCommandTransport;
@@ -194,8 +194,9 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
   const collections: Record<string, BebopCollectionClient<Fields> & { readFile(id: string): Promise<Blob | null> }> = {};
 
   for (const definition of config.collections) {
+    if (definition.auth) continue;
     const collectionName = definition.slug;
-    const table = app[collectionName as TConfig["collections"][number]["slug"]] as BebopTable;
+    const table = (app as Record<string, unknown>)[collectionName] as BebopTable;
     if (!table) throw new Error(`Generated Bebop app is missing collection "${collectionName}".`);
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;

@@ -8,6 +8,10 @@ export const schema = {
     image: s.string().optional(),
     createdAt: s.allowExternalProvenanceName(s.timestamp()),
     updatedAt: s.allowExternalProvenanceName(s.timestamp()),
+    role: s.string().optional(),
+    banned: s.boolean().optional(),
+    banReason: s.string().optional(),
+    banExpires: s.timestamp().optional(),
   }, {
   }),
 
@@ -19,6 +23,7 @@ export const schema = {
     ipAddress: s.string().optional(),
     userAgent: s.string().optional(),
     userId: s.uuid(),
+    impersonatedBy: s.string().optional(),
   }, {
     userIdRelation: s.rel("better_auth_user", "userId"),
   }),

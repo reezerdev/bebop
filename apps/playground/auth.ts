@@ -1,13 +1,11 @@
-import { betterAuth as createBetterAuth } from "better-auth";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
-import { jazzAdapter } from "jazz-tools/better-auth-adapter";
-import { createBebopHandler } from "@bebopdev/core/server";
+import { createBebopAdminAccessHandler, createBebopBetterAuth, createBebopHandler } from "@bebopdev/core/server";
 import { app } from "./bebop-generated-schema.js";
 import commandPermissions from "./bebop-generated-command-permissions.js";
 import bebopConfig from "./bebop.config.ts";
-import { authOptions } from "./auth-options.ts";
+import { getBetterAuthURL } from "./auth-config.ts";
 
 type AuthServerConfig = {
   appId?: string;
@@ -23,6 +21,7 @@ export async function createAuthServer(config: AuthServerConfig) {
   if (!config.appId || !config.serverUrl || !config.backendSecret) {
     throw new Error("The Jazz dev server has not provided its app ID, URL, or backend secret yet.");
   }
+  const baseURL = getBetterAuthURL(process.env.BETTER_AUTH_URL);
 
   const jazzSession = await createJazzSession({
     app,
@@ -33,9 +32,9 @@ export async function createAuthServer(config: AuthServerConfig) {
     driver: { type: "memory" },
     serverUrl: config.serverUrl,
     env: process.env.NODE_ENV === "production" ? "prod" : "dev",
-    jwksUrl: `${authOptions.baseURL}/api/auth/jwks`,
-    jwtIssuer: authOptions.baseURL,
-    jwtAudience: authOptions.baseURL,
+    jwksUrl: `${baseURL}/api/auth/jwks`,
+    jwtIssuer: baseURL,
+    jwtAudience: baseURL,
     initial: { backendSecret: config.backendSecret },
   });
 
@@ -45,13 +44,40 @@ export async function createAuthServer(config: AuthServerConfig) {
     throw snapshot.error ?? new Error("The Jazz backend session is not ready.");
   }
 
-  const auth = createBetterAuth({
-    ...authOptions,
+  const auth = createBebopBetterAuth({
+    config: bebopConfig,
+    baseURL,
     secret,
-    database: jazzAdapter({
+    options: {
+      // Better Auth's Admin plugin assigns "user" by default. On a clean
+      // database, promote the first account created through Better Auth so
+      // the admin panel has an initial administrator, as in Payload's setup.
+      // This only runs on the trusted server adapter; clients cannot choose a
+      // role in the sign-up payload.
+      databaseHooks: {
+        user: {
+          create: {
+            before: async (user) => {
+              const existingUsers = await snapshot.client!.db.all(
+                app.better_auth_user.select("id"),
+                { tier: "global" },
+              );
+              return existingUsers.length === 0 ? { data: { role: "admin" } } : undefined;
+            },
+          },
+        },
+      },
+      admin: {
+        adminUserIds: (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? "")
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean),
+      },
+    },
+    jazz: {
       db: async () => snapshot.client!.db,
       schema: app.wasmSchema,
-    }),
+    },
   });
 
   const commandHandler = createBebopHandler({
@@ -83,9 +109,42 @@ export async function createAuthServer(config: AuthServerConfig) {
     },
   });
 
+  const adminAccessHandler = createBebopAdminAccessHandler({
+    config: bebopConfig,
+    async resolveSession(request) {
+      const headers = request.headers;
+      const session = await auth.api.getSession({
+        headers,
+        query: { disableCookieCache: true },
+      });
+      if (!session) return null;
+
+      const permission = await auth.api.userHasPermission({
+        headers,
+        body: { permissions: { user: ["list"] } },
+      });
+      return { user: session.user, isAdmin: permission.success };
+    },
+  });
+
   return {
     handler: toNodeHandler(auth.handler),
     commandHandler,
+    adminAccessHandler,
+    async adminSetupStatus(request: IncomingMessage, response: ServerResponse) {
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      response.setHeader("vary", "cookie");
+      if (request.method !== "GET") {
+        response.statusCode = 405;
+        response.setHeader("allow", "GET");
+        response.end(JSON.stringify({ message: "Method not allowed." }));
+        return;
+      }
+
+      const users = await snapshot.client!.db.all(app.better_auth_user.select("id"), { tier: "global" });
+      response.end(JSON.stringify({ available: users.length === 0 }));
+    },
     async listUsers(request: IncomingMessage, response: ServerResponse) {
       response.setHeader("content-type", "application/json");
       response.setHeader("cache-control", "no-store");

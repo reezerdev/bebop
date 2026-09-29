@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@bebopdev/core": "workspace:*",
+    "auth": "1.7.1",
     "tsx": "^4.23.15"
   },
   "scripts": {

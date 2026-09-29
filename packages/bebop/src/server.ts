@@ -3,6 +3,11 @@ import type { BebopConfig, CollectionChangeContext, CollectionDocument, Collecti
 import type { BebopCommandRequest } from "./client.ts";
 import { BebopValidationError, validateCollectionData } from "./validation.ts";
 
+export { createBebopBetterAuth } from "./auth.ts";
+export type { BebopBetterAuth, CreateBebopBetterAuthOptions } from "./auth.ts";
+export { createBebopAdminAccessHandler } from "./admin-access.ts";
+export type { BebopAdminAccessHandlerOptions, BebopAdminAccessSession } from "./admin-access.ts";
+
 type ServerDocument = Record<string, unknown> & { id: string };
 type ServerTable = TableProxy<ServerDocument, Record<string, unknown>> & {
   where(input: Record<string, unknown>): QueryBuilder<ServerDocument>;

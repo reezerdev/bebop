@@ -16,7 +16,7 @@ const usage = `Usage:
 Commands:
   generate   Generate Bebop schema, Jazz entry point, and permissions
   validate   Validate the generated schema with jazz-tools
-  dev        Generate, watch Bebop and Better Auth config, and run the local dev server`;
+  dev        Generate, watch Bebop config, and run the local dev server`;
 
 function parseArgs(args) {
   const [command, ...rest] = args;
@@ -111,12 +111,26 @@ async function generate(paths, { quiet = false } = {}) {
   // Compile outputs before writing so invalid config keeps the last valid
   // generated schema and permissions available to the dev server.
   const configModuleSpecifier = moduleSpecifier(paths.outputDirectory, paths.configPath);
-  const { schema, permissions, authorizationPermissions, adminManifest, clientFactory } = compileArtifacts(config, configModuleSpecifier);
+  const { schema, permissions, authorizationPermissions, adminManifest, clientFactory, authGenerateConfig } = compileArtifacts(config, configModuleSpecifier);
   await mkdir(paths.outputDirectory, { recursive: true });
 
-  if (config.auth) await generateBetterAuthSchema(paths, config.auth);
+  const authEnabled = config.collections.some((collection) => collection.auth === true);
+  const generatedAuthConfig = path.join(paths.outputDirectory, "bebop-generated-auth.ts");
+  let authConfigChanged = false;
+  if (authEnabled) {
+    authConfigChanged = await writeIfChanged(generatedAuthConfig, authGenerateConfig);
+    await generateBetterAuthSchema(paths, generatedAuthConfig);
+  } else {
+    try {
+      await access(generatedAuthConfig);
+      await rm(generatedAuthConfig, { force: true });
+      authConfigChanged = true;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
 
-  const schemaFingerprintSource = config.auth
+  const schemaFingerprintSource = authEnabled
     ? `${schema}\n${await readFile(path.join(paths.outputDirectory, "schema-better-auth", "schema.ts"), "utf8")}`
     : schema;
   const schemaFingerprint = createHash("sha256").update(schemaFingerprintSource).digest("hex");
@@ -134,6 +148,7 @@ async function generate(paths, { quiet = false } = {}) {
     writeIfChanged(path.join(paths.outputDirectory, "permissions.ts"), permissions),
     writeIfChanged(path.join(paths.outputDirectory, "bebop-generated-command-permissions.ts"), authorizationPermissions),
   ]);
+  changed.push(authConfigChanged);
 
   if (!quiet) {
     const output = path.relative(process.cwd(), paths.outputDirectory) || ".";
@@ -143,21 +158,7 @@ async function generate(paths, { quiet = false } = {}) {
   return config;
 }
 
-async function generateBetterAuthSchema(paths, authConfig) {
-  const configFile = path.resolve(
-    paths.configDirectory,
-    authConfig.generateConfig ?? "auth-generate.ts",
-  );
-  try {
-    await access(configFile);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-    throw new Error(
-      `Better Auth is enabled, but ${path.relative(process.cwd(), configFile)} does not exist. ` +
-        "Add a Better Auth CLI config that uses jazzAdapter, then run bebop generate again.",
-    );
-  }
-
+async function generateBetterAuthSchema(paths, configFile) {
   const outputFile = path.join(paths.outputDirectory, "schema-better-auth", "schema.ts");
   await mkdir(path.dirname(outputFile), { recursive: true });
 
@@ -166,12 +167,18 @@ async function generateBetterAuthSchema(paths, authConfig) {
     code = await run(
       "auth",
       ["generate", "--config", configFile, "--output", outputFile, "--yes"],
-      { cwd: paths.configDirectory },
+      {
+        cwd: paths.configDirectory,
+        env: {
+          ...process.env,
+          PATH: [path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../node_modules/.bin"), process.env.PATH ?? ""].join(path.delimiter),
+        },
+      },
     );
   } catch (error) {
     if (error.code === "ENOENT") {
       throw new Error(
-        'Better Auth is enabled but its CLI is unavailable. Install matching dependencies with `pnpm add better-auth` and `pnpm add -D auth`, then run bebop generate again.',
+        'Better Auth is enabled but its schema CLI is unavailable. Reinstall the Bebop workspace dependencies with pnpm, then run bebop generate again.',
       );
     }
     throw error;
@@ -182,9 +189,9 @@ async function generateBetterAuthSchema(paths, authConfig) {
   }
 }
 
-function run(command, args, { cwd = process.cwd() } = {}) {
+function run(command, args, { cwd = process.cwd(), env = process.env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: "inherit" });
+    const child = spawn(command, args, { cwd, env, stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       resolve(code ?? (signal === "SIGINT" ? 130 : signal === "SIGTERM" ? 143 : 1));
@@ -204,11 +211,8 @@ async function dev(paths, commandArgs) {
   const args = commandArgs.length ? commandArgs.slice(1) : ["--host", "127.0.0.1"];
 
   const configEntries = [paths.configPath];
-  if (config.auth) {
-    configEntries.push(
-      path.resolve(paths.configDirectory, config.auth.generateConfig ?? "auth-generate.ts"),
-    );
-    configEntries.push(path.resolve(paths.configDirectory, "auth-options.ts"));
+  if (config.collections.some((collection) => collection.auth === true)) {
+    configEntries.push(path.join(paths.outputDirectory, "bebop-generated-auth.ts"));
   }
   const fingerprint = async (file) => {
     try {

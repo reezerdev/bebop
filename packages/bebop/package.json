@@ -27,10 +27,17 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./auth-client": {
+      "types": "./dist/auth-client.d.ts",
+      "import": "./dist/auth-client.js"
     }
   },
   "peerDependencies": {
     "jazz-tools": "2.0.0-alpha.57"
+  },
+  "dependencies": {
+    "better-auth": "1.7.1"
   },
   "devDependencies": {
     "jazz-tools": "2.0.0-alpha.57",

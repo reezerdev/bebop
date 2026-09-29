@@ -9,6 +9,8 @@ export type FieldOptions = {
   name: string;
   label?: string;
   required?: boolean;
+  /** Better Auth custom-user-field behavior. Additional fields are read-only on public auth APIs by default. */
+  auth?: { input?: boolean };
   admin?: {
     position?: "main" | "sidebar";
     input?: "textarea";
@@ -132,11 +134,38 @@ export type CollectionAccessContext<TFields extends Fields> = {
   isCreator: PermissionExpressionInput;
 };
 
+export type BebopAdminAccessUser<TFields extends Fields = Fields> = Omit<
+  Partial<StoredFields<TFields>>,
+  "id" | "name" | "email" | "role" | "emailVerified" | "image" | "createdAt" | "updatedAt" | "banned" | "banReason" | "banExpires"
+> & {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  emailVerified?: boolean;
+  image?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+  banned?: boolean;
+  banReason?: string | null;
+  banExpires?: Date | null;
+};
+
+export type BebopAdminAccessContext<TFields extends Fields> = {
+  req: Request & {
+    user: BebopAdminAccessUser<TFields>;
+    /** True when Better Auth's Admin plugin recognizes this user as an admin. */
+    isAdmin: boolean;
+  };
+};
+
 export type CollectionAccess<TFields extends Fields> = Partial<{
   read: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
   create: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
   update: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
   delete: BivariantCallback<[context: CollectionAccessContext<TFields>], AccessCondition<TFields>>;
+  /** Auth collection only: decides whether the current user may enter the Bebop admin. */
+  admin: BivariantCallback<[context: BebopAdminAccessContext<TFields>], boolean | Promise<boolean>>;
 }>;
 
 type PermissionRow<TFields extends Fields> = RowContext<StoredFields<TFields> & { id: string }>;
@@ -224,6 +253,8 @@ export type CollectionAdminOptions = {
 };
 export type CollectionDefinition<TFields extends Fields = Fields> = {
   slug: string;
+  /** Use Better Auth's built-in user model for this collection. Only one collection may set auth: true. */
+  auth?: true;
   /** Payload-style collection names. Unspecified names are derived from the slug. */
   labels?: { singular?: string; plural?: string };
   fields: TFields;
@@ -241,17 +272,14 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   /** Client-side lifecycle callbacks run by the generated Bebop mutation client. */
   hooks?: CollectionHooks<TFields>;
 };
-export type BetterAuthDefinition = {
-  provider: "better-auth";
-  /** Path to the Better Auth CLI configuration, relative to the Bebop config. */
-  generateConfig?: string;
-};
 export type BebopConfig = {
   collections: readonly CollectionDefinition[];
-  auth?: BetterAuthDefinition;
   upload?: { limits?: { fileSize?: number } };
 };
 
+export function collection<const TSlug extends string, const TFields extends Fields>(
+  definition: CollectionDefinition<TFields> & { slug: TSlug; auth: true },
+): CollectionDefinition<TFields> & { slug: TSlug; auth: true };
 export function collection<const TSlug extends string, const TFields extends Fields>(
   definition: CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } },
 ): CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } };
@@ -266,10 +294,4 @@ export function collection<const TSlug extends string, const TFields extends Fie
 
 export function defineConfig<const T extends BebopConfig>(config: T): T {
   return config;
-}
-
-export function betterAuth(
-  options: Omit<BetterAuthDefinition, "provider"> = {},
-): BetterAuthDefinition {
-  return { provider: "better-auth", ...options };
 }

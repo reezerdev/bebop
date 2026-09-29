@@ -77,12 +77,33 @@ export type BebopAdminUser = {
   email?: string;
 };
 
+export type BebopAuthAdminClient = {
+  admin: {
+    listUsers: (input: { query: {
+      limit: number;
+      offset: number;
+      sortBy?: string;
+      sortDirection?: "asc" | "desc";
+      searchValue?: string;
+      searchField?: "name" | "email";
+      searchOperator?: "contains";
+    } }) => Promise<{
+      data?: { users: readonly (Record<string, unknown> & { id: string })[]; total: number } | null;
+      error?: { message?: string } | null;
+    }>;
+  };
+};
+
 export type BebopAdminProps = {
   app: object;
   client: BebopAdminClient;
   manifest: BebopAdminManifest;
   /** The host decides who may enter the admin. Jazz policies still secure collection data. */
   canAccessAdmin: boolean;
+  /** Controls navigation guidance for Better Auth's admin-only user management API. */
+  canManageUsers?: boolean;
+  /** Better Auth client configured with adminClient(). The plugin still enforces server access. */
+  authClient?: BebopAuthAdminClient;
   user?: BebopAdminUser;
   createDefaults?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   relationOptions?: Readonly<Record<string, readonly { id: string; name: string }[]>>;
@@ -308,7 +329,7 @@ function RelatedCollectionLabels({ app, client, collection, ids, onChange }: {
   return null;
 }
 
-export function BebopAdmin({ app, client, manifest, canAccessAdmin, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
+export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUsers = false, authClient, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
   const [mutationError, setMutationError] = useState<string>();
 
   useEffect(() => {
@@ -322,10 +343,10 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, user, create
 
   const route = useRoutes([
     {
-      element: <AdminLayout manifest={manifest} user={user} onLogout={onLogout} mutationError={mutationError} />,
+      element: <AdminLayout manifest={manifest} canManageUsers={canManageUsers} user={user} onLogout={onLogout} mutationError={mutationError} />,
       children: [
-        { index: true, element: <DashboardPage manifest={manifest} /> },
-        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} /> },
+        { index: true, element: <DashboardPage manifest={manifest} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
         { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
         { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
         { path: "*", element: <NotFoundPage /> },
@@ -338,11 +359,13 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, user, create
 
 function AdminLayout({
   manifest,
+  canManageUsers,
   user,
   onLogout,
   mutationError,
 }: {
   manifest: BebopAdminManifest;
+  canManageUsers: boolean;
   user?: BebopAdminProps["user"];
   onLogout?: BebopAdminProps["onLogout"];
   mutationError?: string;
@@ -361,7 +384,9 @@ function AdminLayout({
   const currentCollection = activeCollection ? manifest.collections[activeCollection] : undefined;
   const isCreateRoute = location.pathname.endsWith("/create");
   const isDocumentRoute = Boolean(currentCollection && location.pathname.match(/\/collections\/[^/]+\/[^/]+\/?$/) && !isCreateRoute);
-  const collections = Object.values(manifest.collections).sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
+  const collections = Object.values(manifest.collections)
+    .filter((collection) => !collection.auth || canManageUsers)
+    .sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
   const userName = user?.name?.trim() || "Signed in";
   const userEmail = user?.email?.trim() || "Email unavailable";
   const avatarInitials = (user?.name?.trim() || user?.email?.trim() || "U")
@@ -461,8 +486,10 @@ function PageTitle({
   );
 }
 
-function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
-  const collections = Object.values(manifest.collections).sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
+function DashboardPage({ manifest, canManageUsers }: { manifest: BebopAdminManifest; canManageUsers: boolean }) {
+  const collections = Object.values(manifest.collections)
+    .filter((collection) => !collection.auth || canManageUsers)
+    .sort((left, right) => left.labels.plural.localeCompare(right.labels.plural));
 
   return (
     <section>
@@ -471,9 +498,9 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
         {collections.map((collection) => (
           <article key={collection.slug} className="admin-collection-card">
             <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.labels.plural}</Link>
-            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
+            {!collection.auth && <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
               <Plus size={19} />
-            </Link>
+            </Link>}
           </article>
         ))}
       </div>
@@ -481,10 +508,104 @@ function DashboardPage({ manifest }: { manifest: BebopAdminManifest }) {
   );
 }
 
-function CollectionRoute({ app, client, manifest, relationOptions }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "relationOptions">) {
+function AuthUsersList({ collection, authClient, canManageUsers }: {
+  collection: BebopAdminCollection;
+  authClient?: BebopAdminProps["authClient"];
+  canManageUsers: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<{ users: readonly (Record<string, unknown> & { id: string })[]; total: number }>();
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(false);
+  const requestId = useRef(0);
+  const pageSize = defaultPageSize;
+  const searchableField = collection.listSearchableFields.includes("name") ? "name" : "email";
+  const columns = collection.defaultColumns.length ? collection.defaultColumns : ["name", "email", "role"];
+
+  useEffect(() => {
+    if (!canManageUsers || !authClient) return;
+    const currentRequest = ++requestId.current;
+    setLoading(true);
+    setError(undefined);
+    void authClient.admin.listUsers({
+      query: {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        sortBy: "name",
+        sortDirection: "asc",
+        ...(search.trim() ? { searchValue: search.trim(), searchField: searchableField, searchOperator: "contains" as const } : {}),
+      },
+    }).then((response) => {
+      if (currentRequest !== requestId.current) return;
+      if (response.error) {
+        setError(response.error.message || "Better Auth could not list users.");
+        setResult(undefined);
+        return;
+      }
+      setResult(response.data ? { users: response.data.users, total: response.data.total } : { users: [], total: 0 });
+    }).catch((caught: unknown) => {
+      if (currentRequest !== requestId.current) return;
+      setError(caught instanceof Error ? caught.message : "Better Auth could not list users.");
+      setResult(undefined);
+    }).finally(() => {
+      if (currentRequest === requestId.current) setLoading(false);
+    });
+    return () => { requestId.current += 1; };
+  }, [authClient, canManageUsers, page, pageSize, search, searchableField]);
+
+  if (!canManageUsers) {
+    return <section><PageTitle title={collection.labels.plural} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Only a Better Auth administrator can view registered users.</p></section>;
+  }
+  if (!authClient) {
+    return <section><PageTitle title={collection.labels.plural} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
+  }
+
+  const total = result?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <section>
+      <PageTitle title={collection.labels.plural} description="Registered users are managed by Better Auth." />
+      <div className="mb-4 flex items-center gap-2 border border-border bg-muted/50 px-3 py-2">
+        <Search size={17} className="shrink-0 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+          placeholder={`Search by ${searchableField === "name" ? "name" : "email"}`}
+          aria-label="Search users"
+          className="border-0 bg-transparent shadow-none focus-visible:ring-0"
+        />
+      </div>
+      {error && <p role="alert" className="mb-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
+      <div className="overflow-x-auto border border-border bg-muted/35">
+        <Table>
+          <TableHeader><TableRow>{columns.map((name) => <TableHead key={name}>{fieldByName(collection, name)?.label ?? formatLabel(name)}</TableHead>)}</TableRow></TableHeader>
+          <TableBody>
+            {result?.users.map((user) => <TableRow key={user.id}>
+              {columns.map((name) => <TableCell key={name}>{formatCell(fieldByName(collection, name), user[name])}</TableCell>)}
+            </TableRow>)}
+            {!loading && result?.users.length === 0 && <TableRow><TableCell colSpan={columns.length} className="py-8 text-center text-sm text-muted-foreground">No users found.</TableCell></TableRow>}
+            {loading && !result && <TableRow><TableCell colSpan={columns.length} className="py-8 text-center text-sm text-muted-foreground">Loading users…</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+        <span>{total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 users"}</span>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || loading}>Previous</Button>
+          <span>Page {page} of {pageCount}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount || loading}>Next</Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CollectionRoute({ app, client, manifest, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "relationOptions" | "authClient" | "canManageUsers">) {
   const { collectionSlug = "" } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
+  if (collection.auth) return <AuthUsersList collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
   return <CollectionList key={collection.slug} app={app} client={client} collection={collection} manifest={manifest} relationOptions={relationOptions} />;
 }
 
@@ -882,6 +1003,7 @@ function EditorRoute({ app, client, manifest, createDefaults, relationOptions }:
   const [searchParams] = useSearchParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
+  if (collection.auth) return <NotFoundPage />;
   const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
   return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} joinContext={joinContext} relationOptions={relationOptions} />;
 }

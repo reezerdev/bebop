@@ -15,8 +15,8 @@ export default defineConfig({
     fields: [
       { name: "name", type: "text", required: true },
       { name: "workspace", type: "relationship", relationTo: "workspaces" },
-      { name: "author", type: "relationship", relationTo: "better_auth_user", required: true },
-      { name: "assignee", type: "relationship", relationTo: "better_auth_user" },
+      { name: "author", type: "relationship", relationTo: "users", required: true },
+      { name: "assignee", type: "relationship", relationTo: "users" },
       { name: "status", type: "select", options: ["backlog", "todo", "done"] },
     ],
     permissions: {
@@ -109,9 +109,22 @@ The playground grants public access to its demo Workspaces and Media, gives auth
 
 The older `access` option remains supported for compatibility and is deprecated. It retains its authenticated default and legacy callback behavior. Do not set both `access` and `permissions` on one collection.
 
-## Admin entry is a host decision
+## Admin entry
 
-The host authenticates the person, decides whether they may enter `/admin`, and passes that result through `canAccessAdmin`. A support-role check for using the admin belongs there. Collection permissions separately decide which records that person can read and change.
+With the built-in Better Auth integration, Bebop checks the Better Auth Admin plugin before the admin UI is shown. Only admins can enter by default, including IDs configured with Better Auth's `adminUserIds`. An auth collection can customize this decision in Payload's `access.admin` shape:
+
+```ts
+collection({
+  slug: "users",
+  auth: true,
+  fields: [],
+  access: {
+    admin: ({ req: { user, isAdmin } }) => isAdmin || user.role === "support",
+  },
+});
+```
+
+The callback runs on the server with the verified Better Auth user. `req.isAdmin` comes from the Admin plugin's `user:list` permission check, which includes its default admin role and configured `adminUserIds`. The playground mounts `createBebopAdminAccessHandler` at `/api/bebop/admin-access` and passes its result to `BebopAdmin`. Other auth providers can use the same handler with their own verified `resolveSession`; a host without that handler can supply a `canAccessAdmin` result directly. This controls entry to the UI. Jazz collection permissions still control which rows a user can read or mutate.
 
 ## Direct collections
 

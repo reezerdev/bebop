@@ -8,12 +8,32 @@ import "@bebopdev/admin/styles.css";
 import "./index.css";
 
 function AuthPanel() {
-  const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-up");
+  const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
+  const [bootstrapAvailable, setBootstrapAvailable] = React.useState<boolean | null>(null);
+  const [bootstrapError, setBootstrapError] = React.useState("");
+  const [setupChoice, setSetupChoice] = React.useState<"prompt" | "create" | "later">("prompt");
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+
+  const checkAdminSetup = React.useCallback(() => {
+    setBootstrapAvailable(null);
+    setBootstrapError("");
+    void fetch("/api/bebop/admin-setup", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not check whether this app needs its first admin.");
+        return response.json() as Promise<{ available?: boolean }>;
+      })
+      .then((result) => setBootstrapAvailable(result.available === true))
+      .catch((cause: unknown) => {
+        setBootstrapAvailable(false);
+        setBootstrapError(cause instanceof Error ? cause.message : "Could not check admin setup.");
+      });
+  }, []);
+
+  React.useEffect(() => { checkAdminSetup(); }, [checkAdminSetup]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,9 +57,38 @@ function AuthPanel() {
     <main className="auth-shell">
       <a className="wordmark" href="#top" aria-label="Bebop home">bebop<span>♪</span></a>
       <section className="auth-card">
-        <p className="eyebrow">YOUR BEBOP ACCOUNT</p>
-        <h1>{mode === "sign-up" ? "Save your work." : "Welcome back."}</h1>
-        <p className="auth-copy">Sign in with Better Auth to open your Jazz account and start creating.</p>
+        {bootstrapAvailable === null ? (
+          <>
+            <p className="eyebrow">BEBOP SETUP</p>
+            <h1>Checking setup.</h1>
+            <p className="auth-copy" role="status">Checking whether this app needs its first admin account…</p>
+            {bootstrapError && <p className="auth-error" role="alert">{bootstrapError}</p>}
+            <button className="auth-secondary-button" type="button" onClick={checkAdminSetup}>Try again</button>
+          </>
+        ) : bootstrapAvailable && setupChoice === "prompt" ? (
+          <>
+            <p className="eyebrow">FIRST ADMIN SETUP</p>
+            <h1>Create the first admin?</h1>
+            <p className="auth-copy">This app has no users yet. The first account will be an administrator and can manage the Bebop admin panel.</p>
+            <div className="auth-bootstrap-actions">
+              <button className="create-button" type="button" onClick={() => { setSetupChoice("create"); setMode("sign-up"); }}>
+                Create first admin<span>↗</span>
+              </button>
+              <button className="auth-secondary-button" type="button" onClick={() => setSetupChoice("later")}>Not now</button>
+            </div>
+          </>
+        ) : bootstrapAvailable && setupChoice === "later" ? (
+          <>
+            <p className="eyebrow">FIRST ADMIN SETUP</p>
+            <h1>Setup paused.</h1>
+            <p className="auth-copy">No account was created. Return here when you are ready to set up the first admin.</p>
+            <button className="auth-secondary-button" type="button" onClick={() => setSetupChoice("prompt")}>Set up first admin</button>
+          </>
+        ) : (
+        <>
+        <p className="eyebrow">{mode === "sign-up" && setupChoice === "create" ? "FIRST ADMIN SETUP" : "YOUR BEBOP ACCOUNT"}</p>
+        <h1>{mode === "sign-up" ? setupChoice === "create" ? "Create your admin account." : "Save your work." : "Welcome back."}</h1>
+        <p className="auth-copy">{mode === "sign-up" && setupChoice === "create" ? "This will be the first administrator for your Bebop admin panel." : "Sign in with Better Auth to open your Jazz account and start creating."}</p>
         <form className="auth-form" onSubmit={submit}>
           {mode === "sign-up" && (
             <>
@@ -53,15 +102,17 @@ function AuthPanel() {
           <input id="auth-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} minLength={8} required />
           {error && <p className="auth-error" role="alert">{error}</p>}
           <button className="create-button" type="submit" disabled={submitting}>
-            {submitting ? "Working…" : mode === "sign-up" ? "Create account" : "Sign in"}<span>↗</span>
+            {submitting ? "Working…" : mode === "sign-up" ? setupChoice === "create" ? "Create first admin" : "Create account" : "Sign in"}<span>↗</span>
           </button>
         </form>
-        <p className="auth-switch">
+        {(!bootstrapAvailable || setupChoice === "create") && <p className="auth-switch">
           {mode === "sign-up" ? "Already have an account?" : "New to Bebop?"}{" "}
           <button type="button" onClick={() => { setMode(mode === "sign-up" ? "sign-in" : "sign-up"); setError(""); }}>
             {mode === "sign-up" ? "Sign in" : "Create one"}
           </button>
-        </p>
+        </p>}
+        </>
+        )}
       </section>
     </main>
   );

@@ -82,7 +82,29 @@ export function createBebopBetterAuth<const Plugins extends readonly BetterAuthP
     ...userOptions?.additionalFields,
     ...authAdditionalFields(options.config),
   };
-  const { user: _user, plugins: _plugins, ...authOptions } = customOptions;
+  const { user: _user, plugins: _plugins, databaseHooks: appDatabaseHooks, ...authOptions } = customOptions;
+  const appUserCreateBefore = appDatabaseHooks?.user?.create?.before;
+  const databaseHooks: BetterAuthOptions["databaseHooks"] = {
+    ...appDatabaseHooks,
+    user: {
+      ...appDatabaseHooks?.user,
+      create: {
+        ...appDatabaseHooks?.user?.create,
+        before: async (user, context) => {
+          const appResult = await appUserCreateBefore?.(user, context);
+          if (appResult === false || !context) return appResult;
+
+          const userData = appResult && typeof appResult === "object" && "data" in appResult
+            ? { ...user, ...appResult.data }
+            : user;
+          const [firstUser] = await context.context.internalAdapter.listUsers(1);
+          return firstUser === undefined
+            ? { data: { ...userData, role: "admin" } }
+            : appResult;
+        },
+      },
+    },
+  };
 
   return betterAuth({
     ...authOptions,
@@ -94,6 +116,7 @@ export function createBebopBetterAuth<const Plugins extends readonly BetterAuthP
       ...userOptions,
       additionalFields,
     },
+    databaseHooks,
     plugins: [
       ...plugins,
       jwt({

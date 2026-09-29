@@ -100,7 +100,7 @@ export default defineConfig(({ mode }) => {
   const baseURL = getBetterAuthURL(env.BETTER_AUTH_URL);
 
   // Keep secrets on the Node side. Vite only exposes variables with its VITE_ prefix.
-  process.env.BETTER_AUTH_URL ??= baseURL;
+  process.env.BETTER_AUTH_URL = baseURL;
   if (env.BETTER_AUTH_SECRET) process.env.BETTER_AUTH_SECRET ??= env.BETTER_AUTH_SECRET;
 
   return {
@@ -108,8 +108,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       jazzPlugin({
-        appId: "bebop-tasks-playground",
+        appId: "bebop-first-admin-playground-20260929",
         server: {
+          dataDir: path.join(projectDirectory, "node_modules", ".cache", "bebop-first-admin-20260929-jazz-dev-server"),
           jwksUrl: `${baseURL}/api/auth/jwks`,
           jwtIssuer: baseURL,
           jwtAudience: baseURL,

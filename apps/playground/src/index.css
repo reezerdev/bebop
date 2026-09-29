@@ -118,6 +118,12 @@ body { margin: 0; }
 .auth-form .create-button:hover { background: #315b42; }
 .auth-form .create-button:disabled { opacity: .65; cursor: wait; }
 .auth-form .create-button span { font-size: 16px; font-weight: 400; }
+.auth-bootstrap-actions { display: grid; gap: 10px; }
+.auth-bootstrap-actions .create-button { width: 100%; display: flex; align-items: center; justify-content: space-between; border: 0; border-radius: 5px; padding: 13px 15px; background: #416e53; color: white; font: 600 12px "DM Sans", sans-serif; cursor: pointer; }
+.auth-bootstrap-actions .create-button:hover { background: #315b42; }
+.auth-bootstrap-actions .create-button span { font-size: 16px; font-weight: 400; }
+.auth-secondary-button { width: 100%; border: 1px solid #dedfd6; border-radius: 5px; padding: 12px 15px; background: transparent; color: #416e53; font: 600 12px "DM Sans", sans-serif; cursor: pointer; }
+.auth-secondary-button:hover { background: #f0f0e9; }
 .auth-error { color: #a14c43; background: #f8e9e4; border-radius: 4px; padding: 9px 11px; font-size: 12px; line-height: 1.5; }
 .auth-switch { margin: 21px 0 0; color: #7d837a; text-align: center; font-size: 12px; }
 .auth-switch button { border: 0; background: transparent; color: #416e53; padding: 0; font: 600 12px "DM Sans", sans-serif; cursor: pointer; }

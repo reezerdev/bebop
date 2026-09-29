@@ -49,24 +49,6 @@ export async function createAuthServer(config: AuthServerConfig) {
     baseURL,
     secret,
     options: {
-      // Better Auth's Admin plugin assigns "user" by default. On a clean
-      // database, promote the first account created through Better Auth so
-      // the admin panel has an initial administrator, as in Payload's setup.
-      // This only runs on the trusted server adapter; clients cannot choose a
-      // role in the sign-up payload.
-      databaseHooks: {
-        user: {
-          create: {
-            before: async (user) => {
-              const existingUsers = await snapshot.client!.db.all(
-                app.better_auth_user.select("id"),
-                { tier: "global" },
-              );
-              return existingUsers.length === 0 ? { data: { role: "admin" } } : undefined;
-            },
-          },
-        },
-      },
       admin: {
         adminUserIds: (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? "")
           .split(",")
@@ -119,11 +101,35 @@ export async function createAuthServer(config: AuthServerConfig) {
       });
       if (!session) return null;
 
-      const permission = await auth.api.userHasPermission({
-        headers,
-        body: { permissions: { user: ["list"] } },
-      });
-      return { user: session.user, isAdmin: permission.success };
+      const authUser = session.user as typeof session.user & { role?: string };
+      const adminUserIds = (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const roles = typeof authUser.role === "string"
+        ? authUser.role.split(",").map((role) => role.trim())
+        : [];
+
+      // The session comes from Better Auth's verified server-side lookup, and
+      // the role field is protected from public signup/update input. Trust
+      // those built-in admin signals directly before making the permission
+      // endpoint call, which can fail independently of session resolution.
+      const isAdminByRole = roles.includes("admin");
+      const isAdminById = adminUserIds.includes(session.user.id);
+      const permission = isAdminByRole || isAdminById
+        ? null
+        : await auth.api.userHasPermission({
+          headers,
+          body: { permissions: { user: ["list"] } },
+        });
+
+      return {
+        user: authUser,
+        isAdmin: isAdminByRole || isAdminById || permission?.success === true,
+      };
+    },
+    onError(error) {
+      console.error("[bebop admin] Could not verify admin access:", error);
     },
   });
 
@@ -142,7 +148,7 @@ export async function createAuthServer(config: AuthServerConfig) {
         return;
       }
 
-      const users = await snapshot.client!.db.all(app.better_auth_user.select("id"), { tier: "global" });
+      const users = await (await auth.$context).internalAdapter.listUsers(1);
       response.end(JSON.stringify({ available: users.length === 0 }));
     },
     async listUsers(request: IncomingMessage, response: ServerResponse) {

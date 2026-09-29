@@ -7,7 +7,8 @@ export default defineConfig({
       slug: "users",
       auth: true,
       access: {
-        admin: ({ req: { user, isAdmin } }) => user.role === "admin" || isAdmin,
+        admin: ({ req: { user, isAdmin } }) =>
+          user.role?.split(",").some((role) => role.trim() === "admin") === true || isAdmin,
       },
       labels: { singular: "User", plural: "Users" },
       admin: {

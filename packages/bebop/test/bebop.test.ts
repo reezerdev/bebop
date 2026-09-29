@@ -157,7 +157,7 @@ test("auth collections map to Better Auth's user model and generate protected ad
   ] })), /search supports only the "name" and "email" fields/);
 });
 
-test("Better Auth helper installs Bebop fields and built-in JWT and Admin plugins", () => {
+test("Better Auth helper installs plugins and promotes only the first auth user to admin", async () => {
   const auth = createBebopBetterAuth({
     config: defineConfig({ collections: [{
       slug: "users",
@@ -169,6 +169,15 @@ test("Better Auth helper installs Bebop fields and built-in JWT and Admin plugin
     }] }),
     baseURL: "http://127.0.0.1:3000",
     secret: "bebop-test-secret-that-is-at-least-32-characters-long",
+    options: {
+      databaseHooks: {
+        user: {
+          create: {
+            before: async (user) => ({ data: { displayName: user.name } }),
+          },
+        },
+      },
+    },
     jazz: { db: async () => ({} as never), schema: {} as never },
   });
 
@@ -178,6 +187,20 @@ test("Better Auth helper installs Bebop fields and built-in JWT and Admin plugin
   assert.equal(fields.publicCode.input, true);
   assert.deepEqual(auth.options.plugins?.map((plugin) => plugin.id), ["jwt", "admin"]);
   assert.equal(typeof auth.api.getToken, "function");
+
+  const beforeCreate = auth.options.databaseHooks?.user?.create?.before;
+  assert.ok(beforeCreate);
+  const makeContext = (hasUser: boolean) => ({
+    context: { internalAdapter: { listUsers: async (limit: number) => limit === 1 && hasUser ? [{ id: "existing-user" }] : [] } },
+  }) as never;
+  const newUser = { name: "Ada", role: "user" } as never;
+
+  assert.deepEqual(await beforeCreate(newUser, makeContext(false)), {
+    data: { name: "Ada", displayName: "Ada", role: "admin" },
+  });
+  assert.deepEqual(await beforeCreate(newUser, makeContext(true)), {
+    data: { displayName: "Ada" },
+  });
 });
 
 test("permission generation compiles configured Jazz rules and defaults omitted operations to authenticated sessions", () => {

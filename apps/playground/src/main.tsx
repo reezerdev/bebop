@@ -28,7 +28,6 @@ function AuthPanel() {
       })
       .then((result) => setBootstrapAvailable(result.available === true))
       .catch((cause: unknown) => {
-        setBootstrapAvailable(false);
         setBootstrapError(cause instanceof Error ? cause.message : "Could not check admin setup.");
       });
   }, []);
@@ -105,6 +104,7 @@ function AuthPanel() {
             {submitting ? "Working…" : mode === "sign-up" ? setupChoice === "create" ? "Create first admin" : "Create account" : "Sign in"}<span>↗</span>
           </button>
         </form>
+        {bootstrapError && <p className="auth-error" role="alert">{bootstrapError}</p>}
         {(!bootstrapAvailable || setupChoice === "create") && <p className="auth-switch">
           {mode === "sign-up" ? "Already have an account?" : "New to Bebop?"}{" "}
           <button type="button" onClick={() => { setMode(mode === "sign-up" ? "sign-in" : "sign-up"); setError(""); }}>

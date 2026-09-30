@@ -731,6 +731,9 @@ function validateConfig(config: BebopConfig): void {
         if (fieldAdmin?.hidden !== undefined && typeof fieldAdmin.hidden !== "boolean") {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.hidden must be a boolean.`);
         }
+        if (fieldAdmin?.readOnly !== undefined && (field.type !== "relationship" || typeof fieldAdmin.readOnly !== "boolean")) {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.readOnly must be a boolean on a relationship field.`);
+        }
         if (fieldAdmin?.input !== undefined && (field.type !== "text" || fieldAdmin.input !== "textarea")) {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
         }

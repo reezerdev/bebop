@@ -14,6 +14,7 @@ export type FieldOptions = {
   admin?: {
     position?: "main" | "sidebar";
     hidden?: boolean;
+    readOnly?: boolean;
     input?: "textarea";
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
   };

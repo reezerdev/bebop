@@ -93,48 +93,76 @@ export default defineConfig({
       labels: { singular: "Task", plural: "Tasks" },
       timestamps: true,
       permissions: {
-        read: ({ rule, collections, session }) => rule.where((task) =>
-          collections.workspaceMemberships.exists.where({
-            workspaceId: task.workspaceId,
-            userId: session.claims.sub,
+        read: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
+            workspaceId,
+            userId,
             status: "active",
-          }),
-        ),
-        insert: ({ rule, collections, session, allOf }) => rule.where((task) =>
-          allOf([
-            { authorId: session.claims.sub },
-            collections.workspaceMemberships.exists.where({
-              workspaceId: task.workspaceId,
-              userId: session.claims.sub,
-              status: "active",
-            }),
-          ]),
-        ),
-        update: ({ rule, collections, session, allOf, anyOf }) => rule
-          .whereOld((task) => allOf([
-            anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
-            collections.workspaceMemberships.exists.where({
-              workspaceId: task.workspaceId,
-              userId: session.claims.sub,
-              status: "active",
-            }),
-          ]))
-          .whereNew((task) => allOf([
-            anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
-            collections.workspaceMemberships.exists.where({
-              workspaceId: task.workspaceId,
-              userId: session.claims.sub,
-              status: "active",
-            }),
-          ])),
-        delete: ({ rule, collections, session, allOf }) => rule.where((task) => allOf([
-          { authorId: session.claims.sub },
-          collections.workspaceMemberships.exists.where({
-            workspaceId: task.workspaceId,
-            userId: session.claims.sub,
+          });
+          const manager = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          const streamMember = (streamId: unknown) => collections.streamMemberships.exists.where({ streamId, userId });
+          rule.where((task) => allOf([
+            activeMember(task.workspaceId),
+            anyOf([
+              { visibility: "public" },
+              manager(task.workspaceId),
+              streamMember(task.streamId),
+            ]),
+          ]));
+        },
+        insert: ({ rule, collections, session, allOf }) => {
+          const userId = session.claims.sub;
+          rule.where((task) => allOf([
+            { authorId: userId },
+            collections.workspaceMemberships.exists.where({ workspaceId: task.workspaceId, userId, status: "active" }),
+            collections.streams.exists.where({ id: task.streamId, workspaceId: task.workspaceId, authorId: userId }),
+            collections.streamMemberships.exists.where({ streamId: task.streamId, userId, role: "admin" }),
+          ]));
+        },
+        update: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
+            workspaceId,
+            userId,
             status: "active",
-          }),
-        ])),
+          });
+          const manager = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          const streamAdmin = (streamId: unknown) => anyOf([
+            collections.streamMemberships.exists.where({ streamId, userId, role: "admin" }),
+          ]);
+          const canEdit = (task: { id: unknown; workspaceId: unknown; streamId: unknown; visibility: unknown; authorId: unknown; assigneeId?: unknown }) => allOf([
+            activeMember(task.workspaceId),
+            anyOf([
+              manager(task.workspaceId),
+              streamAdmin(task.streamId),
+              allOf([
+                anyOf([{ visibility: "public" }, { visibility: "private" }]),
+                anyOf([{ authorId: userId }, { assigneeId: userId }]),
+              ]),
+            ]),
+          ]);
+          rule.whereOld(canEdit).whereNew((task) => allOf([
+            canEdit(task),
+            collections.tasks.exists.where({ id: task.id, workspaceId: task.workspaceId, streamId: task.streamId }),
+          ]));
+        },
+        delete: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          rule.where((task) => allOf([
+            { authorId: userId },
+            collections.workspaceMemberships.exists.where({ workspaceId: task.workspaceId, userId, status: "active" }),
+            anyOf([
+              collections.streamMemberships.exists.where({ streamId: task.streamId, userId, role: "admin" }),
+            ]),
+          ]));
+        },
       },
       admin: {
         useAsTitle: "name",
@@ -164,6 +192,240 @@ export default defineConfig({
         { name: "assignee", type: "relationship", relationTo: "users", admin: { position: "sidebar" } },
         { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
         { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
+        { name: "visibility", type: "select", required: true, options: [
+          { label: "Public", value: "public" },
+          { label: "Private", value: "private" },
+          { label: "Protected", value: "protected" },
+        ], admin: { position: "sidebar" } },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { hidden: true } },
+      ],
+    }),
+    collection({
+      slug: "channels",
+      labels: { singular: "Channel", plural: "Channels" },
+      timestamps: true,
+      permissions: {
+        read: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const manager = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          rule.where((channel) => allOf([
+            collections.workspaceMemberships.exists.where({ workspaceId: channel.workspaceId, userId, status: "active" }),
+            anyOf([
+              { visibility: "public" },
+              manager(channel.workspaceId),
+              collections.streamMemberships.exists.where({ streamId: channel.streamId, userId }),
+            ]),
+          ]));
+        },
+        insert: ({ rule, collections, session, allOf }) => {
+          const userId = session.claims.sub;
+          rule.where((channel) => allOf([
+            { authorId: userId },
+            collections.workspaceMemberships.exists.where({ workspaceId: channel.workspaceId, userId, status: "active" }),
+            collections.streams.exists.where({ id: channel.streamId, workspaceId: channel.workspaceId, authorId: userId }),
+            collections.streamMemberships.exists.where({ streamId: channel.streamId, userId, role: "admin" }),
+          ]));
+        },
+        update: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
+            workspaceId,
+            userId,
+            status: "active",
+          });
+          const manager = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          const streamAdmin = (streamId: unknown) => anyOf([
+            collections.streamMemberships.exists.where({ streamId, userId, role: "admin" }),
+          ]);
+          const canEdit = (channel: { id: unknown; workspaceId: unknown; streamId?: unknown }) => allOf([
+            activeMember(channel.workspaceId),
+            anyOf([manager(channel.workspaceId), streamAdmin(channel.streamId)]),
+          ]);
+          rule.whereOld(canEdit).whereNew((channel) => allOf([
+            canEdit(channel),
+            collections.channels.exists.where({ id: channel.id, workspaceId: channel.workspaceId, streamId: channel.streamId }),
+          ]));
+        },
+        delete: ({ rule, collections, session, allOf }) => {
+          const userId = session.claims.sub;
+          rule.where((channel) => allOf([
+            collections.workspaceMemberships.exists.where({ workspaceId: channel.workspaceId, userId, status: "active" }),
+            collections.streamMemberships.exists.where({ streamId: channel.streamId, userId, role: "admin" }),
+          ]));
+        },
+      },
+      admin: { useAsTitle: "name", defaultColumns: ["name", "workspace", "visibility", "stream"] },
+      fields: [
+        { name: "name", type: "text", required: true },
+        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
+        { name: "content", type: "text", admin: { input: "textarea" } },
+        { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
+        { name: "visibility", type: "select", required: true, options: ["public", "private"] },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { hidden: true } },
+      ],
+    }),
+    collection({
+      slug: "streams",
+      labels: { singular: "Stream", plural: "Streams" },
+      timestamps: true,
+      permissions: {
+        read: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active" });
+          const manager = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          const streamMember = (streamId: unknown) => collections.streamMemberships.exists.where({ streamId, userId });
+          const publicEntity = (streamId: unknown) => anyOf([
+            collections.tasks.exists.where({ streamId, visibility: "public" }),
+            collections.channels.exists.where({ streamId, visibility: "public" }),
+          ]);
+          rule.where((stream) => allOf([
+            activeMember(stream.workspaceId),
+            anyOf([streamMember(stream.id), manager(stream.workspaceId), publicEntity(stream.id)]),
+          ]));
+        },
+        insert: ({ rule, collections, session, allOf }) => {
+          const userId = session.claims.sub;
+          rule.where((stream) => allOf([
+            { authorId: userId },
+            collections.workspaceMemberships.exists.where({ workspaceId: stream.workspaceId, userId, status: "active" }),
+          ]));
+        },
+        update: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
+            workspaceId,
+            userId,
+            status: "active",
+          });
+          const admin = (streamId: unknown) => anyOf([
+            collections.streamMemberships.exists.where({ streamId, userId, role: "admin" }),
+          ]);
+          const canEdit = (stream: { id: unknown; workspaceId: unknown }) => allOf([
+            activeMember(stream.workspaceId),
+            admin(stream.id),
+          ]);
+          rule.whereOld(canEdit).whereNew((stream) => allOf([
+            canEdit(stream),
+            collections.streams.exists.where({ id: stream.id, workspaceId: stream.workspaceId, authorId: stream.authorId }),
+          ]));
+        },
+        delete: ({ rule, collections, session, allOf }) => {
+          const userId = session.claims.sub;
+          rule.where((stream) => allOf([
+            collections.workspaceMemberships.exists.where({ workspaceId: stream.workspaceId, userId, status: "active" }),
+            collections.streamMemberships.exists.where({ streamId: stream.id, userId, role: "admin" }),
+          ]));
+        },
+      },
+      admin: { useAsTitle: "name", defaultColumns: ["name", "workspace", "author"] },
+      fields: [
+        { name: "name", type: "text", required: true },
+        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
+        { name: "author", type: "relationship", relationTo: "users", required: true },
+        { name: "members", type: "join", collection: "streamMemberships", on: "stream" },
+        { name: "entries", type: "join", collection: "entries", on: "stream" },
+        { name: "channels", type: "join", collection: "channels", on: "stream" },
+        { name: "tasks", type: "join", collection: "tasks", on: "stream" },
+      ],
+    }),
+    collection({
+      slug: "streamMemberships",
+      labels: { singular: "Stream Membership", plural: "Stream Memberships" },
+      timestamps: true,
+      permissions: {
+        read: ({ rule, collections, session, anyOf }) => {
+          const userId = session.claims.sub;
+          rule.where((membership) => anyOf([
+            { userId },
+            collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
+            collections.streams.exists.where({ id: membership.streamId, authorId: userId }),
+          ]));
+        },
+        insert: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          rule.where((membership) => anyOf([
+            allOf([
+              { userId, role: "admin" },
+              collections.streams.exists.where({ id: membership.streamId, authorId: userId }),
+            ]),
+            allOf([
+              collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
+            ]),
+          ]));
+        },
+        update: ({ rule, collections, session, allOf, anyOf }) => {
+          const userId = session.claims.sub;
+          const admin = (streamId: unknown) => anyOf([
+            collections.streamMemberships.exists.where({ streamId, userId, role: "admin" }),
+          ]);
+          const canEdit = (membership: { id: unknown; streamId: unknown }) => admin(membership.streamId);
+          rule.whereOld(canEdit).whereNew((membership) => allOf([
+            canEdit(membership),
+            collections.streamMemberships.exists.where({ id: membership.id, streamId: membership.streamId }),
+          ]));
+        },
+        delete: ({ rule, collections, session, anyOf }) => {
+          const userId = session.claims.sub;
+          rule.where((membership) => anyOf([
+            collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
+          ]));
+        },
+      },
+      admin: { useAsTitle: "user", defaultColumns: ["user", "stream", "role"] },
+      fields: [
+        { name: "stream", type: "relationship", relationTo: "streams", required: true },
+        { name: "user", type: "relationship", relationTo: "users", required: true },
+        { name: "role", type: "select", required: true, options: ["admin", "member"] },
+      ],
+    }),
+    collection({
+      slug: "entries",
+      labels: { singular: "Entry", plural: "Entries" },
+      timestamps: true,
+      permissions: {
+        read: ({ rule, allowedTo }) => rule.where(allowedTo.read("stream")),
+        insert: ({ rule, session, allOf, allowedTo }) => rule.where((entry) => allOf([
+          { authorId: session.claims.sub },
+          allowedTo.read("stream"),
+        ])),
+        update: ({ rule, collections, session, allOf, anyOf, allowedTo }) => {
+          const userId = session.claims.sub;
+          const canEdit = (entry: { id: unknown; streamId: unknown; authorId: unknown }) => allOf([
+            allowedTo.read("stream"),
+            anyOf([
+              { authorId: userId },
+              collections.streamMemberships.exists.where({ streamId: entry.streamId, userId, role: "admin" }),
+            ]),
+          ]);
+          rule.whereOld(canEdit).whereNew((entry) => allOf([
+            canEdit(entry),
+            collections.entries.exists.where({ id: entry.id, streamId: entry.streamId, authorId: entry.authorId }),
+          ]));
+        },
+        delete: ({ rule, collections, session, anyOf }) => {
+          const userId = session.claims.sub;
+          rule.where((entry) => anyOf([
+            { authorId: userId },
+            collections.streamMemberships.exists.where({ streamId: entry.streamId, userId, role: "admin" }),
+          ]));
+        },
+      },
+      admin: { useAsTitle: "content", defaultColumns: ["type", "stream", "author"] },
+      fields: [
+        { name: "stream", type: "relationship", relationTo: "streams", required: true },
+        { name: "type", type: "select", required: true, options: ["message", "comment", "update", "system"] },
+        { name: "content", type: "text", required: true, admin: { input: "textarea" } },
+        { name: "author", type: "relationship", relationTo: "users", required: true },
+        { name: "parentEntry", type: "relationship", relationTo: "entries" },
       ],
     }),
   ],

@@ -8,6 +8,7 @@ import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";
 import { PlaygroundPage } from "./PlaygroundPage.tsx";
+import { withStreamCollections } from "./stream-client.js";
 import { withAcyclicTaskParents } from "./task-parent.js";
 import { signOutWithLocalFallback } from "./logout.js";
 
@@ -20,12 +21,12 @@ export function App() {
     else sessionStorage.removeItem("bebop-logout-pending-writes");
     window.dispatchEvent(new Event("bebop-logout-complete"));
   }, [db, logout]);
-  const bebop = useMemo(() => withAcyclicTaskParents(createBebopClient(db, {
-    commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
-  })), [db]);
   const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const currentUserId = authSession?.user.id ?? "";
   const currentUserName = authSession?.user.name?.trim() ?? "";
+  const bebop = useMemo(() => withAcyclicTaskParents(withStreamCollections(createBebopClient(db, {
+    commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
+  }), db, currentUserId)), [db, currentUserId]);
   const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [users, setUsers] = useState<readonly { id: string; name: string }[]>([]);
@@ -93,8 +94,15 @@ export function App() {
     return [...current, ...users.filter((user) => user.id !== currentUserId)];
   }, [currentUserId, currentUserName, users]);
   const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
+  const preflightRelatedWrite = useCallback((collectionSlug: string) =>
+    collectionSlug === "tasks" || collectionSlug === "channels" ? "unknown" : undefined,
+  []);
   const createDefaults = useMemo(() => ({
-    tasks: { author: currentUserId, assignee: currentUserId, status: "todo" },
+    tasks: { author: currentUserId, assignee: currentUserId, status: "todo", visibility: "public" },
+    channels: { author: currentUserId, visibility: "public" },
+    streams: { author: currentUserId },
+    entries: { author: currentUserId, type: "message" },
+    streamMemberships: { user: currentUserId, role: "member" },
     workspaceMemberships: { user: currentUserId, role: "member", status: "active" },
   }), [currentUserId]);
 
@@ -104,7 +112,7 @@ export function App() {
       path="/admin/*"
       element={canAccessAdmin === null
         ? <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 text-foreground"><p role="status">Checking admin access…</p></main>
-        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={signOut} />}
+        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} preflightCreate={preflightRelatedWrite} preflightUpdate={preflightRelatedWrite} relationOptions={relationOptions} onLogout={signOut} />}
     />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;

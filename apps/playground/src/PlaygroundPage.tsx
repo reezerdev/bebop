@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useAll } from "jazz-tools/react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
-import type { createBebopClient } from "../bebop-generated-client.js";
+import type { StreamClient } from "./stream-client.js";
 
-type Client = ReturnType<typeof createBebopClient>;
+type Client = StreamClient;
 type UserOption = { id: string; name: string };
 type WorkspaceForm = { name: string; slug: string };
 type TaskForm = {

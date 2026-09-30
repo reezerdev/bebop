@@ -1,4 +1,5 @@
 import type { createBebopClient } from "../bebop-generated-client.js";
+import type { StreamClient } from "./stream-client.js";
 
 type BebopClient = ReturnType<typeof createBebopClient>;
 
@@ -28,7 +29,7 @@ async function assertAcyclicParent(
 }
 
 /** Applies the Playground's task-tree rule to every shared-client Task mutation. */
-export function withAcyclicTaskParents(client: BebopClient): BebopClient {
+export function withAcyclicTaskParents(client: StreamClient): StreamClient {
   const tasks = client.tasks;
 
   return {
@@ -47,5 +48,5 @@ export function withAcyclicTaskParents(client: BebopClient): BebopClient {
         return tasks.update(id, data);
       },
     },
-  };
+  } as StreamClient;
 }

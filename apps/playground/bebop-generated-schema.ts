@@ -47,14 +47,72 @@ const schema = {
       "status": s.enum("backlog", "todo", "in-progress", "in-review", "done").optional(),
       "assigneeId": s.uuid().optional(),
       "dueAt": s.timestamp().optional(),
-      "archivedAt": s.timestamp().optional()
+      "archivedAt": s.timestamp().optional(),
+      "visibility": s.enum("public", "private", "protected"),
+      "streamId": s.uuid()
     },
     {
       "workspace": s.rel("workspaces", "workspaceId"),
       "image": s.rel("media", "imageId"),
       "parentTask": s.rel("tasks", "parentTaskId"),
       "author": s.rel("better_auth_user", "authorId"),
-      "assignee": s.rel("better_auth_user", "assigneeId")
+      "assignee": s.rel("better_auth_user", "assigneeId"),
+      "stream": s.rel("streams", "streamId")
+    },
+  ),
+  "channels": s.table(
+    {
+      "name": s.string(),
+      "workspaceId": s.uuid(),
+      "content": s.string().optional(),
+      "authorId": s.uuid(),
+      "visibility": s.enum("public", "private"),
+      "streamId": s.uuid()
+    },
+    {
+      "workspace": s.rel("workspaces", "workspaceId"),
+      "author": s.rel("better_auth_user", "authorId"),
+      "stream": s.rel("streams", "streamId")
+    },
+  ),
+  "streams": s.table(
+    {
+      "name": s.string(),
+      "workspaceId": s.uuid(),
+      "authorId": s.uuid()
+    },
+    {
+      "workspace": s.rel("workspaces", "workspaceId"),
+      "author": s.rel("better_auth_user", "authorId"),
+      "members": s.reverse("streamMemberships", "stream"),
+      "entries": s.reverse("entries", "stream"),
+      "channels": s.reverse("channels", "stream"),
+      "tasks": s.reverse("tasks", "stream")
+    },
+  ),
+  "streamMemberships": s.table(
+    {
+      "streamId": s.uuid(),
+      "userId": s.uuid(),
+      "role": s.enum("admin", "member")
+    },
+    {
+      "stream": s.rel("streams", "streamId"),
+      "user": s.rel("better_auth_user", "userId")
+    },
+  ),
+  "entries": s.table(
+    {
+      "streamId": s.uuid(),
+      "type": s.enum("message", "comment", "update", "system"),
+      "content": s.string(),
+      "authorId": s.uuid(),
+      "parentEntryId": s.uuid().optional()
+    },
+    {
+      "stream": s.rel("streams", "streamId"),
+      "author": s.rel("better_auth_user", "authorId"),
+      "parentEntry": s.rel("entries", "parentEntryId")
     },
   )
 } as const;

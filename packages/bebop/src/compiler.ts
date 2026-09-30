@@ -728,6 +728,9 @@ function validateConfig(config: BebopConfig): void {
         if (fieldAdmin?.position !== undefined && fieldAdmin.position !== "main" && fieldAdmin.position !== "sidebar") {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.position must be "main" or "sidebar".`);
         }
+        if (fieldAdmin?.hidden !== undefined && typeof fieldAdmin.hidden !== "boolean") {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.hidden must be a boolean.`);
+        }
         if (fieldAdmin?.input !== undefined && (field.type !== "text" || fieldAdmin.input !== "textarea")) {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
         }

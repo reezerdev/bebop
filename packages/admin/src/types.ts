@@ -9,6 +9,7 @@ type BebopAdminFieldBase = {
 type BebopAdminFieldOptions = {
   admin?: {
     position?: "main" | "sidebar";
+    hidden?: boolean;
     input?: "textarea";
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
     defaultColumns?: readonly string[];

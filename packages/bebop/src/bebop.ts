@@ -13,6 +13,7 @@ export type FieldOptions = {
   auth?: { input?: boolean };
   admin?: {
     position?: "main" | "sidebar";
+    hidden?: boolean;
     input?: "textarea";
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
   };

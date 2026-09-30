@@ -433,6 +433,37 @@ export const bebopAdminManifest = {
               "pickerAppearance": "dayAndTime"
             }
           }
+        },
+        {
+          "name": "visibility",
+          "storageName": "visibility",
+          "label": "Visibility",
+          "kind": "select",
+          "required": true,
+          "admin": {
+            "position": "sidebar"
+          },
+          "options": [
+            "public",
+            "private",
+            "protected"
+          ],
+          "optionLabels": {
+            "public": "Public",
+            "private": "Private",
+            "protected": "Protected"
+          }
+        },
+        {
+          "name": "stream",
+          "storageName": "streamId",
+          "label": "Stream",
+          "kind": "relation",
+          "required": true,
+          "admin": {
+            "hidden": true
+          },
+          "relationTo": "streams"
         }
       ],
       "timestamps": true,
@@ -446,6 +477,275 @@ export const bebopAdminManifest = {
       ],
       "listSearchableFields": [
         "name",
+        "content"
+      ],
+      "writeMode": "direct"
+    },
+    "channels": {
+      "slug": "channels",
+      "labels": {
+        "singular": "Channel",
+        "plural": "Channels"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "storageName": "name",
+          "label": "Name",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "workspace",
+          "storageName": "workspaceId",
+          "label": "Workspace",
+          "kind": "relation",
+          "required": true,
+          "admin": {
+            "position": "sidebar"
+          },
+          "relationTo": "workspaces"
+        },
+        {
+          "name": "content",
+          "storageName": "content",
+          "label": "Content",
+          "kind": "text",
+          "required": false,
+          "admin": {
+            "input": "textarea"
+          }
+        },
+        {
+          "name": "author",
+          "storageName": "authorId",
+          "label": "Author",
+          "kind": "relation",
+          "required": true,
+          "admin": {
+            "position": "sidebar"
+          },
+          "relationTo": "users"
+        },
+        {
+          "name": "visibility",
+          "storageName": "visibility",
+          "label": "Visibility",
+          "kind": "select",
+          "required": true,
+          "options": [
+            "public",
+            "private"
+          ]
+        },
+        {
+          "name": "stream",
+          "storageName": "streamId",
+          "label": "Stream",
+          "kind": "relation",
+          "required": true,
+          "admin": {
+            "hidden": true
+          },
+          "relationTo": "streams"
+        }
+      ],
+      "timestamps": true,
+      "useAsTitle": "name",
+      "defaultColumns": [
+        "name",
+        "workspace",
+        "visibility",
+        "stream"
+      ],
+      "listSearchableFields": [
+        "name"
+      ],
+      "writeMode": "direct"
+    },
+    "streams": {
+      "slug": "streams",
+      "labels": {
+        "singular": "Stream",
+        "plural": "Streams"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "storageName": "name",
+          "label": "Name",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "workspace",
+          "storageName": "workspaceId",
+          "label": "Workspace",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "workspaces"
+        },
+        {
+          "name": "author",
+          "storageName": "authorId",
+          "label": "Author",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "users"
+        },
+        {
+          "name": "members",
+          "label": "Members",
+          "kind": "join",
+          "required": false,
+          "collection": "streamMemberships",
+          "on": "stream"
+        },
+        {
+          "name": "entries",
+          "label": "Entries",
+          "kind": "join",
+          "required": false,
+          "collection": "entries",
+          "on": "stream"
+        },
+        {
+          "name": "channels",
+          "label": "Channels",
+          "kind": "join",
+          "required": false,
+          "collection": "channels",
+          "on": "stream"
+        },
+        {
+          "name": "tasks",
+          "label": "Tasks",
+          "kind": "join",
+          "required": false,
+          "collection": "tasks",
+          "on": "stream"
+        }
+      ],
+      "timestamps": true,
+      "useAsTitle": "name",
+      "defaultColumns": [
+        "name",
+        "workspace",
+        "author"
+      ],
+      "listSearchableFields": [
+        "name"
+      ],
+      "writeMode": "direct"
+    },
+    "streamMemberships": {
+      "slug": "streamMemberships",
+      "labels": {
+        "singular": "Stream Membership",
+        "plural": "Stream Memberships"
+      },
+      "fields": [
+        {
+          "name": "stream",
+          "storageName": "streamId",
+          "label": "Stream",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "streams"
+        },
+        {
+          "name": "user",
+          "storageName": "userId",
+          "label": "User",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "users"
+        },
+        {
+          "name": "role",
+          "storageName": "role",
+          "label": "Role",
+          "kind": "select",
+          "required": true,
+          "options": [
+            "admin",
+            "member"
+          ]
+        }
+      ],
+      "timestamps": true,
+      "useAsTitle": "user",
+      "defaultColumns": [
+        "user",
+        "stream",
+        "role"
+      ],
+      "listSearchableFields": [],
+      "writeMode": "direct"
+    },
+    "entries": {
+      "slug": "entries",
+      "labels": {
+        "singular": "Entry",
+        "plural": "Entries"
+      },
+      "fields": [
+        {
+          "name": "stream",
+          "storageName": "streamId",
+          "label": "Stream",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "streams"
+        },
+        {
+          "name": "type",
+          "storageName": "type",
+          "label": "Type",
+          "kind": "select",
+          "required": true,
+          "options": [
+            "message",
+            "comment",
+            "update",
+            "system"
+          ]
+        },
+        {
+          "name": "content",
+          "storageName": "content",
+          "label": "Content",
+          "kind": "text",
+          "required": true,
+          "admin": {
+            "input": "textarea"
+          }
+        },
+        {
+          "name": "author",
+          "storageName": "authorId",
+          "label": "Author",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "users"
+        },
+        {
+          "name": "parentEntry",
+          "storageName": "parentEntryId",
+          "label": "Parent Entry",
+          "kind": "relation",
+          "required": false,
+          "relationTo": "entries"
+        }
+      ],
+      "timestamps": true,
+      "useAsTitle": "content",
+      "defaultColumns": [
+        "type",
+        "stream",
+        "author"
+      ],
+      "listSearchableFields": [
         "content"
       ],
       "writeMode": "direct"

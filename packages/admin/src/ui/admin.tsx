@@ -131,6 +131,10 @@ export type BebopAdminProps = {
   authClient?: BebopAuthAdminClient;
   user?: BebopAdminUser;
   createDefaults?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /** Collections that create related records can provide their own client-side preflight. Jazz still validates the write. */
+  preflightCreate?: (collectionSlug: string, data: Record<string, unknown>) => PermissionAdvice | undefined | Promise<PermissionAdvice | undefined>;
+  /** Related-record updates can use the same server-authoritative preflight. */
+  preflightUpdate?: (collectionSlug: string, data: Record<string, unknown>) => PermissionAdvice | undefined | Promise<PermissionAdvice | undefined>;
   relationOptions?: Readonly<Record<string, readonly { id: string; name: string }[]>>;
   onLogout?: () => void | Promise<void>;
 };
@@ -391,7 +395,7 @@ function RelatedCollectionLabels({ app, client, collection, ids, relationOptions
   return null;
 }
 
-export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUsers = false, authClient, user, createDefaults, relationOptions, onLogout }: BebopAdminProps) {
+export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUsers = false, authClient, user, createDefaults, preflightCreate, preflightUpdate, relationOptions, onLogout }: BebopAdminProps) {
   const [mutationError, setMutationError] = useState<string>();
 
   useEffect(() => {
@@ -409,8 +413,8 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUse
       children: [
         { index: true, element: <DashboardPage manifest={manifest} canManageUsers={canManageUsers} /> },
         { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
         { path: "*", element: <NotFoundPage /> },
       ],
     },
@@ -478,7 +482,7 @@ function AdminLayout({
               <NavLink
                 key={collection.slug}
                 to={`/admin/collections/${collection.slug}`}
-                className={({ isActive }) => `flex min-h-7 items-center text-[14px] leading-5 no-underline transition-colors hover:text-foreground ${isActive ? "font-normal text-foreground" : "font-light text-sidebar-foreground"}`}
+                className={({ isActive }) => `relative flex min-h-7 items-center text-[13px] leading-5 no-underline transition-colors hover:text-foreground ${isActive ? "font-semibold text-foreground before:absolute before:-left-5 before:top-1/2 before:h-3 before:w-0.5 before:-translate-y-1/2 before:bg-foreground before:content-['']" : "font-normal text-sidebar-foreground/85"}`}
                 onClick={() => setMobileOpen(false)}
               >
                 <span className="truncate">{collection.labels.plural}</span>
@@ -506,7 +510,7 @@ function AdminLayout({
             <Menu size={18} />
           </Button>
           {sidebarCollapsed && <Button variant="outline" size="icon" className="mr-3 max-md:hidden" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}><ChevronRight size={18} /></Button>}
-          <div className="flex items-center gap-3 text-sm font-medium">
+          <div className="flex items-center gap-3 text-[13px] font-normal">
             <Link to="/admin" className="flex size-8 items-center justify-center rounded-none bg-foreground text-base font-bold lowercase text-background no-underline" aria-label="Bebop dashboard">b</Link>
             <span className="text-muted-foreground">/</span>
             {currentCollection ? <Link to={`/admin/collections/${currentCollection.slug}`} className="hover:underline">{currentCollection.labels.plural}</Link> : <span>Dashboard</span>}
@@ -606,9 +610,9 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
-  const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>(() => ({ field: collection.defaultColumns[0] ?? "name", direction: "asc" }));
+  const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>(() => ({ field: collection.defaultColumns.find((column) => column !== "id") ?? "name", direction: "asc" }));
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => [...(collection.defaultColumns.length ? collection.defaultColumns : ["name", "email", "role", "createdAt"])]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => (collection.defaultColumns.length ? [...collection.defaultColumns] : ["name", "email", "role", "createdAt"]).filter((column) => column !== "id"));
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
   const [pendingUserDelete, setPendingUserDelete] = useState<readonly (Record<string, unknown> & { id: string })[]>();
   const [deleteError, setDeleteError] = useState<string>();
@@ -621,7 +625,7 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
   const selectAllCheckbox = useRef<HTMLInputElement>(null);
   const searchableField = collection.listSearchableFields.includes("name") ? "name" : "email";
   const columns = visibleColumns.length ? visibleColumns : ["name"];
-  const availableColumns = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && (!field.generated || ["createdAt", "updatedAt"].includes(field.name))).map((field) => field.name);
+  const availableColumns = collection.fields.filter((field): field is BebopAdminStoredField => field.name !== "id" && field.kind !== "join" && (!field.generated || ["createdAt", "updatedAt"].includes(field.name))).map((field) => field.name);
   const filterFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind === "boolean" || field.kind === "select");
   const activeFilterField = Object.keys(filters).find((field) => Boolean(filters[field]));
   const activeFilterValue = activeFilterField ? filters[activeFilterField] : undefined;
@@ -728,20 +732,18 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
     <section>
       <div className="mb-4 flex flex-wrap items-center justify-start gap-3">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          {selectedUsers.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected users">
-            <span>{selectedUsers.length} selected</span>
-            <span aria-hidden="true">—</span>
-            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={toggleAllPageUsers}>{allPageUsersSelected ? "Clear selection" : `Select all (${users.length})`}</button>
-            <span aria-hidden="true">—</span>
-            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedUsers.length !== 1} onClick={() => {
-              const selectedUser = selectedUsers[0];
-              if (selectedUser) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(selectedUser.id)}`);
-            }}>Edit</button>
-            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setPendingUserDelete(selectedUsers); }}>Delete</button>
-          </div>}
-          <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
-        </div>
+        <Button variant="secondary" size="xs" className="text-[13px] font-normal normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        {selectedUsers.length > 0 && <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected users">
+          <span>{selectedUsers.length} selected</span>
+          <span aria-hidden="true">—</span>
+          <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={toggleAllPageUsers}>{allPageUsersSelected ? "Clear selection" : `Select all (${users.length})`}</button>
+          <span aria-hidden="true">—</span>
+          <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedUsers.length !== 1} onClick={() => {
+            const selectedUser = selectedUsers[0];
+            if (selectedUser) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(selectedUser.id)}`);
+          }}>Edit</button>
+          <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setPendingUserDelete(selectedUsers); }}>Delete</button>
+        </div>}
       </div>
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2 max-md:items-stretch max-md:[&>div:first-child]:basis-full max-md:[&>div:last-child]:ml-auto">
         {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
@@ -919,7 +921,7 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<{ name: string; email: string }>();
+  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<{ name: string; email: string; role: string; emailVerified: boolean }>();
 
   useEffect(() => {
     if (!canManageUsers || !authClient) return;
@@ -946,7 +948,12 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
 
   useEffect(() => {
     if (!user) return;
-    reset({ name: String(user.name ?? ""), email: String(user.email ?? "") });
+    reset({
+      name: String(user.name ?? ""),
+      email: String(user.email ?? ""),
+      role: String(user.role ?? "user"),
+      emailVerified: user.emailVerified === true,
+    });
   }, [reset, user]);
 
   const title = user?.name ? String(user.name) : user?.email ? String(user.email) : id;
@@ -962,16 +969,19 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
     return <section><PageTitle title={collection.labels.singular} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
   }
 
-  const onSubmit = handleSubmit(async ({ name, email }) => {
+  const onSubmit = handleSubmit(async ({ name, email, role, emailVerified }) => {
     if (!user) return;
     setSaveError(undefined);
     const data: Record<string, unknown> = {};
     const normalizedName = name.trim();
     const normalizedEmail = email.trim();
+    const normalizedRole = role.trim();
     if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
     if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
+    if (normalizedRole !== String(user.role ?? "user")) data.role = normalizedRole;
+    if (emailVerified !== (user.emailVerified === true)) data.emailVerified = emailVerified;
     if (!Object.keys(data).length) {
-      reset({ name: String(user.name ?? ""), email: String(user.email ?? "") });
+      reset({ name: String(user.name ?? ""), email: String(user.email ?? ""), role: String(user.role ?? "user"), emailVerified: user.emailVerified === true });
       return;
     }
     try {
@@ -1042,15 +1052,35 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
             </EditorField>
           </div>
           <aside className="min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l lg:pl-8" aria-label="Additional user information">
-            <div className="flex flex-col gap-2">
-              <span className="text-[13px] text-muted-foreground">Role</span>
-              <span className="text-[13px]">{formatCell(userFields.get("role"), user.role)}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-[13px] text-muted-foreground">Email verified</span>
-              <span className="text-[13px]">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</span>
-            </div>
-            <div className="flex flex-col gap-1 border-t border-border pt-5 text-xs text-muted-foreground"><span>Document ID</span><code className="break-all text-foreground">{user.id}</code></div>
+            <EditorField>
+              <Label htmlFor="bebop-user-role" className="text-[13px] font-normal normal-case tracking-normal">Role</Label>
+              <Controller
+                control={control}
+                name="role"
+                rules={{ required: "Select a role." }}
+                render={({ field: input }) => {
+                  const roleField = userFields.get("role");
+                  const options = roleField?.kind === "select" ? roleField.options ?? ["user", "admin"] : ["user", "admin"];
+                  const roleLabel = (value: string) => {
+                    const label = roleField?.kind === "select" ? selectLabel(roleField, value) : formatLabel(value);
+                    return label.charAt(0).toLocaleUpperCase() + label.slice(1);
+                  };
+                  return <Select value={input.value} onValueChange={input.onChange}>
+                    <SelectTrigger id="bebop-user-role" ref={input.ref} onBlur={input.onBlur} className="w-full">
+                      <SelectValue>{(value: string | null) => value ? roleLabel(value) : "Select role"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{roleLabel(option)}</SelectItem>)}</SelectContent>
+                  </Select>;
+                }}
+              />
+              {errors.role?.message && <p className="text-xs text-destructive">{errors.role.message}</p>}
+            </EditorField>
+            <EditorField>
+              <label htmlFor="bebop-user-email-verified" className="flex min-h-10 cursor-pointer items-center gap-2 text-[13px]">
+                <input id="bebop-user-email-verified" type="checkbox" className="size-4 accent-primary" {...register("emailVerified")} />
+                <span>Email verified</span>
+              </label>
+            </EditorField>
           </aside>
         </fieldset>
       </form>
@@ -1232,20 +1262,18 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
       ))}
       <div className="mb-4 flex flex-wrap items-center justify-start gap-3">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          {!selectMode && selectedRows.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected documents">
-            <span>{selectedRows.length} selected</span>
-            <span aria-hidden="true">—</span>
-            {selectablePageRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={togglePageSelection}>{allPageSelected ? "Clear selection" : `Select all (${selectablePageRows.length})`}</button>}
-            <span aria-hidden="true">—</span>
-            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedRows.length !== 1 || selectedRows[0] === undefined || rowPermissions[selectedRows[0].id]?.update === "denied"} onClick={() => {
-              const row = selectedRows[0];
-              if (row) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(row.id)}`);
-            }}>Edit</button>
-            {selectedDeletableRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedDeletableRows); }}>Delete</button>}
-          </div>}
-          <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
-        </div>
+        <Button variant="secondary" size="xs" className="text-[13px] font-normal normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        {!selectMode && selectedRows.length > 0 && <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected documents">
+          <span>{selectedRows.length} selected</span>
+          <span aria-hidden="true">—</span>
+          {selectablePageRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={togglePageSelection}>{allPageSelected ? "Clear selection" : `Select all (${selectablePageRows.length})`}</button>}
+          <span aria-hidden="true">—</span>
+          <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedRows.length !== 1 || selectedRows[0] === undefined || rowPermissions[selectedRows[0].id]?.update === "denied"} onClick={() => {
+            const row = selectedRows[0];
+            if (row) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(row.id)}`);
+          }}>Edit</button>
+          {selectedDeletableRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedDeletableRows); }}>Delete</button>}
+        </div>}
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2 max-md:items-stretch max-md:[&>div:first-child]:basis-full max-md:[&>div:last-child]:ml-auto">
@@ -1314,7 +1342,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
           <div className="py-16 text-center">
             <h2 className="text-sm font-medium">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied read access for the available documents." : `Create your first ${collection.labels.singular.toLocaleLowerCase()} to get started.`}</p>
-            {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
+            {!rows.length && <Button variant="secondary" className="mt-4 font-normal normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
           <div className="min-w-0 w-full [&_[data-slot=table-container]]:min-w-0 [&_[data-slot=table]]:text-[13px]">
@@ -1478,7 +1506,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   );
 }
 
-function EditorRoute({ app, client, manifest, createDefaults, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "relationOptions" | "authClient" | "canManageUsers">) {
+function EditorRoute({ app, client, manifest, createDefaults, preflightCreate, preflightUpdate, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "preflightCreate" | "preflightUpdate" | "relationOptions" | "authClient" | "canManageUsers">) {
   const { collectionSlug = "", id } = useParams();
   const [searchParams] = useSearchParams();
   const collection = manifest.collections[collectionSlug];
@@ -1489,7 +1517,7 @@ function EditorRoute({ app, client, manifest, createDefaults, relationOptions, a
       : <AuthUserCreate collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
   }
   const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
-  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} joinContext={joinContext} relationOptions={relationOptions} />;
+  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} joinContext={joinContext} relationOptions={relationOptions} />;
 }
 
 type JoinNavigationContext = {
@@ -1530,7 +1558,7 @@ type EditorModalOptions = {
   onComplete: (id: string) => void;
 };
 
-function DocumentEditor({ app, client, manifest, collection, id, createDefaults, joinContext, relationOptions, modal }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"]; modal?: EditorModalOptions }) {
+function DocumentEditor({ app, client, manifest, collection, id, createDefaults, preflightCreate, preflightUpdate, joinContext, relationOptions, modal }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; preflightCreate?: BebopAdminProps["preflightCreate"]; preflightUpdate?: BebopAdminProps["preflightUpdate"]; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"]; modal?: EditorModalOptions }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
@@ -1584,8 +1612,8 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   );
   const title = titleValue ?? (id ? `Untitled ${collection.labels.singular.toLocaleLowerCase()}` : `New ${collection.labels.singular}`);
   const parentLabel = (existing ? recordTitle(collection, existing, resolvedTitleRelationOptions) : undefined) ?? id ?? "";
-  const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position !== "sidebar");
-  const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position === "sidebar");
+  const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && !field.admin?.hidden && field.admin?.position !== "sidebar");
+  const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && !field.admin?.hidden && field.admin?.position === "sidebar");
   const joinFields = collection.fields.filter((field): field is BebopAdminJoinField => field.kind === "join");
 
   useEffect(() => { if (!modal) setDocumentBreadcrumb(id ? title : undefined); }, [id, modal, setDocumentBreadcrumb, title]);
@@ -1639,16 +1667,21 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
       return;
     }
     setPermissionAdvice("unknown");
-    const check = id
-      ? db.canUpdate(table, id, serializedValues)
-      : db.canInsert(table, serializedValues);
+    const check = (async () => {
+      if (id) {
+        const preflight = await preflightUpdate?.(collection.slug, serializedValues);
+        return preflight ?? db.canUpdate(table, id, serializedValues);
+      }
+      const preflight = await preflightCreate?.(collection.slug, serializedValues);
+      return preflight ?? db.canInsert(table, serializedValues);
+    })();
     void check.then((advice) => {
       if (active) setPermissionAdvice(advice);
     }).catch(() => {
       if (active) setPermissionAdvice("unknown");
     });
     return () => { active = false; };
-  }, [collection.upload, collection.writeMode, db, existing, id, serializedValuesKey, table]);
+  }, [collection.slug, collection.upload, collection.writeMode, db, existing, id, preflightCreate, preflightUpdate, serializedValuesKey, table]);
 
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
@@ -1665,9 +1698,12 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         if (validation) throw new Error(validation);
       }
       if (!table) throw new Error("The generated Bebop app is missing this collection.");
+      const preflight = !collection.upload && collection.writeMode !== "command"
+        ? await (id ? preflightUpdate?.(collection.slug, document) : preflightCreate?.(collection.slug, document))
+        : undefined;
       const advice = collection.upload || collection.writeMode === "command" ? "unknown" : id
-        ? await db.canUpdate(table, id, document)
-        : await db.canInsert(table, document);
+        ? preflight ?? await db.canUpdate(table, id, document)
+        : preflight ?? await db.canInsert(table, document);
       setPermissionAdvice(advice);
       if (advice === "denied") throw new Error("Your current session cannot save this document.");
       const operations = getMutations(client, collection.slug);

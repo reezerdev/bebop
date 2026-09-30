@@ -526,7 +526,8 @@ export const bebopAdminManifest = {
           "kind": "relation",
           "required": true,
           "admin": {
-            "hidden": true
+            "position": "sidebar",
+            "readOnly": true
           },
           "relationTo": "streams"
         }
@@ -536,6 +537,7 @@ export const bebopAdminManifest = {
       "defaultColumns": [
         "name",
         "workspace",
+        "stream",
         "status",
         "assignee",
         "dueAt"
@@ -610,7 +612,8 @@ export const bebopAdminManifest = {
           "kind": "relation",
           "required": true,
           "admin": {
-            "hidden": true
+            "position": "sidebar",
+            "readOnly": true
           },
           "relationTo": "streams"
         }

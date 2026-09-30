@@ -15,11 +15,23 @@ type ServerTable = TableProxy<ServerDocument, Record<string, unknown>> & {
 type ServerApp = Record<string, object>;
 
 export type BebopCommandSession = {
-  /** Request-scoped Jazz Db using the generated command authorization policies. */
+  /** Request-scoped Jazz Db used to read the current document for authorization. */
   authorizationDb: Db;
   /** Trusted server Db with backend write authority and attribution to this user. */
   writeDb: Db;
   userId: string;
+};
+
+export type BebopCommandAuthorizationContext = {
+  request: Request;
+  collection: string;
+  operation: "create" | "update" | "delete";
+  userId: string;
+  /** The proposed write, including any beforeChange changes on the second check. */
+  data?: Readonly<Record<string, unknown>>;
+  originalDoc?: Readonly<ServerDocument>;
+  /** Reads run as the verified user; this Db does not grant command writes. */
+  db: Db;
 };
 
 export type BebopCommandHandlerOptions<TConfig extends BebopConfig> = {
@@ -27,6 +39,8 @@ export type BebopCommandHandlerOptions<TConfig extends BebopConfig> = {
   config: TConfig;
   /** Resolve the host session and reject missing or invalid authentication/CSRF. */
   resolveSession: (request: Request) => Promise<BebopCommandSession | null>;
+  /** Trusted server authorization for command writes. Called before and after beforeChange. */
+  authorize: (context: BebopCommandAuthorizationContext) => boolean | Promise<boolean>;
   onError?: (error: unknown, context: { request: Request; collection?: string; operation?: string }) => void;
 };
 
@@ -85,6 +99,8 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
   return async function handleBebopRequest(request: Request): Promise<Response> {
     const route = parseRoute(request);
     if (!route) return json({ message: "Unsupported Bebop command route." }, 404);
+    const routeCollection = route.collection;
+    const routeOperation = route.operation;
     const definition = options.config.collections.find((candidate) => candidate.slug === route.collection);
     if (!definition || definition.writeMode !== "command") return json({ message: "Command collection not found." }, 404);
     const table = options.app[route.collection] as ServerTable | undefined;
@@ -100,13 +116,10 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
     if (!session?.authorizationDb || !session.writeDb || !session.userId) {
       return json({ message: "Sign in before changing this document." }, 401);
     }
+    const actor = session;
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
-    const authDb = session.authorizationDb as Db & {
-      canInsert(table: unknown, data: Record<string, unknown>): Promise<string>;
-      canUpdate(table: unknown, id: string, data: Record<string, unknown>): Promise<string>;
-      canDelete(table: unknown, id: string): Promise<string>;
-    };
+    const authDb = session.authorizationDb;
     const writeDb = session.writeDb;
     let currentDoc: ServerDocument | null = null;
     if (route.id) {
@@ -119,15 +132,27 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
     }
 
     if (route.operation !== "create" && !currentDoc) return json({ message: "Document not found or unavailable." }, 404);
-    if (route.operation === "delete") {
-      let permission: string;
+    async function checkAuthorization(data?: Record<string, unknown>): Promise<"allowed" | "denied" | "error"> {
       try {
-        permission = await authDb.canDelete(table, route.id!);
+        return await options.authorize({
+          request,
+          collection: routeCollection,
+          operation: routeOperation,
+          userId: actor.userId,
+          ...(data ? { data: Object.freeze({ ...data }) } : {}),
+          ...(currentDoc ? { originalDoc: currentDoc } : {}),
+          db: authDb,
+        }) === true ? "allowed" : "denied";
       } catch (error) {
-        options.onError?.(error, { request, collection: route.collection, operation: route.operation });
-        return json({ message: "Jazz could not check delete access for this document." }, 500);
+        options.onError?.(error, { request, collection: routeCollection, operation: routeOperation });
+        return "error";
       }
-      if (permission !== "allowed") return json({ message: "Your current session cannot delete this document." }, 403);
+    }
+
+    if (route.operation === "delete") {
+      const permission = await checkAuthorization();
+      if (permission === "error") return json({ message: "Could not authorize this delete." }, 500);
+      if (permission === "denied") return json({ message: "Your current session cannot delete this document." }, 403);
       try {
         await hooks?.beforeDelete?.({ id: route.id!, doc: currentDoc as CollectionDocument<Fields> });
       } catch (error) {
@@ -169,19 +194,17 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
     };
     try {
       await validateCollectionData(definition, input, route.operation, currentDoc ?? undefined);
-      const requestedPermission = route.operation === "create"
-        ? await authDb.canInsert(table, input)
-        : await authDb.canUpdate(table, route.id!, input);
-      if (requestedPermission !== "allowed") return json({ message: "Your current session cannot save this document." }, 403);
+      const requestedPermission = await checkAuthorization(input);
+      if (requestedPermission === "error") return json({ message: "Could not authorize this document." }, 500);
+      if (requestedPermission === "denied") return json({ message: "Your current session cannot save this document." }, 403);
 
       const hookPatch = await hooks?.beforeChange?.(changeContext);
       const data = { ...changeContext.data, ...hookPatch };
       validateWriteFields(definition, data);
       await validateCollectionData(definition, data, route.operation, currentDoc ?? undefined);
-      const finalPermission = route.operation === "create"
-        ? await authDb.canInsert(table, data)
-        : await authDb.canUpdate(table, route.id!, data);
-      if (finalPermission !== "allowed") return json({ message: "Your current session cannot save this document." }, 403);
+      const finalPermission = await checkAuthorization(data);
+      if (finalPermission === "error") return json({ message: "Could not authorize this document." }, 500);
+      if (finalPermission === "denied") return json({ message: "Your current session cannot save this document." }, 403);
 
       if (route.operation === "create") {
         const write = writeDb.insert(table, data);

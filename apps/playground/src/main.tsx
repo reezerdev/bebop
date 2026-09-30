@@ -8,6 +8,12 @@ import "@bebopdev/admin/styles.css";
 import "./index.css";
 
 function AuthPanel() {
+  const [leftWritesLocal, setLeftWritesLocal] = React.useState(() => sessionStorage.getItem("bebop-logout-pending-writes") === "true");
+  React.useEffect(() => {
+    const refresh = () => setLeftWritesLocal(sessionStorage.getItem("bebop-logout-pending-writes") === "true");
+    window.addEventListener("bebop-logout-complete", refresh);
+    return () => window.removeEventListener("bebop-logout-complete", refresh);
+  }, []);
   const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
   const [bootstrapAvailable, setBootstrapAvailable] = React.useState<boolean | null>(null);
   const [bootstrapError, setBootstrapError] = React.useState("");
@@ -56,6 +62,7 @@ function AuthPanel() {
     <main className="auth-shell">
       <a className="wordmark" href="#top" aria-label="Bebop home">bebop<span>♪</span></a>
       <section className="auth-card">
+        {leftWritesLocal && <p className="auth-copy" role="status">Signed out. Jazz could not confirm that every local change synced. Your local data was kept in this browser; sign in with the same account to retry.</p>}
         {bootstrapAvailable === null ? (
           <>
             <p className="eyebrow">BEBOP SETUP</p>

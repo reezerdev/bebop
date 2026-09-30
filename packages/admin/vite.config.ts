@@ -12,6 +12,9 @@ export default defineConfig({
     alias: { "@": path.resolve(packageDirectory, "src") },
   },
   build: {
+    // The dev watcher shares dist with emitted declarations. Keep those files
+    // when Vite rebuilds JS/CSS after the initial package build.
+    emptyOutDir: false,
     lib: {
       entry: path.resolve(packageDirectory, "src/index.tsx"),
       formats: ["es"],

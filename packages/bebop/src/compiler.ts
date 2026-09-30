@@ -218,11 +218,16 @@ function compileAccessCallbackRule(
   accessOperation: string,
   jazzOperation: string,
   indent: string,
+  includeAdminRead = false,
 ): string {
+  const compiledRule = includeAdminRead
+    ? `${indent}  return anyOf([session.where({ "claims.role": "admin" }), configuredRule]) as never;`
+    : `${indent}  return configuredRule;`;
   return [
     `${indent}policy.${collectionName}.allow${jazzOperation}.where((row) => {`,
     `${indent}  const result = ${collectionName}Access.${accessOperation}!({ row, session, allOf, anyOf, exists, isCreator });`,
-    `${indent}  return typeof result === "boolean" ? (result ? allOf([]) : anyOf([])) : result as never;`,
+    `${indent}  const configuredRule = typeof result === "boolean" ? (result ? allOf([]) : anyOf([])) : result as never;`,
+    compiledRule,
     `${indent}});`,
   ].join("\n");
 }
@@ -241,12 +246,14 @@ function compileCollectionPermissionCallback(
     `  const ${permissionsName} = bebopConfig.collections[${collectionIndex}].permissions;`,
     `  if (${callbackName}) {`,
     `    ${callbackName}({`,
-    `      rule: bebopRule(${jazzRule}),`,
+    `      rule: bebopRule(${jazzRule}, ${operation === "read"}),`,
     `      collections: bebopCollections,`,
     `      session, allOf, anyOf, allowedTo, isCreator,`,
     `    });`,
     `  } else {`,
-    `    ${jazzRule}.never();`,
+    operation === "read"
+      ? `    ${jazzRule}.where(session.where({ "claims.role": "admin" }));`
+      : `    ${jazzRule}.never();`,
     `  }`,
   ].join("\n");
 }
@@ -262,10 +269,17 @@ function compileCollectionPermissionHelpers(model: NormalizedConfig): string {
     `    ${JSON.stringify(name)}: { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.${policyName}.exists.where(input as never) } }`,
   ).join(",\n");
   return `\n  const bebopCollections = {\n${collections}\n  };\n` +
-    `  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }) => ({\n` +
-    `    where: (input: unknown) => builder.where(input as never),\n` +
+    `  const adminRead = session.where({ "claims.role": "admin" });\n` +
+    `  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }, includeAdminRead = false) => ({\n` +
+    `    where: (input: unknown) => {\n` +
+    `      if (!includeAdminRead) return builder.where(input as never);\n` +
+    `      const adminAwareRule = typeof input === "function"\n` +
+    `        ? (row: never) => anyOf([adminRead, (input as (row: never) => never)(row)])\n` +
+    `        : anyOf([adminRead, input as never]);\n` +
+    `      return builder.where(adminAwareRule as never);\n` +
+    `    },\n` +
     `    always: () => builder.always(),\n` +
-    `    never: () => builder.never(),\n` +
+    `    never: () => includeAdminRead ? builder.where(adminRead as never) : builder.never(),\n` +
     `    whereOld(input: unknown) { builder.whereOld?.(input as never); return this; },\n` +
     `    whereNew(input: unknown) { builder.whereNew?.(input as never); return this; },\n` +
     `  });\n`;
@@ -335,7 +349,7 @@ function compilePermissionsFromModel(
         const reads = access === "public"
           ? [`  policy.${collectionName}.allowRead.always();`]
           : access && access !== "authenticated" && access.read
-              ? [compileAccessCallbackRule(collectionName, "read", "Read", "  ")]
+              ? [compileAccessCallbackRule(collectionName, "read", "Read", "  ", true)]
               : [`  policy.${collectionName}.allowRead.where(authenticatedSession);`];
         return [
           ...accessBinding,
@@ -360,7 +374,7 @@ function compilePermissionsFromModel(
         if (access[accessOperation]) {
           rules.push(
             `  if (${collectionName}Access?.${accessOperation}) {\n` +
-              `${compileAccessCallbackRule(collectionName, accessOperation, jazzOperation, "    ")}\n` +
+              `${compileAccessCallbackRule(collectionName, accessOperation, jazzOperation, "    ", accessOperation === "read")}\n` +
               `  }`,
           );
         } else {
@@ -414,7 +428,12 @@ export function compilePermissions(config: BebopConfig, configModuleSpecifier = 
 }
 
 export function compileCommandPermissions(config: BebopConfig, configModuleSpecifier = "./bebop.config.js"): string {
-  return compilePermissionsFromModel(normalizeConfig(config), configModuleSpecifier);
+  return compileCommandPermissionsFromModel(normalizeConfig(config), configModuleSpecifier);
+}
+
+function compileCommandPermissionsFromModel(model: NormalizedConfig, configModuleSpecifier: string): string {
+  return "// Reference only. Do not deploy this policy or use it to authorize backend commands; use createBebopHandler.authorize.\n" +
+    compilePermissionsFromModel(model, configModuleSpecifier);
 }
 
 export function compileArtifacts(config: BebopConfig, configModuleSpecifier = "./bebop.config.js") {
@@ -423,7 +442,7 @@ export function compileArtifacts(config: BebopConfig, configModuleSpecifier = ".
     schema: compileSchemaFromModel(model),
     adminManifest: compileAdminManifestFromModel(model),
     permissions: compilePermissionsFromModel(model, configModuleSpecifier, { blockCommandWrites: true }),
-    authorizationPermissions: compilePermissionsFromModel(model, configModuleSpecifier),
+    authorizationPermissions: compileCommandPermissionsFromModel(model, configModuleSpecifier),
     clientFactory: compileClientFactory(configModuleSpecifier),
     ...(model.auth ? { authGenerateConfig: compileBetterAuthGenerateConfig(configModuleSpecifier) } : {}),
   };

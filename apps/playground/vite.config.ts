@@ -42,9 +42,15 @@ async function sendWebResponse(response: Response, target: ServerResponse): Prom
 }
 
 function betterAuthPlugin(): Plugin {
+  const authRuntimeFiles = new Set([
+    path.join(projectDirectory, "auth.ts"),
+    path.resolve(projectDirectory, "../../packages/bebop/dist/server.js"),
+  ]);
+  let restartPending = false;
   return {
     name: "bebop-better-auth",
     configureServer(server) {
+      server.watcher.add([...authRuntimeFiles]);
       type AuthServer = Awaited<ReturnType<typeof import("./auth.ts").createAuthServer>>;
       let authServerPromise: Promise<AuthServer> | undefined;
 
@@ -60,13 +66,13 @@ function betterAuthPlugin(): Plugin {
           return;
         }
 
-        authServerPromise ??= import("./auth.ts").then(({ createAuthServer }) =>
-          createAuthServer({
+        authServerPromise ??= server.ssrLoadModule("/auth.ts").then((module) => (module as typeof import("./auth.ts")).createAuthServer(
+          {
             appId: server.config.env?.VITE_JAZZ_APP_ID,
             serverUrl: server.config.env?.VITE_JAZZ_SERVER_URL,
             backendSecret: process.env.BACKEND_SECRET,
-          }),
-        );
+          },
+        ));
 
         void authServerPromise
           .then(async ({ handler, listUsers, adminSetupStatus, adminAccessHandler, commandHandler }) => {
@@ -91,6 +97,16 @@ function betterAuthPlugin(): Plugin {
           console.error("[bebop auth] Could not close the Jazz backend session:", error);
         });
       });
+    },
+    handleHotUpdate(context) {
+      if (!authRuntimeFiles.has(path.resolve(context.file)) || restartPending) return;
+      restartPending = true;
+      // The auth handler is a long-lived server instance. HMR alone leaves its
+      // authorization callback unchanged, so restart the server on backend edits.
+      queueMicrotask(() => {
+        void context.server.restart().finally(() => { restartPending = false; });
+      });
+      return [];
     },
   };
 }

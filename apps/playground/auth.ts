@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
 import { createBebopAdminAccessHandler, createBebopBetterAuth, createBebopHandler } from "@bebopdev/core/server";
 import { app } from "./bebop-generated-schema.js";
-import commandPermissions from "./bebop-generated-command-permissions.js";
+import permissions from "./permissions.js";
 import bebopConfig from "./bebop.config.ts";
 import { getBetterAuthURL } from "./auth-config.ts";
 
@@ -25,9 +25,7 @@ export async function createAuthServer(config: AuthServerConfig) {
 
   const jazzSession = await createJazzSession({
     app,
-    // Keep command grants in this server-only session. The browser receives
-    // permissions.ts, which denies direct writes to command collections.
-    permissions: commandPermissions,
+    permissions,
     appId: config.appId,
     driver: { type: "memory" },
     serverUrl: config.serverUrl,
@@ -65,6 +63,9 @@ export async function createAuthServer(config: AuthServerConfig) {
   const commandHandler = createBebopHandler({
     app,
     config: bebopConfig,
+    // The command endpoint has already verified Better Auth and Jazz identity.
+    // This demo grants authenticated members the configured membership writes.
+    authorize: ({ collection, userId }) => collection === "workspaceMemberships" && Boolean(userId),
     async resolveSession(request) {
       const origin = request.headers.get("origin");
       if (!origin || origin !== new URL(request.url).origin) return null;

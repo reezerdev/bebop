@@ -225,6 +225,38 @@ test("permission generation compiles configured Jazz rules and defaults omitted 
   assert.equal(permissions, compilePermissions(config, "./config.js"));
 });
 
+test("admin role bypasses configured and omitted collection read rules only", () => {
+  const config = defineConfig({ collections: [
+    {
+      slug: "tasks",
+      fields: [{ name: "workspaceId", type: "text" }],
+      permissions: {
+        read: ({ rule }) => rule.where((task) => ({ workspaceId: task.workspaceId })),
+        insert: ({ rule }) => rule.where({ workspaceId: "workspace-1" }),
+      },
+    },
+    {
+      slug: "privateNotes",
+      fields: [{ name: "body", type: "text" }],
+      permissions: { insert: ({ rule }) => rule.always() },
+    },
+    {
+      slug: "legacyRecords",
+      fields: [{ name: "ownerId", type: "text" }],
+      access: { read: ({ session }) => ({ ownerId: session.user.account }) },
+    },
+  ] });
+
+  const permissions = compilePermissions(config);
+  assert.match(permissions, /const adminRead = session\.where\(\{ "claims\.role": "admin" \}\)/);
+  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowRead, true\)/);
+  assert.match(permissions, /const adminAwareRule = typeof input === "function"/);
+  assert.match(permissions, /policy\.privateNotes\.allowRead\.where\(session\.where\(\{ "claims\.role": "admin" \}\)\)/);
+  assert.match(permissions, /return anyOf\(\[session\.where\(\{ "claims\.role": "admin" \}\), configuredRule\]\)/);
+  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowInsert, false\)/);
+  assert.match(permissions, /legacyRecordsAccess\.read!\(\{ row, session, allOf, anyOf, exists, isCreator \}\)/);
+});
+
 test("boolean access callbacks compile to Jazz allow and deny expressions", () => {
   const permissions = compilePermissions(defineConfig({ collections: [{
     slug: "posts",
@@ -294,7 +326,7 @@ test("permission helpers include those needed by auth and uploads together", () 
   assert.match(permissions, /policy\.bebop_files_media\.allowDelete\.where\(anyOf/);
 });
 
-test("command collections deny browser writes and retain a separate request authorization policy", () => {
+test("command collections deny deployed direct writes and retain a policy reference artifact", () => {
   const config = defineConfig({ collections: [{
     slug: "privateNotes",
     writeMode: "command",
@@ -303,6 +335,7 @@ test("command collections deny browser writes and retain a separate request auth
   }] });
   const artifacts = compileArtifacts(config);
   assert.match(artifacts.permissions, /policy\.privateNotes\.allowRead\.always\(\)/);
+  assert.match(artifacts.authorizationPermissions, /Reference only\. Do not deploy this policy/);
   for (const operation of ["Insert", "Update", "Delete"]) {
     assert.match(artifacts.permissions, new RegExp(`policy\\.privateNotes\\.allow${operation}\\.never\\(\\)`));
     assert.match(artifacts.authorizationPermissions, new RegExp(`policy\\.privateNotes\\.allow${operation}\\.always\\(\\)`));
@@ -311,7 +344,7 @@ test("command collections deny browser writes and retain a separate request auth
   assert.equal(artifacts.authorizationPermissions, compileArtifacts(config).authorizationPermissions);
 });
 
-test("command collections inherit authenticated access while browser writes stay blocked", () => {
+test("command collections keep authenticated reads while deployed direct writes stay blocked", () => {
   const artifacts = compileArtifacts(defineConfig({ collections: [{
     slug: "memberships",
     writeMode: "command",
@@ -333,8 +366,9 @@ test("command collection read callbacks can return booleans", () => {
     access: { read: () => false },
   }] }));
 
-  assert.match(artifacts.permissions, /return typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
-  assert.match(artifacts.authorizationPermissions, /return typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
+  assert.match(artifacts.permissions, /const configuredRule = typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
+  assert.match(artifacts.permissions, /return anyOf\(\[session\.where\(\{ "claims\.role": "admin" \}\), configuredRule\]\)/);
+  assert.match(artifacts.authorizationPermissions, /const configuredRule = typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
 });
 
 test("text and numeric validation constraints are checked in the shared client", async () => {
@@ -544,9 +578,7 @@ test("command handler checks access, runs hooks, and responds only after global 
   const fake = createFakeDb();
   const authDb = {
     one: async () => null,
-    canInsert: async () => "allowed",
-    canUpdate: async () => "allowed",
-    canDelete: async () => "allowed",
+    canInsert: async () => { throw new Error("The deployed Jazz policy denies direct writes."); },
   };
   const writeDb = {
     insert: (_table: unknown, data: Record<string, unknown>) => {
@@ -561,14 +593,42 @@ test("command handler checks access, runs hooks, and responds only after global 
   const handle = createBebopHandler({
     app: { tasks: fake.app.posts } as never,
     config,
+    authorize: ({ data }) => {
+      order.push(data?.title === "New task" ? "authorize-input" : "authorize-final");
+      return true;
+    },
     resolveSession: async () => ({ authorizationDb: authDb as never, writeDb: writeDb as never, userId: "user-1" }),
   });
   const response = await handle(new Request("https://example.test/api/bebop/collections/tasks", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New task" }),
   }));
   assert.equal(response.status, 200);
-  assert.deepEqual(order, ["before", "local", "global", "after"]);
+  assert.deepEqual(order, ["authorize-input", "before", "authorize-final", "local", "global", "after"]);
   assert.equal((await response.json() as { doc: { title: string } }).doc.title, "New task updated");
+
+  const denied = createBebopHandler({
+    app: { tasks: fake.app.posts } as never,
+    config,
+    authorize: () => false,
+    resolveSession: async () => ({ authorizationDb: authDb as never, writeDb: writeDb as never, userId: "user-1" }),
+  });
+  const deniedResponse = await denied(new Request("https://example.test/api/bebop/collections/tasks", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New task" }),
+  }));
+  assert.equal(deniedResponse.status, 403);
+  assert.deepEqual(order, ["authorize-input", "before", "authorize-final", "local", "global", "after"]);
+
+  const transformDenied = createBebopHandler({
+    app: { tasks: fake.app.posts } as never,
+    config,
+    authorize: ({ data }) => data?.title === "New task",
+    resolveSession: async () => ({ authorizationDb: authDb as never, writeDb: writeDb as never, userId: "user-1" }),
+  });
+  const transformDeniedResponse = await transformDenied(new Request("https://example.test/api/bebop/collections/tasks", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "New task" }),
+  }));
+  assert.equal(transformDeniedResponse.status, 403);
+  assert.deepEqual(order.slice(-1), ["before"]);
 });
 
 test("permission callbacks can build correlated exists rules against another collection", () => {

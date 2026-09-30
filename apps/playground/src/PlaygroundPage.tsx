@@ -85,6 +85,9 @@ export function PlaygroundPage({
       workspaceForm.reset({ name: "", slug: "" });
       if (currentUserId) {
         try {
+          // Memberships are confirmed by the server, which must see the new
+          // workspace before it can create a relationship to it.
+          await workspace.waitForGlobal();
           await client.workspaceMemberships.create({ workspaceId: workspace.doc.id, userId: currentUserId, role: "admin", status: "active" });
         } catch (error) {
           setMutationError(error instanceof Error ? `Workspace created, but membership creation failed: ${error.message}` : "Workspace created, but membership creation failed.");

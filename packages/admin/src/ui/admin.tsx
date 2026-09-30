@@ -79,6 +79,28 @@ export type BebopAdminUser = {
 
 export type BebopAuthAdminClient = {
   admin: {
+    getUser: (input: { query: { id: string } }) => Promise<{
+      data?: (Record<string, unknown> & { id: string }) | null;
+      error?: { message?: string } | null;
+    }>;
+    createUser: (input: {
+      email: string;
+      name: string;
+      password?: string;
+      role?: string | string[];
+      data?: Record<string, unknown>;
+    }) => Promise<{
+      data?: { user: Record<string, unknown> & { id: string } } | null;
+      error?: { message?: string } | null;
+    }>;
+    updateUser: (input: { userId: string; data: Record<string, unknown> }) => Promise<{
+      data?: (Record<string, unknown> & { id: string }) | null;
+      error?: { message?: string } | null;
+    }>;
+    removeUser: (input: { userId: string }) => Promise<{
+      data?: { success: boolean } | null;
+      error?: { message?: string } | null;
+    }>;
     listUsers: (input: { query: {
       limit: number;
       offset: number;
@@ -87,6 +109,9 @@ export type BebopAuthAdminClient = {
       searchValue?: string;
       searchField?: "name" | "email";
       searchOperator?: "contains";
+      filterField?: string;
+      filterValue?: string | number | boolean;
+      filterOperator?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains";
     } }) => Promise<{
       data?: { users: readonly (Record<string, unknown> & { id: string })[]; total: number } | null;
       error?: { message?: string } | null;
@@ -201,8 +226,13 @@ function useAdminRows(client: BebopAdminClient, collectionSlug: string, options:
   search?: string;
   searchFields?: readonly string[];
   enabled?: boolean;
+  writeMode?: BebopAdminCollection["writeMode"];
 }) {
   const operations = getMutations(client, collectionSlug);
+  // Command writes are confirmed by Core before the handler responds. Read the
+  // same remote scope so a newly confirmed row cannot be hidden by an older
+  // empty browser replica while its subscription catches up.
+  const readOptions = options.writeMode === "command" ? { tier: "remote" as const } : undefined;
   const offset = ((options.page ?? 1) - 1) * (options.pageSize ?? defaultPageSize);
   const searchPageQuery = options.enabled === false || !options.searchActive ? undefined : operations?.search({
     search: options.search ?? "",
@@ -212,7 +242,7 @@ function useAdminRows(client: BebopAdminClient, collectionSlug: string, options:
     limit: options.pageSize,
     offset,
   });
-  const searchPage = useAll<AdminRecord>(searchPageQuery);
+  const searchPage = useAll<AdminRecord>(searchPageQuery, readOptions);
   const pageIds = searchPage.data?.map((row) => row.id) ?? [];
   const query = options.enabled === false ? undefined : options.searchActive
     ? pageIds.length ? operations?.query({ where: { ...options.where, id: { in: pageIds } }, includeTimestamps: true }) : undefined
@@ -223,8 +253,8 @@ function useAdminRows(client: BebopAdminClient, collectionSlug: string, options:
       ...(options.pageSize !== undefined ? { limit: options.pageSize, offset } : {}),
     });
   const idsQuery = options.enabled === false || options.searchActive ? undefined : operations?.queryIds({ where: options.where });
-  const docs = useAll<AdminRecord>(query);
-  const ids = useAll<{ id: string }>(idsQuery);
+  const docs = useAll<AdminRecord>(query, readOptions);
+  const ids = useAll<{ id: string }>(idsQuery, readOptions);
   const docsById = new Map((docs.data ?? []).map((row) => [row.id, row]));
   const orderedRows = options.searchActive ? pageIds.flatMap((id) => {
     const row = docsById.get(id);
@@ -239,8 +269,8 @@ function useAdminRows(client: BebopAdminClient, collectionSlug: string, options:
   return { rows, ids, searchPage, searchIdQueries };
 }
 
-function SearchIdsObserver({ query, onIds }: { query?: QueryBuilder<{ id: string }>; onIds: (ids: readonly string[]) => void }) {
-  const { data } = useAll<{ id: string }>(query);
+function SearchIdsObserver({ query, onIds, writeMode }: { query?: QueryBuilder<{ id: string }>; onIds: (ids: readonly string[]) => void; writeMode?: BebopAdminCollection["writeMode"] }) {
+  const { data } = useAll<{ id: string }>(query, writeMode === "command" ? { tier: "remote" } : undefined);
   const ids = data?.map((row) => row.id) ?? [];
   const fingerprint = ids.join("\u0000");
   useEffect(() => { onIds(ids); }, [fingerprint, onIds]);
@@ -347,8 +377,8 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUse
       children: [
         { index: true, element: <DashboardPage manifest={manifest} canManageUsers={canManageUsers} /> },
         { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
-        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} /> },
+        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
         { path: "*", element: <NotFoundPage /> },
       ],
     },
@@ -498,9 +528,9 @@ function DashboardPage({ manifest, canManageUsers }: { manifest: BebopAdminManif
         {collections.map((collection) => (
           <article key={collection.slug} className="admin-collection-card">
             <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.labels.plural}</Link>
-            {!collection.auth && <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
+            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
               <Plus size={19} />
-            </Link>}
+            </Link>
           </article>
         ))}
       </div>
@@ -513,15 +543,30 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
   authClient?: BebopAdminProps["authClient"];
   canManageUsers: boolean;
 }) {
+  const navigate = useNavigate();
+  const toast = useToastManager();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>(() => ({ field: collection.defaultColumns[0] ?? "name", direction: "asc" }));
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => [...(collection.defaultColumns.length ? collection.defaultColumns : ["name", "email", "role", "createdAt"])]);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
+  const [pendingUserDelete, setPendingUserDelete] = useState<readonly (Record<string, unknown> & { id: string })[]>();
+  const [deleteError, setDeleteError] = useState<string>();
+  const [deletingUsers, setDeletingUsers] = useState(false);
+  const [reloadCount, setReloadCount] = useState(0);
   const [result, setResult] = useState<{ users: readonly (Record<string, unknown> & { id: string })[]; total: number }>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const requestId = useRef(0);
-  const pageSize = defaultPageSize;
+  const selectAllCheckbox = useRef<HTMLInputElement>(null);
   const searchableField = collection.listSearchableFields.includes("name") ? "name" : "email";
-  const columns = collection.defaultColumns.length ? collection.defaultColumns : ["name", "email", "role"];
+  const columns = visibleColumns.length ? visibleColumns : ["name"];
+  const availableColumns = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && (!field.generated || ["createdAt", "updatedAt"].includes(field.name))).map((field) => field.name);
+  const filterFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind === "boolean" || field.kind === "select");
+  const activeFilterField = Object.keys(filters).find((field) => Boolean(filters[field]));
+  const activeFilterValue = activeFilterField ? filters[activeFilterField] : undefined;
 
   useEffect(() => {
     if (!canManageUsers || !authClient) return;
@@ -532,8 +577,9 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
       query: {
         limit: pageSize,
         offset: (page - 1) * pageSize,
-        sortBy: "name",
-        sortDirection: "asc",
+        sortBy: sort.field,
+        sortDirection: sort.direction,
+        ...(activeFilterField && activeFilterValue !== undefined ? { filterField: activeFilterField, filterValue: activeFilterValue === "true" ? true : activeFilterValue === "false" ? false : activeFilterValue, filterOperator: "eq" as const } : {}),
         ...(search.trim() ? { searchValue: search.trim(), searchField: searchableField, searchOperator: "contains" as const } : {}),
       },
     }).then((response) => {
@@ -552,7 +598,16 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
       if (currentRequest === requestId.current) setLoading(false);
     });
     return () => { requestId.current += 1; };
-  }, [authClient, canManageUsers, page, pageSize, search, searchableField]);
+  }, [activeFilterField, activeFilterValue, authClient, canManageUsers, page, pageSize, reloadCount, search, searchableField, sort]);
+
+  const users = result?.users ?? [];
+  const selectedUsers = users.filter((user) => selectedUserIds.has(user.id));
+  const allPageUsersSelected = users.length > 0 && users.every((user) => selectedUserIds.has(user.id));
+  const somePageUsersSelected = users.some((user) => selectedUserIds.has(user.id));
+  useEffect(() => {
+    if (selectAllCheckbox.current) selectAllCheckbox.current.indeterminate = somePageUsersSelected && !allPageUsersSelected;
+  }, [allPageUsersSelected, somePageUsersSelected]);
+  useEffect(() => { setSelectedUserIds(new Set()); }, [activeFilterField, activeFilterValue, page, pageSize, search, sort]);
 
   if (!canManageUsers) {
     return <section><PageTitle title={collection.labels.plural} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Only a Better Auth administrator can view registered users.</p></section>;
@@ -563,39 +618,364 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
 
   const total = result?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  function toggleAllPageUsers() {
+    setSelectedUserIds((current) => {
+      const next = new Set(current);
+      if (allPageUsersSelected) users.forEach((user) => next.delete(user.id));
+      else users.forEach((user) => next.add(user.id));
+      return next;
+    });
+  }
+
+  async function confirmUserDelete() {
+    if (!pendingUserDelete || !authClient) return;
+    setDeletingUsers(true);
+    setDeleteError(undefined);
+    const removedIds: string[] = [];
+    let failure: string | undefined;
+    for (const user of pendingUserDelete) {
+      try {
+        const response = await authClient.admin.removeUser({ userId: user.id });
+        if (response.error || !response.data?.success) throw new Error(response.error?.message || "Better Auth could not delete this user.");
+        removedIds.push(user.id);
+      } catch (caught) {
+        failure = caught instanceof Error ? caught.message : "Better Auth could not delete this user.";
+        break;
+      }
+    }
+    if (removedIds.length) {
+      setSelectedUserIds((current) => {
+        const next = new Set(current);
+        removedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      const remainingTotal = Math.max(0, total - removedIds.length);
+      setPage((current) => Math.min(current, Math.max(1, Math.ceil(remainingTotal / pageSize))));
+      setReloadCount((current) => current + 1);
+    }
+    setDeletingUsers(false);
+    if (failure && !removedIds.length) {
+      setDeleteError(failure);
+      toast.add({ type: "error", title: "Could not delete users", description: failure });
+      return;
+    }
+    setPendingUserDelete(undefined);
+    if (failure) {
+      toast.add({ type: "warning", title: `${removedIds.length} user${removedIds.length === 1 ? "" : "s"} deleted`, description: failure });
+    } else {
+      toast.add({ type: "success", title: `${removedIds.length} user${removedIds.length === 1 ? "" : "s"} deleted`, description: "Better Auth removed the accounts and their sessions." });
+    }
+  }
   return (
     <section>
-      <PageTitle title={collection.labels.plural} description="Registered users are managed by Better Auth." />
-      <div className="mb-4 flex items-center gap-2 border border-border bg-muted/50 px-3 py-2">
-        <Search size={17} className="shrink-0 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-          placeholder={`Search by ${searchableField === "name" ? "name" : "email"}`}
-          aria-label="Search users"
-          className="border-0 bg-transparent shadow-none focus-visible:ring-0"
-        />
+      <div className="admin-list-heading">
+        <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          {selectedUsers.length > 0 && <div className="admin-selection-bar" aria-label="Selected users">
+            <span>{selectedUsers.length} selected</span>
+            <span aria-hidden="true">—</span>
+            <button type="button" className="admin-selection-action" onClick={toggleAllPageUsers}>{allPageUsersSelected ? "Clear selection" : `Select all (${users.length})`}</button>
+            <span aria-hidden="true">—</span>
+            <button type="button" className="admin-selection-action" disabled={selectedUsers.length !== 1} onClick={() => {
+              const selectedUser = selectedUsers[0];
+              if (selectedUser) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(selectedUser.id)}`);
+            }}>Edit</button>
+            <button type="button" className="admin-selection-action" onClick={() => { setDeleteError(undefined); setPendingUserDelete(selectedUsers); }}>Delete</button>
+          </div>}
+          <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        </div>
+      </div>
+      <div className="admin-table-toolbar">
+        {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+            placeholder={`Search by ${searchableField === "name" ? "name" : "email"}`}
+            aria-label="Search users"
+            className="h-8 pl-10 text-[13px] focus-visible:bg-background"
+          />
+        </div>}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <details className="admin-table-menu">
+            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
+            <div className="admin-table-menu-content">
+              <p className="admin-table-menu-label">Visible columns</p>
+              {availableColumns.map((column) => {
+                const checked = visibleColumns.includes(column);
+                return <label key={column} className="admin-menu-checkbox">
+                  <input type="checkbox" checked={checked} disabled={checked && visibleColumns.length === 1} onChange={() => setVisibleColumns((current) => checked ? current.filter((name) => name !== column) : [...current, column])} />
+                  <span>{fieldByName(collection, column)?.label ?? formatLabel(column)}</span>
+                </label>;
+              })}
+            </div>
+          </details>
+          {filterFields.length > 0 && <details className="admin-table-menu">
+            <summary className="admin-table-menu-trigger">Filters <ChevronDown size={15} /></summary>
+            <div className="admin-table-menu-content admin-filter-menu">
+              {filterFields.map((field) => <label key={field.name} className="admin-filter-field">
+                <span>{field.label}</span>
+                <Select value={filters[field.name] || filterAllValue} onValueChange={(value) => { setFilters((current) => ({ ...current, [field.name]: value === filterAllValue ? "" : value ?? "" })); setPage(1); }}>
+                  <SelectTrigger className="w-full" aria-label={`Filter by ${field.label}`}><SelectValue>{filters[field.name] ? field.kind === "boolean" ? filters[field.name] === "true" ? "Yes" : "No" : selectLabel(field, filters[field.name]) : `All ${field.label.toLocaleLowerCase()}`}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={filterAllValue}>All {field.label.toLocaleLowerCase()}</SelectItem>
+                    {field.kind === "boolean" ? <><SelectItem value="true">Yes</SelectItem><SelectItem value="false">No</SelectItem></> : field.options?.map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>)}
+            </div>
+          </details>}
+        </div>
       </div>
       {error && <p role="alert" className="mb-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
-      <div className="overflow-x-auto border border-border bg-muted/35">
+      {deleteError && <p role="alert" className="mb-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{deleteError}</p>}
+      <div className="admin-table-section">
         <Table>
-          <TableHeader><TableRow>{columns.map((name) => <TableHead key={name}>{fieldByName(collection, name)?.label ?? formatLabel(name)}</TableHead>)}</TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead className="w-12"><input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label="Select all users on this page" checked={allPageUsersSelected} disabled={!users.length} onChange={toggleAllPageUsers} /></TableHead>{columns.map((name) => {
+            const active = sort.field === name;
+            const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+            return <TableHead key={name} className="h-10 text-[13px] font-normal normal-case tracking-normal"><button className="admin-sort-button" onClick={() => { setSort((current) => ({ field: name, direction: current.field === name && current.direction === "asc" ? "desc" : "asc" })); setPage(1); }}>{fieldByName(collection, name)?.label ?? formatLabel(name)}<SortIcon size={13} /></button></TableHead>;
+          })}{collection.timestamps && <TableHead className="h-10 text-[13px] font-normal normal-case tracking-normal">Updated</TableHead>}</TableRow></TableHeader>
           <TableBody>
-            {result?.users.map((user) => <TableRow key={user.id}>
-              {columns.map((name) => <TableCell key={name}>{formatCell(fieldByName(collection, name), user[name])}</TableCell>)}
+            {result?.users.map((user, index) => <TableRow key={user.id} className={`${selectedUserIds.has(user.id) ? "bg-accent" : index % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}`}>
+              <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${String(user.name ?? user.email ?? user.id)}`} checked={selectedUserIds.has(user.id)} onChange={() => setSelectedUserIds((current) => { const next = new Set(current); if (next.has(user.id)) next.delete(user.id); else next.add(user.id); return next; })} /></TableCell>
+              {columns.map((name) => <TableCell key={name} className="admin-table-cell">
+                {name === columns[0]
+                  ? <Link to={`/admin/collections/${collection.slug}/${encodeURIComponent(user.id)}`} className="underline underline-offset-2 hover:text-primary">{formatCell(fieldByName(collection, name), user[name])}</Link>
+                  : formatCell(fieldByName(collection, name), user[name])}
+              </TableCell>)}
+              {collection.timestamps && <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(user.updatedAt, true)}</TableCell>}
             </TableRow>)}
-            {!loading && result?.users.length === 0 && <TableRow><TableCell colSpan={columns.length} className="py-8 text-center text-sm text-muted-foreground">No users found.</TableCell></TableRow>}
-            {loading && !result && <TableRow><TableCell colSpan={columns.length} className="py-8 text-center text-sm text-muted-foreground">Loading users…</TableCell></TableRow>}
+            {!loading && result?.users.length === 0 && <TableRow><TableCell colSpan={columns.length + Number(collection.timestamps) + 1} className="py-8 text-center text-sm text-muted-foreground">No users found.</TableCell></TableRow>}
+            {loading && !result && <TableRow><TableCell colSpan={columns.length + Number(collection.timestamps) + 1} className="py-8 text-center text-sm text-muted-foreground">Loading users…</TableCell></TableRow>}
           </TableBody>
         </Table>
-      </div>
-      <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
-        <span>{total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 users"}</span>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || loading}>Previous</Button>
-          <span>Page {page} of {pageCount}</span>
-          <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount || loading}>Next</Button>
+        <div className="admin-table-pagination">
+          <span>{total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 users"}</span>
+          <div className="flex items-center justify-end gap-2">
+            <span className="mr-1">Per Page:</span>
+            <Select value={String(pageSize)} onValueChange={(value) => { if (value) { setPageSize(Number(value)); setPage(1); } }}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>{[10, 25, 50].map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon" aria-label="Previous page" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={16} /></Button>
+            <Button variant="ghost" size="icon" aria-label="Next page" disabled={page >= pageCount || loading} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></Button>
+          </div>
         </div>
+      </div>
+      {pendingUserDelete && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUsers) setPendingUserDelete(undefined); }}>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="delete-users-title" aria-describedby="delete-users-description" className="w-full max-w-md border bg-background p-6 shadow-xl">
+          <h2 id="delete-users-title" className="text-lg font-semibold">Delete {pendingUserDelete.length === 1 ? "user" : "users"}?</h2>
+          <p id="delete-users-description" className="mt-2 text-sm text-muted-foreground">This permanently deletes the selected Better Auth account{pendingUserDelete.length === 1 ? "" : "s"}, including their sessions and accounts.</p>
+          {deleteError && <p role="alert" className="mt-3 text-sm text-destructive">{deleteError}</p>}
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" disabled={deletingUsers} onClick={() => { setDeleteError(undefined); setPendingUserDelete(undefined); }}>Cancel</Button>
+            <Button variant="destructive" disabled={deletingUsers} onClick={() => void confirmUserDelete()}><Trash2 size={15} /> {deletingUsers ? "Deleting…" : "Delete"}</Button>
+          </div>
+        </section>
+      </div>}
+    </section>
+  );
+}
+
+function AuthUserCreate({ collection, authClient, canManageUsers }: {
+  collection: BebopAdminCollection;
+  authClient?: BebopAdminProps["authClient"];
+  canManageUsers: boolean;
+}) {
+  const navigate = useNavigate();
+  const toast = useToastManager();
+  const [saveError, setSaveError] = useState<string>();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<{ name: string; email: string; password: string }>();
+
+  if (!canManageUsers) {
+    return <section><PageTitle title={`Create ${collection.labels.singular}`} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Only a Better Auth administrator can create users.</p></section>;
+  }
+  if (!authClient) {
+    return <section><PageTitle title={`Create ${collection.labels.singular}`} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
+  }
+
+  const onSubmit = handleSubmit(async ({ name, email, password }) => {
+    setSaveError(undefined);
+    try {
+      const response = await authClient.admin.createUser({ name: name.trim(), email: email.trim(), password });
+      if (response.error || !response.data?.user) {
+        throw new Error(response.error?.message || "Better Auth did not return the created user.");
+      }
+      toast.add({ type: "success", title: `${collection.labels.singular} created`, description: "The account was created through Better Auth." });
+      navigate(`/admin/collections/${collection.slug}`);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : `Could not create ${collection.labels.singular.toLocaleLowerCase()}.`;
+      setSaveError(message);
+      toast.add({ type: "error", title: `Could not create ${collection.labels.singular.toLocaleLowerCase()}`, description: message });
+    }
+  });
+
+  return (
+    <section>
+      <PageTitle
+        title={`Create ${collection.labels.singular}`}
+        description="Better Auth hashes and stores the password; Bebop does not keep a copy."
+        action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>}
+      />
+      <form className="max-w-2xl space-y-6" onSubmit={onSubmit} noValidate>
+        <div className="space-y-2">
+          <Label htmlFor="bebop-user-name">Name <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
+          {errors.name && <p role="alert" className="text-sm text-destructive">{errors.name.message}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="bebop-user-email">Email <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
+            required: "Enter an email address.",
+            pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
+          })} />
+          {errors.email && <p role="alert" className="text-sm text-destructive">{errors.email.message}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="bebop-user-password">Password <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register("password", { required: "Enter an initial password." })} />
+          <p className="text-xs text-muted-foreground">Better Auth hashes and stores this password; the admin UI does not keep a copy.</p>
+          {errors.password && <p role="alert" className="text-sm text-destructive">{errors.password.message}</p>}
+        </div>
+        {saveError && <p role="alert" className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{saveError}</p>}
+        <div className="flex items-center gap-2 border-t border-border pt-5">
+          <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating…" : `Create ${collection.labels.singular}`}</Button>
+          <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
+  collection: BebopAdminCollection;
+  authClient?: BebopAdminProps["authClient"];
+  canManageUsers: boolean;
+  id: string;
+}) {
+  const navigate = useNavigate();
+  const toast = useToastManager();
+  const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
+  const [user, setUser] = useState<(Record<string, unknown> & { id: string })>();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>();
+  const [saveError, setSaveError] = useState<string>();
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<{ name: string; email: string }>();
+
+  useEffect(() => {
+    if (!canManageUsers || !authClient) return;
+    let active = true;
+    setLoading(true);
+    setLoadError(undefined);
+    void authClient.admin.getUser({ query: { id } }).then((response) => {
+      if (!active) return;
+      if (response.error || !response.data) {
+        setLoadError(response.error?.message || "Better Auth did not return this user.");
+        setUser(undefined);
+        return;
+      }
+      setUser(response.data);
+    }).catch((caught: unknown) => {
+      if (!active) return;
+      setLoadError(caught instanceof Error ? caught.message : "Better Auth could not load this user.");
+      setUser(undefined);
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [authClient, canManageUsers, id]);
+
+  useEffect(() => {
+    if (!user) return;
+    reset({ name: String(user.name ?? ""), email: String(user.email ?? "") });
+  }, [reset, user]);
+
+  const title = user?.name ? String(user.name) : user?.email ? String(user.email) : id;
+  useEffect(() => {
+    setDocumentBreadcrumb(user ? title : undefined);
+    return () => setDocumentBreadcrumb(undefined);
+  }, [setDocumentBreadcrumb, title, user]);
+
+  if (!canManageUsers) {
+    return <section><PageTitle title={collection.labels.singular} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Only a Better Auth administrator can view registered users.</p></section>;
+  }
+  if (!authClient) {
+    return <section><PageTitle title={collection.labels.singular} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
+  }
+
+  const onSubmit = handleSubmit(async ({ name, email }) => {
+    if (!user) return;
+    setSaveError(undefined);
+    const data: Record<string, unknown> = {};
+    const normalizedName = name.trim();
+    const normalizedEmail = email.trim();
+    if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
+    if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
+    if (!Object.keys(data).length) {
+      reset({ name: String(user.name ?? ""), email: String(user.email ?? "") });
+      return;
+    }
+    try {
+      const response = await authClient.admin.updateUser({ userId: id, data });
+      if (response.error || !response.data) {
+        throw new Error(response.error?.message || "Better Auth did not return the updated user.");
+      }
+      setUser(response.data);
+      toast.add({ type: "success", title: `${collection.labels.singular} updated`, description: "Better Auth saved the account changes." });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : `Could not update ${collection.labels.singular.toLocaleLowerCase()}.`;
+      setSaveError(message);
+      toast.add({ type: "error", title: `Could not update ${collection.labels.singular.toLocaleLowerCase()}`, description: message });
+    }
+  });
+
+  if (loading) return <section><PageTitle title={collection.labels.singular} /><p className="py-8 text-sm text-muted-foreground">Loading user…</p></section>;
+  if (loadError || !user) return <section><PageTitle title={collection.labels.singular} action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>} /><p role="alert" className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError ?? "User not found."}</p></section>;
+
+  const userFields = new Map(collection.fields.map((field) => [field.name, field]));
+  return (
+    <section>
+      <PageTitle
+        title={title}
+        description={String(user.email ?? "")}
+        action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>}
+      />
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <form className="border border-border bg-card p-6" onSubmit={onSubmit} noValidate>
+          <h2 className="text-base font-medium">Account details</h2>
+          <p className="mb-6 mt-1 text-sm text-muted-foreground">Changes are saved through Better Auth.</p>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="bebop-user-name">Name <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
+              {errors.name && <p role="alert" className="text-sm text-destructive">{errors.name.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bebop-user-email">Email <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
+                required: "Enter an email address.",
+                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
+              })} />
+              {errors.email && <p role="alert" className="text-sm text-destructive">{errors.email.message}</p>}
+            </div>
+          </div>
+          {saveError && <p role="alert" className="mt-5 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{saveError}</p>}
+          <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
+            <Button type="submit" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save changes"}</Button>
+            <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => reset({ name: String(user.name ?? ""), email: String(user.email ?? "") })}>Reset</Button>
+          </div>
+        </form>
+        <aside className="border border-border bg-card p-6">
+          <h2 className="text-base font-medium">User info</h2>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div><dt className="text-muted-foreground">ID</dt><dd className="mt-1 break-all font-mono text-xs">{user.id}</dd></div>
+            <div><dt className="text-muted-foreground">Role</dt><dd className="mt-1">{formatCell(userFields.get("role"), user.role)}</dd></div>
+            <div><dt className="text-muted-foreground">Email verified</dt><dd className="mt-1">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</dd></div>
+            <div><dt className="text-muted-foreground">Created</dt><dd className="mt-1">{formatDate(user.createdAt, true)}</dd></div>
+            <div><dt className="text-muted-foreground">Updated</dt><dd className="mt-1">{formatDate(user.updatedAt, true)}</dd></div>
+          </dl>
+        </aside>
       </div>
     </section>
   );
@@ -623,6 +1003,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllCheckbox = useRef<HTMLInputElement>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => collection.defaultColumns.length
     ? [...collection.defaultColumns]
     : storedFields(collection).slice(0, 4).map((field) => field.name));
@@ -655,11 +1036,14 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
     where: filterWhere,
     sort: { field: storedSortField, direction: sort.direction },
     page, pageSize, searchActive, search, searchFields: collection.listSearchableFields,
+    writeMode: collection.writeMode,
   });
   const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
   const rows = data ?? [];
   const readPermissions = useRowReadPermissions(db, table, rows);
-  const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
+  // A command row returned by the remote query has already passed Jazz's
+  // server-side read policy. Local permission advice can lag that result.
+  const readableRows = collection.writeMode === "command" ? rows : rows.filter((row) => readPermissions[row.id] !== "denied");
   const allColumns = storedFields(collection).map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const relatedIdsByCollection = new Map<string, Set<string>>();
@@ -681,17 +1065,23 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const pageRows = readableRows;
   const rowPermissions = usePageRowPermissions(db, table, pageRows, collection.writeMode);
+  const selectablePageRows = pageRows.filter((row) => rowPermissions[row.id]?.update !== "denied" || rowPermissions[row.id]?.delete !== "denied");
   const deletablePageRows = pageRows.filter((row) => rowPermissions[row.id]?.delete !== "denied");
-  const allPageSelected = deletablePageRows.length > 0 && deletablePageRows.every((row) => selectedIds.has(row.id));
+  const allPageSelected = selectablePageRows.length > 0 && selectablePageRows.every((row) => selectedIds.has(row.id));
+  const somePageSelected = selectablePageRows.some((row) => selectedIds.has(row.id));
   const selectedRows = readableRows.filter((row) => selectedIds.has(row.id));
+  const selectedDeletableRows = selectedRows.filter((row) => rowPermissions[row.id]?.delete !== "denied");
   const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
   const searchField = titleField ?? fieldByName(collection, collection.listSearchableFields[0] ?? "");
   const searchLabel = searchField?.label ?? "Name";
-  const titleColumn = titleField && columns.includes(titleField.name) ? titleField.name : columns[0];
+  const linkedColumn = columns[0];
 
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, filters]);
   useEffect(() => { setSelectedIds(new Set()); }, [page, pageSize, sort]);
   useEffect(() => { if (idResult.data || searchActive) setPage((current) => Math.min(current, pageCount)); }, [idResult.data, pageCount, searchActive]);
+  useEffect(() => {
+    if (selectAllCheckbox.current) selectAllCheckbox.current.indeterminate = somePageSelected && !allPageSelected;
+  }, [allPageSelected, somePageSelected]);
 
   const receiveSearchIds = useCallback((field: string, ids: readonly string[]) => {
     setSearchIdsByField((current) => {
@@ -731,8 +1121,8 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   function togglePageSelection() {
     setSelectedIds((current) => {
       const next = new Set(current);
-      if (allPageSelected) deletablePageRows.forEach((row) => next.delete(row.id));
-      else deletablePageRows.forEach((row) => next.add(row.id));
+      if (allPageSelected) selectablePageRows.forEach((row) => next.delete(row.id));
+      else selectablePageRows.forEach((row) => next.add(row.id));
       return next;
     });
   }
@@ -749,7 +1139,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
     <div>
       {searchActive && searchIdQueries.map((query, index) => {
         const fieldName = collection.listSearchableFields[index] ?? `search-${index}`;
-        return <SearchIdsObserver key={`${searchScope}:${fieldName}`} query={query} onIds={(ids) => receiveSearchIds(fieldName, ids)} />;
+        return <SearchIdsObserver key={`${searchScope}:${fieldName}`} query={query} writeMode={collection.writeMode} onIds={(ids) => receiveSearchIds(fieldName, ids)} />;
       })}
       {[...relatedIdsByCollection].map(([slug, ids]) => (
         <RelatedCollectionLabels
@@ -763,7 +1153,20 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
       ))}
       <div className="admin-list-heading">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
-        <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          {!selectMode && selectedRows.length > 0 && <div className="admin-selection-bar" aria-label="Selected documents">
+            <span>{selectedRows.length} selected</span>
+            <span aria-hidden="true">—</span>
+            {selectablePageRows.length > 0 && <button type="button" className="admin-selection-action" onClick={togglePageSelection}>{allPageSelected ? "Clear selection" : `Select all (${selectablePageRows.length})`}</button>}
+            <span aria-hidden="true">—</span>
+            <button type="button" className="admin-selection-action" disabled={selectedRows.length !== 1 || selectedRows[0] === undefined || rowPermissions[selectedRows[0].id]?.update === "denied"} onClick={() => {
+              const row = selectedRows[0];
+              if (row) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(row.id)}`);
+            }}>Edit</button>
+            {selectedDeletableRows.length > 0 && <button type="button" className="admin-selection-action" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedDeletableRows); }}>Delete</button>}
+          </div>}
+          <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
+        </div>
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
       <div className="admin-table-toolbar">
@@ -772,7 +1175,6 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="h-8 pl-10 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>}
         <div className="flex shrink-0 items-center gap-2">
-          {!selectMode && selectedRows.length > 0 && <Button variant="destructive" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedRows); }}><Trash2 size={15} /> Delete {selectedRows.length}</Button>}
           <details className="admin-table-menu">
             <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
             <div className="admin-table-menu-content">
@@ -841,7 +1243,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
               <TableHeader>
                 <TableRow>
                   {!selectMode && <TableHead className="w-12">
-                    <input type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} disabled={deletablePageRows.length === 0} onChange={togglePageSelection} />
+                    <input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} disabled={selectablePageRows.length === 0} onChange={togglePageSelection} />
                   </TableHead>}
                   {columns.map((column) => {
                     const field = fieldByName(collection, column);
@@ -862,21 +1264,21 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                 {pageRows.length === 0 ? (
                   <TableRow><TableCell colSpan={columns.length + (collection.timestamps ? 1 : 0) + (selectMode ? 0 : 1)} className="py-8 text-center text-sm text-muted-foreground">No documents on this page.</TableCell></TableRow>
                 ) : pageRows.map((row, rowIndex) => (
-                  <TableRow key={row.id} className={`${rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"} ${selectMode ? "cursor-pointer" : ""}`} onClick={selectMode ? () => onSelect?.(row) : undefined}>
+                  <TableRow key={row.id} className={`${selectedIds.has(row.id) ? "bg-accent" : rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"} ${selectMode ? "cursor-pointer" : ""}`} onClick={selectMode ? () => onSelect?.(row) : undefined}>
                     {!selectMode && <TableCell className="w-12" onClick={(event) => event.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="admin-checkbox"
                         aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`}
                         checked={selectedIds.has(row.id)}
-                        disabled={rowPermissions[row.id]?.delete === "denied"}
+                        disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"}
                         onChange={() => toggleRowSelection(row.id)}
                       />
                     </TableCell>}
                     {columns.map((column) => {
                       const field = fieldByName(collection, column);
                       const value = field ? valueFor(field, row) : row[column];
-                      const isTitle = titleColumn === column;
+                      const isTitle = linkedColumn === column;
                       return (
                         <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
                           {isTitle && selectMode ? (
@@ -998,12 +1400,16 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   );
 }
 
-function EditorRoute({ app, client, manifest, createDefaults, relationOptions }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "relationOptions">) {
+function EditorRoute({ app, client, manifest, createDefaults, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "relationOptions" | "authClient" | "canManageUsers">) {
   const { collectionSlug = "", id } = useParams();
   const [searchParams] = useSearchParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
-  if (collection.auth) return <NotFoundPage />;
+  if (collection.auth) {
+    return id
+      ? <AuthUserEditor key={`${collection.slug}:${id}`} collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} id={id} />
+      : <AuthUserCreate collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
+  }
   const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
   return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} joinContext={joinContext} relationOptions={relationOptions} />;
 }
@@ -1054,7 +1460,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
   const documentQuery = id ? getMutations(client, collection.slug)?.query({ where: { id }, includeTimestamps: true }) : undefined;
-  const { data: existing, isLoading, error } = useOne<AdminRecord>(documentQuery);
+  const { data: existing, isLoading, error } = useOne<AdminRecord>(documentQuery, collection.writeMode === "command" ? { tier: "remote" } : undefined);
   const createFieldDefaults = useMemo(() => ({
     ...createDefaults,
     ...(joinContext && !id ? { [joinContext.relationship.name]: joinContext.parentId } : {}),
@@ -1154,7 +1560,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   if (error) return <div className="py-16 text-center text-sm text-destructive">Could not load document: {error.message}</div>;
   if (id && isLoading) return <div className="py-16 text-center text-sm text-muted-foreground">Loading document…</div>;
   if (id && !existing) return <NotFoundPage message="This document may have been deleted or is no longer available." />;
-  if (id && readAdvice === "denied") return <div className="py-16 text-center text-sm text-destructive" role="alert">Your current session cannot read this document.</div>;
+  if (id && collection.writeMode !== "command" && readAdvice === "denied") return <div className="py-16 text-center text-sm text-destructive" role="alert">Your current session cannot read this document.</div>;
 
   async function save(values: FieldValues) {
     const document = serializeValues(collection, values);
@@ -1179,11 +1585,31 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         : await operations.create(mutationData);
       const resultDoc = (result as { doc?: AdminRecord } | undefined)?.doc;
       const globallyConfirmed = (result as { durability?: string } | undefined)?.durability === "global";
-      toast.add({
-        type: "success",
-        title: `${collection.labels.singular} ${id ? "updated" : "created"}${globallyConfirmed ? "" : " locally"}`,
-        description: globallyConfirmed ? "Jazz confirmed the change." : "Jazz sync may still be pending.",
+      const toastTitle = `${collection.labels.singular} ${id ? "updated" : "created"}`;
+      const confirmationToastId = toast.add({
+        type: globallyConfirmed ? "success" : "loading",
+        title: `${toastTitle}${globallyConfirmed ? "" : " locally"}`,
+        description: globallyConfirmed ? "Jazz confirmed the change." : "Waiting for Jazz to confirm this change.",
+        timeout: globallyConfirmed ? 5000 : 0,
       });
+      const waitForGlobal = (result as { waitForGlobal?: () => Promise<void> } | undefined)?.waitForGlobal;
+      if (!globallyConfirmed && typeof waitForGlobal === "function") {
+        void waitForGlobal().then(() => {
+          toast.update(confirmationToastId, {
+            type: "success",
+            title: toastTitle,
+            description: "Jazz confirmed the change. It is available to other synced clients.",
+            timeout: 5000,
+          });
+        }).catch((syncFailure) => {
+          toast.update(confirmationToastId, {
+            type: "error",
+            title: `Could not sync ${collection.labels.singular.toLocaleLowerCase()}`,
+            description: syncFailure instanceof Error ? syncFailure.message : "Jazz did not confirm the change.",
+            timeout: 7000,
+          });
+        });
+      }
       if (modal) {
         const completedId = typeof resultDoc?.id === "string" ? resultDoc.id : id;
         if (!completedId) throw new Error("The saved media document did not return an ID.");
@@ -1391,6 +1817,8 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
   }, [field.admin?.defaultColumns, target]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultColumns);
   const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>({ field: defaultColumns[0] ?? "id", direction: "asc" });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllCheckbox = useRef<HTMLInputElement>(null);
   const [createAdvice, setCreateAdvice] = useState<PermissionAdvice>("unknown");
   const where = useMemo(() => relation ? { [relation.storageName]: parentId } : {}, [parentId, relation]);
   const sortField = target ? fieldByName(target, sort.field) : undefined;
@@ -1400,25 +1828,43 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
     sort: { field: storedSortField, direction: sort.direction },
     searchActive: false,
     enabled: Boolean(target && relation && targetTable),
+    writeMode: target?.writeMode,
   });
   const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
   const rows = data ?? [];
   const readPermissions = useRowReadPermissions(db, targetTable, rows);
-  const readableRows = rows.filter((row) => readPermissions[row.id] !== "denied");
+  const readableRows = target?.writeMode === "command" ? rows : rows.filter((row) => readPermissions[row.id] !== "denied");
+  const rowPermissions = usePageRowPermissions(db, targetTable, readableRows, target?.writeMode ?? "direct");
+  const selectableRows = readableRows.filter((row) => rowPermissions[row.id]?.update !== "denied" || rowPermissions[row.id]?.delete !== "denied");
+  const selectedRows = readableRows.filter((row) => selectedIds.has(row.id));
+  const allRowsSelected = selectableRows.length > 0 && selectableRows.every((row) => selectedIds.has(row.id));
+  const someRowsSelected = selectableRows.some((row) => selectedIds.has(row.id));
   const allColumns = columnsAvailable.map((candidate) => candidate.name);
   const visible = allColumns.filter((name) => visibleColumns.includes(name));
   const titleField = target?.useAsTitle ? fieldByName(target, target.useAsTitle) : undefined;
-  const titleColumn = titleField && titleField.kind !== "join" && visible.includes(titleField.name)
-    ? titleField.name
-    : visible[0];
+  const linkedColumn = visible[0];
   const totalRows = idResult.data?.length ?? 0;
-  const readDenied = rows.some((row) => readPermissions[row.id] === "denied");
+  const readDenied = target?.writeMode !== "command" && rows.some((row) => readPermissions[row.id] === "denied");
   const createAllowed = field.admin?.allowCreate !== false;
 
   useEffect(() => {
     setVisibleColumns(defaultColumns);
     setSort({ field: defaultColumns[0] ?? "id", direction: "asc" });
+    setSelectedIds(new Set());
   }, [defaultColumns]);
+
+  useEffect(() => {
+    if (selectAllCheckbox.current) selectAllCheckbox.current.indeterminate = someRowsSelected && !allRowsSelected;
+  }, [allRowsSelected, someRowsSelected]);
+
+  function toggleAllRows() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allRowsSelected) selectableRows.forEach((row) => next.delete(row.id));
+      else selectableRows.forEach((row) => next.add(row.id));
+      return next;
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -1446,6 +1892,16 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-medium">{field.label}</h2>
         <div className="flex items-center gap-2">
+          {selectedRows.length > 0 && <div className="admin-selection-bar" aria-label="Selected related records">
+            <span>{selectedRows.length} selected</span>
+            <span aria-hidden="true">—</span>
+            <button type="button" className="admin-selection-action" onClick={toggleAllRows}>{allRowsSelected ? "Clear selection" : `Select all (${selectableRows.length})`}</button>
+            <span aria-hidden="true">—</span>
+            <button type="button" className="admin-selection-action" disabled={selectedRows.length !== 1} onClick={() => {
+              const row = selectedRows[0];
+              if (row) navigate(`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`);
+            }}>Edit</button>
+          </div>}
           {createAllowed && <Button
             variant="secondary"
             size="sm"
@@ -1484,7 +1940,7 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
         <div className="admin-join-table-surface">
           <div className="admin-table-section">
             <Table>
-              <TableHeader><TableRow>{visible.map((column) => {
+              <TableHeader><TableRow><TableHead className="w-12"><input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label={`Select all ${targetCollection.labels.plural.toLocaleLowerCase()}`} checked={allRowsSelected} disabled={selectableRows.length === 0} onChange={toggleAllRows} /></TableHead>{visible.map((column) => {
                 const candidate = fieldByName(targetCollection, column);
                 const activeSort = sort.field === column;
                 const SortIcon = activeSort ? sort.direction === "asc" ? ArrowUp : ArrowDown : ArrowUpDown;
@@ -1495,8 +1951,9 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
                 </TableHead>;
               })}{targetCollection.timestamps && <TableHead className="h-10 text-[13px] font-normal normal-case tracking-normal">Updated</TableHead>}</TableRow></TableHeader>
               <TableBody>{readableRows.length === 0
-                ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0)} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
-                : readableRows.map((row) => <TableRow key={row.id} className="hover:bg-muted">
+                ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0) + 1} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
+                : readableRows.map((row) => <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-accent" : "hover:bg-muted"}>
+                    <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
                     {visible.map((column) => {
                       const candidate = fieldByName(targetCollection, column);
                       const value = candidate ? valueFor(candidate, row) : row[column];
@@ -1504,7 +1961,7 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
                         ? parentLabel
                         : formatCell(candidate, value, relationOptions);
                       return <TableCell key={column} className="admin-table-cell">
-                        {column === titleColumn
+                        {column === linkedColumn
                           ? <Link to={`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`} className="underline underline-offset-2 hover:text-primary">{displayValue}</Link>
                           : displayValue}
                       </TableCell>;

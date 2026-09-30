@@ -66,10 +66,7 @@ export default defineConfig({
       timestamps: true,
       writeMode: "command",
       permissions: {
-        read: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
-        insert: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
-        update: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
-        delete: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+        read: ({ rule, session }) => rule.where(session.where({ "claims.role": "admin" })),
       },
       admin: {
         useAsTitle: "user",
@@ -146,7 +143,7 @@ export default defineConfig({
       },
       fields: [
         { name: "name", type: "text", required: true },
-        { name: "workspace", type: "relationship", relationTo: "workspaces", admin: { position: "sidebar" } },
+        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
         { name: "content", type: "text", admin: { input: "textarea" } },
         { name: "image", type: "upload", relationTo: "media" },
         { name: "priority", type: "select", options: [

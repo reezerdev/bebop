@@ -61,7 +61,7 @@ const schema = {
   "tasks": s.table(
     {
       "name": s.string(),
-      "workspaceId": s.uuid().optional(),
+      "workspaceId": s.uuid(),
       "content": s.string().optional(),
       "imageId": s.uuid().optional(),
       "priority": s.enum("low", "medium", "high", "urgent").optional(),

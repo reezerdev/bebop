@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @bebopdev/core run build && pnpm --filter @bebopdev/admin build && turbo run dev --filter=@bebopdev/admin --filter=@bebopdev/playground",
+    "db:reset": "node scripts/reset-playground-db.mjs",
     "build": "turbo run build",
     "example": "pnpm --filter @bebopdev/example-basic dev",
     "example:check": "pnpm --filter @bebopdev/example-basic check",

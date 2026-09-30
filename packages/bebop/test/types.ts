@@ -121,4 +121,8 @@ if (false) {
   // @ts-expect-error Better Auth's user model is not exposed as a Jazz CRUD collection.
   void authClient.users.find();
   void betterAuthClient.admin.listUsers({ query: { limit: 10, offset: 0 } });
+  void betterAuthClient.admin.createUser({ name: "New user", email: "new@example.com", password: "initial-password" });
+  void betterAuthClient.admin.getUser({ query: { id: "user-1" } });
+  void betterAuthClient.admin.updateUser({ userId: "user-1", data: { name: "Updated name" } });
+  void betterAuthClient.admin.removeUser({ userId: "user-1" });
 }

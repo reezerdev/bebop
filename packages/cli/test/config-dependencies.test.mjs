@@ -22,6 +22,21 @@ async function waitForFileText(file, text, child, output) {
   throw new Error(`Timed out waiting for ${text}: ${output()}`);
 }
 
+async function waitForDifferentFileText(file, previous, child, output) {
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Bebop dev exited early: ${output()}`);
+    try {
+      const current = await readFile(file, "utf8");
+      if (current !== previous) return current;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timed out waiting for ${file} to change: ${output()}`);
+}
+
 test("config watcher follows local imports, including TypeScript source behind .js specifiers", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bebop-config-watch-"));
   try {
@@ -61,6 +76,39 @@ test("bebop dev regenerates when an imported collection module changes", { timeo
     await writeFile(fields, 'export const fields = [{ name: "title", type: "text" }, { name: "subtitle", type: "text" }];\n');
     await waitForFileText(generated, '"subtitle"', child, () => output);
     assert.match(output, /Watching .*fields\.ts/);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise((resolve) => {
+        child.once("exit", resolve);
+        child.kill("SIGTERM");
+      });
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bebop dev changes the generated permissions file when access callbacks change", { timeout: 12000 }, async () => {
+  const directory = await mkdtemp(path.join(cliDirectory, ".watch-test-"));
+  const config = path.join(directory, "bebop.config.ts");
+  const generated = path.join(directory, "generated", "permissions.ts");
+  const source = (permission) => `import { defineConfig } from "@bebopdev/core";\nexport default defineConfig({ collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }], permissions: { read: ({ rule }) => rule.${permission}() } }] });\n`;
+  await writeFile(config, source("always"));
+
+  const child = spawn(process.execPath, [
+    path.join(cliDirectory, "bin", "bebop.mjs"), "dev", "--config", config,
+    "--out-dir", path.join(directory, "generated"), "--", process.execPath,
+    "-e", "setTimeout(() => {}, 20000)",
+  ], { cwd: cliDirectory, stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { output += chunk; });
+  try {
+    await waitForFileText(generated, "Bebop permission source fingerprint:", child, () => output);
+    const before = await readFile(generated, "utf8");
+    await writeFile(config, source("never"));
+    const after = await waitForDifferentFileText(generated, before, child, () => output);
+    assert.notEqual(after.split("\n", 1)[0], before.split("\n", 1)[0]);
+    assert.equal(after.slice(after.indexOf("\n")), before.slice(before.indexOf("\n")));
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       await new Promise((resolve) => {

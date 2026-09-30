@@ -9,6 +9,28 @@ type BebopAuthClientOptions<Options extends BetterAuthOptions> = {
 
 export type BebopAuthAdminClient = {
   admin: {
+    getUser: (input: { query: { id: string } }) => Promise<{
+      data?: (Record<string, unknown> & { id: string }) | null;
+      error?: { message?: string } | null;
+    }>;
+    createUser: (input: {
+      email: string;
+      name: string;
+      password?: string;
+      role?: string | string[];
+      data?: Record<string, unknown>;
+    }) => Promise<{
+      data?: { user: Record<string, unknown> & { id: string } } | null;
+      error?: { message?: string } | null;
+    }>;
+    updateUser: (input: { userId: string; data: Record<string, unknown> }) => Promise<{
+      data?: (Record<string, unknown> & { id: string }) | null;
+      error?: { message?: string } | null;
+    }>;
+    removeUser: (input: { userId: string }) => Promise<{
+      data?: { success: boolean } | null;
+      error?: { message?: string } | null;
+    }>;
     listUsers: (input: { query: {
       limit: number;
       offset: number;
@@ -17,6 +39,9 @@ export type BebopAuthAdminClient = {
       searchValue?: string;
       searchField?: "name" | "email";
       searchOperator?: "contains";
+      filterField?: string;
+      filterValue?: string | number | boolean;
+      filterOperator?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains";
     } }) => Promise<{
       data?: { users: readonly (Record<string, unknown> & { id: string })[]; total: number } | null;
       error?: { message?: string } | null;

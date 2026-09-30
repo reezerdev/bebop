@@ -304,7 +304,7 @@ export const bebopAdminManifest = {
           "storageName": "workspaceId",
           "label": "Workspace",
           "kind": "relation",
-          "required": false,
+          "required": true,
           "admin": {
             "position": "sidebar"
           },

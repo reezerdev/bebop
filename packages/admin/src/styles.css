@@ -199,6 +199,8 @@
 .admin-collection-title { @apply pt-1 text-base font-medium text-card-foreground no-underline hover:underline; }
 .admin-collection-add { @apply flex size-9 shrink-0 items-center justify-center rounded-none border border-border text-card-foreground no-underline transition-colors hover:bg-accent; }
 .admin-list-heading { @apply mb-4 flex flex-wrap items-center justify-start gap-3; }
+.admin-selection-bar { @apply flex flex-wrap items-center gap-2 text-xs text-muted-foreground; }
+.admin-selection-action { @apply cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40; }
 .admin-table-toolbar { @apply mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2; }
 .admin-table-menu { @apply relative; }
 .admin-table-menu > summary { list-style: none; }
@@ -220,6 +222,8 @@
 .admin-checkbox::before { content: ""; width: 0.45rem; height: 0.25rem; transform: rotate(-45deg) scale(0); border: solid var(--primary-foreground); border-width: 0 0 2px 2px; }
 .admin-checkbox:checked { border-color: var(--primary); background: var(--primary); }
 .admin-checkbox:checked::before { transform: rotate(-45deg) scale(1); }
+.admin-checkbox:indeterminate { border-color: var(--primary); background: var(--primary); }
+.admin-checkbox:indeterminate::before { width: 0.45rem; height: 0; transform: none; border: 0; border-top: 2px solid var(--primary-foreground); }
 .admin-checkbox:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
 .admin-table-pagination { @apply flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground; }

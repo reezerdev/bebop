@@ -26,6 +26,8 @@ Open `http://127.0.0.1:5173/` for the simple playground or `/admin` for Bebop's 
 
 To run the standalone example within this workspace, use `pnpm example`. `pnpm test:packages` packs the source packages, installs them in a clean temporary example with pnpm, and generates, validates, type-checks, and bundles that consumer. See [`examples/README.md`](./examples/README.md).
 
+To delete the playground's local Jazz server database, stop `pnpm dev` and run `pnpm db:reset`. The command asks you to type `DELETE` and removes only the configured server data directory; browser IndexedDB replicas are left intact.
+
 ## Define collections
 
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts), then run `pnpm generate` or let `pnpm dev` regenerate the outputs:

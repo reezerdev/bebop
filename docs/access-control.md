@@ -1,6 +1,6 @@
 # Collection permissions and server writes
 
-Bebop's `permissions` option is a small, collection-scoped wrapper around Jazz's permission builders. Jazz enforces the generated rules for reads and writes. Permission checks in the admin guide the interface; they do not replace Jazz enforcement.
+Bebop's `permissions` option is a small, collection-scoped wrapper around Jazz's permission builders. Jazz enforces the generated rules for reads and direct writes. Command writes use the server authorization callback described below. Permission checks in the admin guide the interface; they do not replace enforcement.
 
 ## Collection permission rules
 
@@ -105,7 +105,7 @@ permissions: {
 }
 ```
 
-The playground grants public access to its demo Workspaces and Media, gives authenticated sessions access to Workspace Memberships, and scopes Task reads and writes through active Workspace membership. Membership writes use `writeMode: "command"`; the generated browser policy denies direct writes, while the server authorization policy retains the configured rules.
+The playground grants public access to its demo Workspaces and Media, gives authenticated sessions read access to Workspace Memberships, and scopes Task reads and writes through active Workspace membership. Membership writes use `writeMode: "command"`; the deployed Jazz policy denies direct writes.
 
 The older `access` option remains supported for compatibility and is deprecated. It retains its authenticated default and legacy callback behavior. Do not set both `access` and `permissions` on one collection.
 
@@ -124,7 +124,9 @@ collection({
 });
 ```
 
-The callback runs on the server with the verified Better Auth user. `req.isAdmin` comes from the Admin plugin's `user:list` permission check, which includes its default admin role and configured `adminUserIds`. The playground mounts `createBebopAdminAccessHandler` at `/api/bebop/admin-access` and passes its result to `BebopAdmin`. Other auth providers can use the same handler with their own verified `resolveSession`; a host without that handler can supply a `canAccessAdmin` result directly. This controls entry to the UI. Jazz collection permissions still control which rows a user can read or mutate.
+The callback runs on the server with the verified Better Auth user. `req.isAdmin` comes from the Admin plugin's `user:list` permission check, which includes its default admin role and configured `adminUserIds`. The playground mounts `createBebopAdminAccessHandler` at `/api/bebop/admin-access` and passes its result to `BebopAdmin`. Other auth providers can use the same handler with their own verified `resolveSession`; a host without that handler can supply a `canAccessAdmin` result directly. This controls entry to the UI. Jazz enforces collection reads and writes for app sessions, with the built-in admin read override described below.
+
+The Better Auth integration also gives the verified `admin` role read access across every generated application collection. Generated Jazz read rules combine the admin role claim with each collection's configured read rule, so an admin can inspect rows across Workspaces even when the regular rule is workspace-scoped. When a collection omits its read callback, the admin role still grants read access. The auth collection continues to use Better Auth's admin API. This is a read-only override: create, update, and delete continue to follow the collection's normal Jazz rules, and command writes continue to require the host's server-side `authorize` check. For another auth provider, include the trusted `role: "admin"` claim in the Jazz session or adapt the generated permissions to that provider's verified admin claim.
 
 ## Direct collections
 
@@ -134,27 +136,36 @@ The client returns after the local write and after hook. Call `waitForGlobal()` 
 
 ## Command collections
 
-Use command mode when custom validation or hooks must run at a trusted server boundary. The browser's generated `permissions.ts` denies command collection inserts, updates, and deletes. The CLI also generates `bebop-generated-command-permissions.ts`; use that server-only policy in the Jazz context that creates request-scoped authorization DBs for `can*` checks. Never expose it to the browser or publish it in place of the browser policy.
+Use command mode when custom validation or hooks must run at a trusted server boundary. The generated `permissions.ts` denies command collection inserts, updates, and deletes for all ordinary Jazz sessions. A trusted backend writer can still write with user attribution. The handler therefore requires a server-side `authorize` callback for each command collection. It runs before and after `beforeChange` so a hook cannot change a permitted request into an unreviewed write. Return `false` to deny the command.
+
+Jazz's `canInsert`, `canUpdate`, and `canDelete` methods advise on the **deployed** Jazz policy. They cannot authorize a command write when that policy intentionally denies direct writes, even if the server imports the generated `bebop-generated-command-permissions.ts` bundle. That bundle does not replace the deployed policy. In command mode, the host callback is the write authority; it must check the acting user and any relevant current or proposed row. Jazz confirms the attributed backend write globally, and Jazz's deployed read policy still controls request-scoped reads.
+
+The generated Jazz `permissions.insert`, `update`, and `delete` callbacks do not authorize command writes. Put command write rules in the handler's `authorize` callback; keep Jazz `permissions.read` for request-scoped reads.
 
 Mount a Web handler in the host's server/router:
 
 ```ts
 import { createBebopHandler } from "@bebopdev/core/server";
 import { app } from "./bebop-generated-schema.js";
-import commandPermissions from "./bebop-generated-command-permissions.js";
+import permissions from "./permissions.js";
 import bebopConfig from "./bebop.config.js";
 
 const handleBebop = createBebopHandler({
   app,
   config: bebopConfig,
+  async authorize({ collection, operation, userId, data, originalDoc, db }) {
+    // Apply your server-side command policy here. Use db for scoped reads.
+    return collection === "workspaceMemberships" &&
+      await canManageMembership({ operation, userId, data, originalDoc, db });
+  },
   async resolveSession(request) {
     // Host code validates auth and CSRF, then creates request-scoped Jazz DBs.
-    // authorizationDb uses commandPermissions and the verified actor's session.
-    // writeDb is a trusted backend writer attributed to that same actor.
+    // authorizationDb reads as the verified actor.
+    // writeDb has backend authority and is attributed to that actor.
     const actor = await resolveHostActor(request);
     if (!actor) return null;
     return {
-      authorizationDb: await actor.createAuthorizationDb(commandPermissions),
+      authorizationDb: await actor.createAuthorizationDb(permissions),
       writeDb: await actor.createAttributedWriter(),
       userId: actor.id,
     };
@@ -164,9 +175,9 @@ const handleBebop = createBebopHandler({
 export { handleBebop };
 ```
 
-`resolveHostActor` is host-specific pseudocode: Bebop does not own Better Auth cookies, CSRF rules, or server deployment. The `writeDb` must be created with Jazz backend authority and user attribution to the same verified actor used by `authorizationDb`. Keep it private to this handler. The handler checks configured Jazz permissions, validates before and after `beforeChange`, performs the write, waits for global confirmation, then runs the after hook. A response with `writeAccepted: true` means Jazz confirmed the mutation but an after hook failed.
+`resolveHostActor` and `canManageMembership` are host-specific pseudocode: Bebop does not own Better Auth cookies, CSRF rules, or server deployment. The `writeDb` must have Jazz backend authority and user attribution to the same verified actor used by `authorizationDb`. Keep it private to this handler. The handler validates, calls `authorize` on the proposed input and again after `beforeChange`, performs the write, waits for global confirmation, then runs the after hook. A response with `writeAccepted: true` means Jazz confirmed the mutation but an after hook failed. Without an `authorize` callback, the handler rejects command writes.
 
-The playground provides a Better Auth host integration for `workspaceMemberships`. Its same-origin Vite route verifies the Better Auth cookie and Origin, requests a Better Auth JWT, verifies it through Jazz's configured JWKS, and creates request-scoped authorization and attributed writer DBs. The generated command permission bundle stays server-side; the browser receives `permissions.ts`, which denies direct Membership writes. The generated client uses `createBebopFetchTransport` to send those mutations to `/api/bebop/collections/...`.
+The playground provides a Better Auth host integration for `workspaceMemberships`. Its same-origin Vite route verifies the Better Auth cookie and Origin, requests a Better Auth JWT, verifies it through Jazz's configured JWKS, and creates request-scoped reader and attributed writer DBs. Its command authorizer permits authenticated users, matching this demo's permissive Membership rule. A production app should narrow that callback to the roles and Workspaces that may manage members. The browser receives `permissions.ts`, which denies direct Membership writes. The generated client uses `createBebopFetchTransport` to send those mutations to `/api/bebop/collections/...`.
 
 ```ts
 import { createBebopFetchTransport } from "@bebopdev/core";

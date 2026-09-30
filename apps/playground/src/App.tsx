@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDb, useJazzAuth } from "jazz-tools/react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { BebopAdmin } from "@bebopdev/admin";
@@ -9,10 +9,17 @@ import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";
 import { PlaygroundPage } from "./PlaygroundPage.tsx";
 import { withAcyclicTaskParents } from "./task-parent.js";
+import { signOutWithLocalFallback } from "./logout.js";
 
 export function App() {
   const { logout } = useJazzAuth();
   const db = useDb();
+  const signOut = useCallback(async () => {
+    const leftWritesLocal = await signOutWithLocalFallback(logout, db);
+    if (leftWritesLocal) sessionStorage.setItem("bebop-logout-pending-writes", "true");
+    else sessionStorage.removeItem("bebop-logout-pending-writes");
+    window.dispatchEvent(new Event("bebop-logout-complete"));
+  }, [db, logout]);
   const bebop = useMemo(() => withAcyclicTaskParents(createBebopClient(db, {
     commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
   })), [db]);
@@ -92,12 +99,12 @@ export function App() {
   }), [currentUserId]);
 
   return <Routes>
-    <Route path="/" element={<PlaygroundPage client={bebop} logout={() => logout()} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
+    <Route path="/" element={<PlaygroundPage client={bebop} logout={signOut} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
     <Route
       path="/admin/*"
       element={canAccessAdmin === null
         ? <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 text-foreground"><p role="status">Checking admin access…</p></main>
-        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={() => logout()} />}
+        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} relationOptions={relationOptions} onLogout={signOut} />}
     />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;

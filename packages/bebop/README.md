@@ -70,6 +70,12 @@ collection({
 });
 ```
 
+Use `admin.useAsTitle` with an ordered list to combine fields in document titles. The admin joins the displayed values with ` · `; relationship fields use the related collection's title:
+
+```ts
+admin: { useAsTitle: ["workspace", "user"] }
+```
+
 `bebop generate` creates the Better Auth schema automatically and installs Bebop's JWT and Admin plugins. A custom user field is read-only on public auth endpoints by default; opt into signup input with `auth: { input: true }` only when users may safely set that value themselves. The built-in admin panel is restricted to Better Auth administrators by default, including users listed in `adminUserIds`. To customize entry, define `access.admin` on the auth collection:
 
 ```ts

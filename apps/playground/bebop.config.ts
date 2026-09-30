@@ -69,7 +69,7 @@ export default defineConfig({
         read: ({ rule, session }) => rule.where(session.where({ "claims.role": "admin" })),
       },
       admin: {
-        useAsTitle: "user",
+        useAsTitle: ["workspace", "user"],
         defaultColumns: ["user", "workspace", "role", "status"],
       },
       fields: [

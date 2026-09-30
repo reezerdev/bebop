@@ -73,6 +73,10 @@ export function normalizeConfig(config: BebopConfig) {
         ...storedFields.map((field) => field.name),
       ];
       const useAsTitle = definition.admin?.useAsTitle ?? (definition.auth ? "name" : fieldNames.includes("title") ? "title" : definition.upload ? "filename" : undefined);
+      const titleFieldNames = useAsTitle === undefined ? [] : typeof useAsTitle === "string" ? [useAsTitle] : [...useAsTitle];
+      const searchableTitleFields = titleFieldNames.filter((fieldName) =>
+        fields.some((field) => field.name === fieldName && field.kind === "text"),
+      );
       return {
         name,
         ...(definition.auth ? { auth: true as const } : {}),
@@ -91,10 +95,10 @@ export function normalizeConfig(config: BebopConfig) {
           defaultColumns: definition.admin?.defaultColumns ?? (definition.auth
             ? ["name", "email", "role", "createdAt"]
             : [
-                ...(useAsTitle ? [useAsTitle] : []),
-                ...fieldNames.filter((fieldName) => fieldName !== useAsTitle && fieldName !== "id"),
+                ...titleFieldNames,
+                ...fieldNames.filter((fieldName) => !titleFieldNames.includes(fieldName) && fieldName !== "id"),
               ].slice(0, 4)),
-          listSearchableFields: definition.admin?.listSearchableFields ?? (definition.auth ? ["name", "email"] : useAsTitle ? [useAsTitle] : []),
+          listSearchableFields: definition.admin?.listSearchableFields ?? (definition.auth ? ["name", "email"] : searchableTitleFields),
         },
       };
     }),
@@ -734,8 +738,13 @@ function validateConfig(config: BebopConfig): void {
     }
 
     const adminOptions = definition.admin;
-    if (adminOptions?.useAsTitle && !fieldNames.has(adminOptions.useAsTitle)) {
-      throw new Error(`Collection "${collectionName}" admin.useAsTitle references unknown field "${adminOptions.useAsTitle}".`);
+    const titleFieldNames = adminOptions?.useAsTitle === undefined
+      ? []
+      : typeof adminOptions.useAsTitle === "string" ? [adminOptions.useAsTitle] : adminOptions.useAsTitle;
+    for (const fieldName of titleFieldNames) {
+      if (!fieldNames.has(fieldName)) {
+        throw new Error(`Collection "${collectionName}" admin.useAsTitle references unknown field "${fieldName}".`);
+      }
     }
     for (const fieldName of adminOptions?.defaultColumns ?? []) {
       if (fields.find((field) => field.name === fieldName)?.type === "join") {

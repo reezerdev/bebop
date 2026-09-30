@@ -273,16 +273,17 @@ export const bebopAdminManifest = {
         }
       ],
       "timestamps": true,
-      "useAsTitle": "user",
+      "useAsTitle": [
+        "workspace",
+        "user"
+      ],
       "defaultColumns": [
         "user",
         "workspace",
         "role",
         "status"
       ],
-      "listSearchableFields": [
-        "user"
-      ],
+      "listSearchableFields": [],
       "writeMode": "command"
     },
     "tasks": {

@@ -247,7 +247,8 @@ export type CollectionHooks<TFields extends Fields> = {
 export type CollectionAdminOptions = {
   /** @deprecated Use collection labels.plural instead. */
   label?: string;
-  useAsTitle?: string;
+  /** One field, or an ordered list of fields joined with a middle dot for document titles. */
+  useAsTitle?: string | readonly string[];
   defaultColumns?: readonly string[];
   listSearchableFields?: readonly string[];
 };

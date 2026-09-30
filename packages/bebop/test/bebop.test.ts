@@ -38,6 +38,35 @@ test("admin manifest includes the configured title and field positions", () => {
   })), /admin\.position must be "main" or "sidebar"/);
 });
 
+test("admin titles compose ordered fields and validate every component", () => {
+  const config = defineConfig({
+    collections: [
+      { slug: "workspaces", fields: [{ name: "name", type: "text" }] },
+      { slug: "users", fields: [{ name: "name", type: "text" }] },
+      {
+        slug: "memberships",
+        fields: [
+          { name: "workspace", type: "relationship", relationTo: "workspaces" },
+          { name: "user", type: "relationship", relationTo: "users" },
+          { name: "role", type: "text" },
+        ],
+        admin: { useAsTitle: ["workspace", "user"] },
+      },
+    ],
+  });
+
+  const manifest = compileAdminManifest(config);
+  assert.match(manifest, /"useAsTitle": \[\s*"workspace",\s*"user"\s*\]/);
+  assert.match(manifest, /"defaultColumns": \[\s*"workspace",\s*"user",\s*"role"\s*\]/);
+  assert.throws(() => compileAdminManifest(defineConfig({
+    collections: [{
+      slug: "memberships",
+      fields: [{ name: "workspace", type: "text" }],
+      admin: { useAsTitle: ["workspace", "missing"] },
+    }],
+  })), /admin\.useAsTitle references unknown field "missing"/);
+});
+
 test("admin access defaults to Better Auth admin status and supports an auth collection callback", async () => {
   const defaultHandler = createBebopAdminAccessHandler({
     config: defineConfig({ collections: [{ slug: "users", auth: true, fields: [] }] }),

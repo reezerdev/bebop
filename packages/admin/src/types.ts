@@ -46,7 +46,7 @@ export type BebopAdminCollection = {
   labels: { singular: string; plural: string };
   fields: readonly BebopAdminField[];
   timestamps: boolean;
-  useAsTitle?: string;
+  useAsTitle?: string | readonly string[];
   defaultColumns: readonly string[];
   listSearchableFields: readonly string[];
   writeMode: "direct" | "command";

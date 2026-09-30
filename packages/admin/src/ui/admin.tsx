@@ -205,6 +205,38 @@ function valueFor(field: BebopAdminField, row: AdminRecord): unknown {
   return field.kind === "join" ? undefined : row[field.storageName];
 }
 
+function collectionTitleFields(collection: BebopAdminCollection): BebopAdminStoredField[] {
+  const names = collection.useAsTitle === undefined
+    ? []
+    : typeof collection.useAsTitle === "string" ? [collection.useAsTitle] : collection.useAsTitle;
+  return names.flatMap((name) => {
+    const field = fieldByName(collection, name);
+    return field && field.kind !== "join" ? [field] : [];
+  });
+}
+
+function composeCollectionTitle(
+  collection: BebopAdminCollection,
+  readValue: (field: BebopAdminStoredField) => unknown,
+  relationOptions?: BebopAdminProps["relationOptions"],
+): string | undefined {
+  const parts = collectionTitleFields(collection).flatMap((field) => {
+    const value = readValue(field);
+    if (value === null || value === undefined || value === "") return [];
+    if (field.kind === "relation" || field.kind === "upload") {
+      const label = relationOptions?.[field.relationTo ?? ""]?.find((option) => option.id === value)?.name;
+      return [label ?? String(value)];
+    }
+    return [field.kind === "select" ? selectLabel(field, String(value)) : String(value)];
+  });
+  const title = parts.join(" · ").trim();
+  return title || undefined;
+}
+
+function recordTitle(collection: BebopAdminCollection, row: AdminRecord, relationOptions?: BebopAdminProps["relationOptions"]): string | undefined {
+  return composeCollectionTitle(collection, (field) => valueFor(field, row), relationOptions);
+}
+
 function fieldByName(collection: BebopAdminCollection, name: string): BebopAdminField | undefined {
   return collection.fields.find((field) => field.name === name);
 }
@@ -335,11 +367,12 @@ function useRowReadPermissions(db: AdminDatabase, table: AdminTable | undefined,
 
 type RelationOption = { id: string; name: string };
 
-function RelatedCollectionLabels({ app, client, collection, ids, onChange }: {
+function RelatedCollectionLabels({ app, client, collection, ids, relationOptions, onChange }: {
   app: object;
   client: BebopAdminClient;
   collection: BebopAdminCollection;
   ids: readonly string[];
+  relationOptions?: BebopAdminProps["relationOptions"];
   onChange: (slug: string, options: readonly RelationOption[]) => void;
 }) {
   const db = useDb() as AdminDatabase;
@@ -349,11 +382,10 @@ function RelatedCollectionLabels({ app, client, collection, ids, onChange }: {
     : undefined;
   const { data } = useAll<AdminRecord>(query);
   const readPermissions = useRowReadPermissions(db, table, data ?? []);
-  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
   const options = useMemo(() => (data ?? [])
     .filter((row) => readPermissions[row.id] !== "denied")
-    .map((row) => ({ id: row.id, name: String(titleField ? valueFor(titleField, row) ?? row.id : row.id) })),
-  [data, readPermissions, titleField]);
+    .map((row) => ({ id: row.id, name: recordTitle(collection, row, relationOptions) ?? row.id })),
+  [collection, data, readPermissions, relationOptions]);
 
   useEffect(() => { onChange(collection.slug, options); }, [collection.slug, onChange, options]);
   return null;
@@ -1088,7 +1120,9 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   const allColumns = storedFields(collection).map((field) => field.name);
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const relatedIdsByCollection = new Map<string, Set<string>>();
-  for (const column of [...new Set([...columns, ...(searchActive ? collection.listSearchableFields : [])])]) {
+  const titleFields = collectionTitleFields(collection);
+  const titleFieldNames = titleFields.map((field) => field.name);
+  for (const column of [...new Set([...columns, ...titleFieldNames, ...(searchActive ? collection.listSearchableFields : [])])]) {
     const field = fieldByName(collection, column);
     if ((field?.kind !== "relation" && field?.kind !== "upload") || !field.relationTo || !manifest.collections[field.relationTo] || relationOptions?.[field.relationTo]) continue;
     const ids = relatedIdsByCollection.get(field.relationTo) ?? new Set<string>();
@@ -1112,8 +1146,8 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   const somePageSelected = selectablePageRows.some((row) => selectedIds.has(row.id));
   const selectedRows = readableRows.filter((row) => selectedIds.has(row.id));
   const selectedDeletableRows = selectedRows.filter((row) => rowPermissions[row.id]?.delete !== "denied");
-  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
-  const searchField = titleField ?? fieldByName(collection, collection.listSearchableFields[0] ?? "");
+  const titleField = titleFields.find((field) => field.kind === "text") ?? titleFields[0];
+  const searchField = titleFields.find((field) => field.kind === "text") ?? fieldByName(collection, collection.listSearchableFields[0] ?? "");
   const searchLabel = searchField?.label ?? "Name";
   const linkedColumn = columns[0];
 
@@ -1169,7 +1203,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   }
 
   const pendingTitle = pendingDelete?.length === 1
-    ? String(titleField ? valueFor(titleField, pendingDelete[0]) ?? pendingDelete[0].id : pendingDelete[0].id)
+    ? recordTitle(collection, pendingDelete[0], displayRelationOptions) ?? pendingDelete[0].id
     : "";
   const rangeStart = totalRows ? (Math.min(page, pageCount) - 1) * pageSize + 1 : 0;
   const rangeEnd = Math.min(page * pageSize, totalRows);
@@ -1189,6 +1223,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
           client={client}
           collection={manifest.collections[slug]}
           ids={[...ids].sort()}
+          relationOptions={displayRelationOptions}
           onChange={onRelatedOptions}
         />
       ))}
@@ -1310,7 +1345,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                       <input
                         type="checkbox"
                         className="admin-checkbox"
-                        aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`}
+                        aria-label={`Select ${recordTitle(collection, row, displayRelationOptions) ?? row.id}`}
                         checked={selectedIds.has(row.id)}
                         disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"}
                         onChange={() => toggleRowSelection(row.id)}
@@ -1320,18 +1355,21 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                       const field = fieldByName(collection, column);
                       const value = field ? valueFor(field, row) : row[column];
                       const isTitle = linkedColumn === column;
+                      const displayValue = (isTitle && titleFields.length > 1) || field?.name === titleField?.name
+                        ? recordTitle(collection, row, displayRelationOptions) ?? formatCell(field, value, displayRelationOptions)
+                        : formatCell(field, value, displayRelationOptions);
                       return (
                         <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
                           {isTitle && selectMode ? (
                             <button type="button" className="admin-media-picker-row-button" onClick={(event) => { event.stopPropagation(); onSelect?.(row); }}>
                               {collection.upload && <MediaPreview client={client} collection={collection.slug} id={row.id} filename={String(row.filename ?? "")} mimeType={String(row.mimeType ?? "")} compact />}
-                              <span className="underline underline-offset-2 hover:text-primary">{formatCell(field, value, displayRelationOptions)}</span>
+                              <span className="underline underline-offset-2 hover:text-primary">{displayValue}</span>
                             </button>
                           ) : isTitle ? (
                             <Link to={`/admin/collections/${collection.slug}/${row.id}`} className="underline underline-offset-2 hover:text-primary">
-                              {formatCell(field, value, displayRelationOptions)}
+                              {displayValue}
                             </Link>
-                          ) : formatCell(field, value, displayRelationOptions)}
+                          ) : displayValue}
                         </TableCell>
                       );
                     })}
@@ -1521,17 +1559,32 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   const watchedValues = form.watch();
   const serializedValues = useMemo(() => serializeValues(collection, watchedValues), [collection, watchedValues]);
   const serializedValuesKey = JSON.stringify(serializedValues);
-  const titleField = collection.useAsTitle ? fieldByName(collection, collection.useAsTitle) : undefined;
-  const titleValue = titleField
-    ? Object.hasOwn(watchedValues, titleField.name) ? watchedValues[titleField.name] : existing ? valueFor(titleField, existing) : undefined
-    : undefined;
-  const title = titleValue !== undefined && titleValue !== null && String(titleValue).trim()
-    ? String(titleValue)
-    : id ? `Untitled ${collection.labels.singular.toLocaleLowerCase()}` : `New ${collection.labels.singular}`;
-  const savedParentTitle = titleField && existing ? valueFor(titleField, existing) : undefined;
-  const parentLabel = savedParentTitle !== undefined && savedParentTitle !== null && String(savedParentTitle).trim()
-    ? String(savedParentTitle)
-    : id ?? "";
+  const titleFields = collectionTitleFields(collection);
+  const [titleRelationOptions, setTitleRelationOptions] = useState<Record<string, readonly RelationOption[]>>({});
+  const onTitleRelatedOptions = useCallback((slug: string, options: readonly RelationOption[]) => {
+    setTitleRelationOptions((current) => {
+      const previous = current[slug];
+      if (previous?.length === options.length && previous.every((option, index) => option.id === options[index].id && option.name === options[index].name)) return current;
+      return { ...current, [slug]: options };
+    });
+  }, []);
+  const titleRelationIds = new Map<string, Set<string>>();
+  for (const field of titleFields) {
+    if (field.kind !== "relation" || !field.relationTo) continue;
+    const value = Object.hasOwn(watchedValues, field.name) ? watchedValues[field.name] : existing ? valueFor(field, existing) : undefined;
+    if (typeof value !== "string" || !value) continue;
+    const ids = titleRelationIds.get(field.relationTo) ?? new Set<string>();
+    ids.add(value);
+    titleRelationIds.set(field.relationTo, ids);
+  }
+  const resolvedTitleRelationOptions = useMemo(() => ({ ...titleRelationOptions, ...relationOptions }), [relationOptions, titleRelationOptions]);
+  const titleValue = composeCollectionTitle(
+    collection,
+    (field) => Object.hasOwn(watchedValues, field.name) ? watchedValues[field.name] : existing ? valueFor(field, existing) : undefined,
+    resolvedTitleRelationOptions,
+  );
+  const title = titleValue ?? (id ? `Untitled ${collection.labels.singular.toLocaleLowerCase()}` : `New ${collection.labels.singular}`);
+  const parentLabel = (existing ? recordTitle(collection, existing, resolvedTitleRelationOptions) : undefined) ?? id ?? "";
   const mainFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position !== "sidebar");
   const sidebarFields = collection.fields.filter((field): field is BebopAdminStoredField => field.kind !== "join" && !field.generated && field.admin?.position === "sidebar");
   const joinFields = collection.fields.filter((field): field is BebopAdminJoinField => field.kind === "join");
@@ -1721,6 +1774,18 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
 
   return (
     <div className={`admin-editor ${modal ? "admin-editor-modal" : ""}`}>
+      {[...titleRelationIds].map(([slug, ids]) => {
+        const relatedCollection = manifest.collections[slug];
+        return relatedCollection ? <RelatedCollectionLabels
+          key={`title:${slug}`}
+          app={app}
+          client={client}
+          collection={relatedCollection}
+          ids={[...ids].sort()}
+          relationOptions={relationOptions}
+          onChange={onTitleRelatedOptions}
+        /> : null;
+      })}
       <EditorHeading title={title} action={modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>} />
       <form onSubmit={handleSubmit(save)}>
         <EditorMeta
@@ -1881,7 +1946,8 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
   const someRowsSelected = selectableRows.some((row) => selectedIds.has(row.id));
   const allColumns = columnsAvailable.map((candidate) => candidate.name);
   const visible = allColumns.filter((name) => visibleColumns.includes(name));
-  const titleField = target?.useAsTitle ? fieldByName(target, target.useAsTitle) : undefined;
+  const titleFields = target ? collectionTitleFields(target) : [];
+  const titleField = titleFields[0];
   const linkedColumn = visible[0];
   const totalRows = idResult.data?.length ?? 0;
   const readDenied = target?.writeMode !== "command" && rows.some((row) => readPermissions[row.id] === "denied");
@@ -1993,12 +2059,14 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
               <TableBody>{readableRows.length === 0
                 ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0) + 1} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
                 : readableRows.map((row) => <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-accent" : "hover:bg-muted"}>
-                    <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${String(titleField ? valueFor(titleField, row) ?? row.id : row.id)}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
+                    <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${recordTitle(targetCollection, row, relationOptions) ?? row.id}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
                     {visible.map((column) => {
                       const candidate = fieldByName(targetCollection, column);
                       const value = candidate ? valueFor(candidate, row) : row[column];
                       const displayValue = candidate?.kind === "relation" && candidate.name === field.on && value === parentId
                         ? parentLabel
+                        : (column === linkedColumn && titleFields.length > 1) || candidate?.name === titleField?.name
+                          ? recordTitle(targetCollection, row, relationOptions) ?? formatCell(candidate, value, relationOptions)
                         : formatCell(candidate, value, relationOptions);
                       return <TableCell key={column} className="admin-table-cell">
                         {column === linkedColumn
@@ -2189,10 +2257,9 @@ function RelationInput({
   const readPermissions = useRowReadPermissions(db, relatedTable, data ?? []);
   const readableRelatedRows = (data ?? []).filter((row) => readPermissions[row.id] !== "denied");
   const targetCollection = manifest.collections[relatedSlug];
-  const titleField = targetCollection?.useAsTitle ? targetCollection.fields.find((candidate) => candidate.name === targetCollection.useAsTitle) : undefined;
   const availableOptions = options ?? readableRelatedRows.map((row) => ({
     id: row.id,
-    name: String(titleField ? valueFor(titleField, row) ?? row.id : row.id),
+    name: targetCollection ? recordTitle(targetCollection, row) ?? row.id : row.id,
   }));
   return (
     <Select value={value} onValueChange={onChange}>

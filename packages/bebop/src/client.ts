@@ -249,8 +249,11 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       }
       return where;
     };
+    const configuredTitleFields = definition.admin?.useAsTitle === undefined
+      ? []
+      : typeof definition.admin.useAsTitle === "string" ? [definition.admin.useAsTitle] : definition.admin.useAsTitle;
     const searchableFields = definition.admin?.listSearchableFields ?? (
-      definition.admin?.useAsTitle ? [definition.admin.useAsTitle]
+      configuredTitleFields.length ? configuredTitleFields.filter((name) => definition.fields.some((field) => field.name === name && field.type === "text"))
         : definition.fields.some((field) => field.type !== "join" && field.name === "title") ? ["title"]
           : []
     );

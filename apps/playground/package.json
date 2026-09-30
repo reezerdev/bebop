@@ -14,7 +14,7 @@
     "@bebopdev/admin": "workspace:*",
     "@bebopdev/core": "workspace:*",
     "better-auth": "1.7.1",
-    "jazz-tools": "2.0.0-alpha.57",
+    "jazz-tools": "2.0.0-alpha.58",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.89.0",

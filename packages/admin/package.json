@@ -39,7 +39,7 @@
     "react": ">=19",
     "react-dom": ">=19",
     "react-router-dom": ">=6",
-    "jazz-tools": "2.0.0-alpha.57"
+    "jazz-tools": "2.0.0-alpha.58"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -51,7 +51,7 @@
     "react-hook-form": "^7.89.0"
   },
   "devDependencies": {
-    "jazz-tools": "2.0.0-alpha.57",
+    "jazz-tools": "2.0.0-alpha.58",
     "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

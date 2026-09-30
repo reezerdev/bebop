@@ -182,8 +182,8 @@ importers:
         specifier: 1.7.1
         version: 1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       jazz-tools:
-        specifier: 2.0.0-alpha.57
-        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        specifier: 2.0.0-alpha.58
+        version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -223,13 +223,13 @@ importers:
     dependencies:
       '@bebopdev/admin':
         specifier: 0.1.0-beta.0
-        version: 0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        version: 0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@bebopdev/core':
         specifier: 0.1.0-beta.0
-        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
+        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       jazz-tools:
-        specifier: 2.0.0-alpha.57
-        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        specifier: 2.0.0-alpha.58
+        version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -242,7 +242,7 @@ importers:
     devDependencies:
       '@bebopdev/cli':
         specifier: 0.1.0-beta.0
-        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
+        version: 0.1.0-beta.0(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -305,8 +305,8 @@ importers:
         specifier: ^6.1.1
         version: 6.1.1(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
       jazz-tools:
-        specifier: 2.0.0-alpha.57
-        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        specifier: 2.0.0-alpha.58
+        version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       shadcn:
         specifier: ^4.21.0
         version: 4.21.0(typescript@5.9.3)
@@ -330,8 +330,8 @@ importers:
         version: 1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
       jazz-tools:
-        specifier: 2.0.0-alpha.57
-        version: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        specifier: 2.0.0-alpha.58
+        version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -1006,30 +1006,30 @@ packages:
   '@fontsource-variable/playfair-display@5.3.0':
     resolution: {integrity: sha512-IHdzTvE8eGIXHteZql7KXoqdc3Gfm+Zs1u4XlSC3MeplkwviT3sx/P6gI0tLwg/xIYLF4ZJYveZ5V+bl9cnDwA==}
 
-  '@garden-co/jazz-napi-darwin-arm64@2.0.0-alpha.57':
-    resolution: {integrity: sha512-tlzVq0wymRS5Hv92e13OIp3C2vFePuIxHVNW2obU9xzRI+2pXfDBORN0xt4mvbbhwHeNoekelC6dBs924jKkJw==}
+  '@garden-co/jazz-napi-darwin-arm64@2.0.0-alpha.58':
+    resolution: {integrity: sha512-hJ55+7sRGXQrBiUZdAdYDnSoK/Nqhh1Kf1H4KN9+peiDp2cWoxDo4W8anY83nEyI3PCDQZZ1w8iwK0qM6Z1p8Q==}
     cpu: [arm64]
     os: [darwin]
 
-  '@garden-co/jazz-napi-darwin-x64@2.0.0-alpha.57':
-    resolution: {integrity: sha512-ipW/cmtMHkqbzKR5kjUriY5OpXuivpDXQ30ByoNZZKOmORGDyiTmZKpts6l+1qK+09Gbh8Bzw17OkeyeNjubEg==}
+  '@garden-co/jazz-napi-darwin-x64@2.0.0-alpha.58':
+    resolution: {integrity: sha512-LChZXW7F+8f8rmAJF6qo6HMIhr21Sfgbo288FGt3lb632PhOzzNfLOQDkv5eSs/y4jmbLz9mCwQ5l9x0cjl6Sg==}
     cpu: [x64]
     os: [darwin]
 
-  '@garden-co/jazz-napi-linux-arm64-gnu@2.0.0-alpha.57':
-    resolution: {integrity: sha512-NGaZ5B10N7s+gtqF8kxfVkMQU69IwHSkEZs/dC2sYqrlvrPu7lj8dR+07MDeHa8Yfgq/wg8NrL8UY37ur4xJzA==}
+  '@garden-co/jazz-napi-linux-arm64-gnu@2.0.0-alpha.58':
+    resolution: {integrity: sha512-bbR012Wlf7EB5mk1OFo7+58wN4FZnIuyklSdHUQZ2K6S9l4PikiEvVrFIOZKy8tcWUQxfAbLoxOVH8X3Ic/MUA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@garden-co/jazz-napi-linux-x64-gnu@2.0.0-alpha.57':
-    resolution: {integrity: sha512-d361nkZjcVajMUDqS9EWBXWwCvcg5fRvqn943bPoKx+/GiRTElXQ3fKX2m/8+O+Tw/XqE7AlN8Uv9jxerX+SAg==}
+  '@garden-co/jazz-napi-linux-x64-gnu@2.0.0-alpha.58':
+    resolution: {integrity: sha512-KyX25oun91snlXarBD1RRx9u4NNx7voptKjlqBqspQa7Ft8YhKfsYEE998yXMA0fLY9wkwZyPkBEzxwNeOy9aQ==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@garden-co/jazz-napi-win32-x64-msvc@2.0.0-alpha.57':
-    resolution: {integrity: sha512-2w+RYF10mF5vJn+z90ap2nhZ1UkgGrNUwA99+Dla7CTRCoo6uyy+PlGCEUNYCYfhO5J2uuXQg2yxNIdcO06L+A==}
+  '@garden-co/jazz-napi-win32-x64-msvc@2.0.0-alpha.58':
+    resolution: {integrity: sha512-X5Mc/kwb+H0JuzOCr+kNzUM9lAEbBVqQgFjHlYPTLVS6sOxc6Fy46lYg7l+gsOq1fLb8E//zFQzzBrl/zh46hQ==}
     cpu: [x64]
     os: [win32]
 
@@ -2223,19 +2223,20 @@ packages:
     resolution: {integrity: sha512-6B3tLtFqtQS4ekarvLVMZ+X+VlvQekbe4taUkf/rhVO3d/h0M2rfARm/pXLcPEsjjMsFgrFgSrhQIxcSVrBz8w==}
     engines: {node: '>=18'}
 
-  jazz-napi@2.0.0-alpha.57:
-    resolution: {integrity: sha512-IybIHU+exKh0qLoA9kUpsESGHIDtgxR0VmUo+I0E/mZoBQsu66Up9DM9b6cnUPS8lQZ6tB12+ZvLtvc3Mc4aKA==}
+  jazz-napi@2.0.0-alpha.58:
+    resolution: {integrity: sha512-yn1vDi3khIUq9FzUKQTbOUL9nJsf/o81a4I3vSAC1xSubnJ1g80hCpQrG6kmijs9sTG5S5fFRocM+Om87nnWtw==}
 
-  jazz-tools@2.0.0-alpha.57:
-    resolution: {integrity: sha512-Wb9HsJ6+hkHZWBKLnMDyW4NqO0blmHIx7uLebb4Zh8h1pW1C3LsD6R9JSZ27olDhBpNY4iJZodmvnTgoiT9Ssw==}
+  jazz-tools@2.0.0-alpha.58:
+    resolution: {integrity: sha512-ggl0IlmVoGFjB4Igq8MNOn2Be+956lP1T7ROu7MkfRTeSO52S2DmtzmYPpkxJn75yrUrKLljcUeGL8ihVVTJCA==}
     engines: {node: '>=22.12'}
     hasBin: true
     peerDependencies:
       better-auth: 1.7.1
+      effect: ^4.0.0-rc.118
       expo: '>=54'
       expo-crypto: '>=14.0.0'
       expo-secure-store: '>=14.0.0'
-      jazz-rn: 2.0.0-alpha.57
+      jazz-rn: 2.0.0-alpha.58
       react: '>=19'
       react-native: '>=0.76'
       solid-js: '>=1.9.13'
@@ -2243,6 +2244,8 @@ packages:
       vue: ^3.5.0
     peerDependenciesMeta:
       better-auth:
+        optional: true
+      effect:
         optional: true
       expo:
         optional: true
@@ -2263,8 +2266,8 @@ packages:
       vue:
         optional: true
 
-  jazz-wasm@2.0.0-alpha.57:
-    resolution: {integrity: sha512-YuVzGuiZNMbMf+dwyjxJovQvzOPZiG3csOmjvxv6N45QllTAns94jK4qHlilvGWT56TDuQwc0dbed/30Xe2ynw==}
+  jazz-wasm@2.0.0-alpha.58:
+    resolution: {integrity: sha512-ux4Uzb3Ig0L4jR7XYLiOoUF7mktRL3e4qCIJTU5gHMAMKiKnYPWQPa57EomL3lpMfXg/81PdLvkNA+z6GSiiQQ==}
 
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
@@ -3411,14 +3414,14 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@bebopdev/admin@0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
+  '@bebopdev/admin@0.1.0-beta.0(@types/react@19.3.0)(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-router-dom@7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@base-ui/react': 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@fontsource-variable/noto-sans': 5.3.0
       '@fontsource-variable/playfair-display': 5.3.0
       class-variance-authority: 0.7.1
       cn: 0.4.0
-      jazz-tools: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      jazz-tools: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       lucide-react: 0.468.0(react@19.3.0)
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
@@ -3429,16 +3432,16 @@ snapshots:
       - '@types/react'
       - date-fns
 
-  '@bebopdev/cli@0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
+  '@bebopdev/cli@0.1.0-beta.0(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
     dependencies:
-      '@bebopdev/core': 0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
+      '@bebopdev/core': 0.1.0-beta.0(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       tsx: 4.23.15
     transitivePeerDependencies:
       - jazz-tools
 
-  '@bebopdev/core@0.1.0-beta.0(jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
+  '@bebopdev/core@0.1.0-beta.0(jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
     dependencies:
-      jazz-tools: 2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      jazz-tools: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
 
   '@better-auth/core@1.7.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@opentelemetry/api@1.9.1)(better-call@1.4.0(zod@4.6.5))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)':
     dependencies:
@@ -3722,19 +3725,19 @@ snapshots:
 
   '@fontsource-variable/playfair-display@5.3.0': {}
 
-  '@garden-co/jazz-napi-darwin-arm64@2.0.0-alpha.57':
+  '@garden-co/jazz-napi-darwin-arm64@2.0.0-alpha.58':
     optional: true
 
-  '@garden-co/jazz-napi-darwin-x64@2.0.0-alpha.57':
+  '@garden-co/jazz-napi-darwin-x64@2.0.0-alpha.58':
     optional: true
 
-  '@garden-co/jazz-napi-linux-arm64-gnu@2.0.0-alpha.57':
+  '@garden-co/jazz-napi-linux-arm64-gnu@2.0.0-alpha.58':
     optional: true
 
-  '@garden-co/jazz-napi-linux-x64-gnu@2.0.0-alpha.57':
+  '@garden-co/jazz-napi-linux-x64-gnu@2.0.0-alpha.58':
     optional: true
 
-  '@garden-co/jazz-napi-win32-x64-msvc@2.0.0-alpha.57':
+  '@garden-co/jazz-napi-win32-x64-msvc@2.0.0-alpha.58':
     optional: true
 
   '@hono/node-server@2.1.1(hono@4.13.9)':
@@ -4822,16 +4825,16 @@ snapshots:
 
   isexe@3.1.5: {}
 
-  jazz-napi@2.0.0-alpha.57:
+  jazz-napi@2.0.0-alpha.58:
     optionalDependencies:
-      '@garden-co/jazz-napi-darwin-arm64': 2.0.0-alpha.57
-      '@garden-co/jazz-napi-darwin-x64': 2.0.0-alpha.57
-      '@garden-co/jazz-napi-linux-arm64-gnu': 2.0.0-alpha.57
-      '@garden-co/jazz-napi-linux-x64-gnu': 2.0.0-alpha.57
-      '@garden-co/jazz-napi-win32-x64-msvc': 2.0.0-alpha.57
+      '@garden-co/jazz-napi-darwin-arm64': 2.0.0-alpha.58
+      '@garden-co/jazz-napi-darwin-x64': 2.0.0-alpha.58
+      '@garden-co/jazz-napi-linux-arm64-gnu': 2.0.0-alpha.58
+      '@garden-co/jazz-napi-linux-x64-gnu': 2.0.0-alpha.58
+      '@garden-co/jazz-napi-win32-x64-msvc': 2.0.0-alpha.58
     optional: true
 
-  jazz-tools@2.0.0-alpha.57(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0):
+  jazz-tools@2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0):
     dependencies:
       '@noble/hashes': 2.0.1
       '@opentelemetry/api': 1.9.1
@@ -4844,7 +4847,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       esbuild: 0.27.7
       fs-native-extensions: 1.5.0
-      jazz-wasm: 2.0.0-alpha.57
+      jazz-wasm: 2.0.0-alpha.58
       jose: 6.2.12
       json-schema-to-ts: 3.1.1
       tr46: 5.1.1
@@ -4852,12 +4855,12 @@ snapshots:
       whatwg-url-without-unicode: 8.0.0-3
     optionalDependencies:
       better-auth: 1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      jazz-napi: 2.0.0-alpha.57
+      jazz-napi: 2.0.0-alpha.58
       react: 19.3.0
     transitivePeerDependencies:
       - bare-url
 
-  jazz-wasm@2.0.0-alpha.57: {}
+  jazz-wasm@2.0.0-alpha.58: {}
 
   jiti@2.7.0: {}
 

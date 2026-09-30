@@ -34,13 +34,13 @@
     }
   },
   "peerDependencies": {
-    "jazz-tools": "2.0.0-alpha.57"
+    "jazz-tools": "2.0.0-alpha.58"
   },
   "dependencies": {
     "better-auth": "1.7.1"
   },
   "devDependencies": {
-    "jazz-tools": "2.0.0-alpha.57",
+    "jazz-tools": "2.0.0-alpha.58",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   },

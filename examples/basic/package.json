@@ -16,7 +16,7 @@
   "dependencies": {
     "@bebopdev/admin": "0.1.0-beta.0",
     "@bebopdev/core": "0.1.0-beta.0",
-    "jazz-tools": "2.0.0-alpha.57",
+    "jazz-tools": "2.0.0-alpha.58",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4"

@@ -35,6 +35,21 @@ import "@bebopdev/admin/styles.css";
 
 `app`, `bebopAdminManifest`, and the typed client are generated from `bebop.config.ts` by `@bebopdev/cli`. The host can pass the current user's name, email, and logout action through the admin props.
 
+## Admin sign-in screen
+
+The host still owns authentication and routing. For an admin-specific sign-in screen, render `BebopAdminLogin` from the host's signed-out branch for `/admin`; it uses the admin theme and delegates credential handling to the host. This keeps each app's own sign-in page independent.
+
+```tsx
+import { BebopAdminLogin } from "@bebopdev/admin";
+
+<BebopAdminLogin
+  onSubmit={async ({ email, password }) => {
+    const result = await authClient.signIn.email({ email, password });
+    if (result.error) throw new Error(result.error.message ?? "Could not log in.");
+  }}
+/>
+```
+
 For `writeMode: "command"` collections, the admin reads list pages, counts, joins, and document details from Jazz's remote tier. This keeps a globally confirmed server write visible when the browser's local replica has not received it yet. These admin views wait for Core while offline. The generated client remains local-first by default, and direct collections keep local-first admin reads.
 
 Upload-enabled collections have a file picker with drag and drop, replacement, preview, and download. A field pointing at an upload collection can create media or choose an existing document; creating media does not save the parent form. Configure upload collections and fields in Bebop config, then regenerate the schema and manifest before opening the admin.

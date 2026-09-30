@@ -62,12 +62,12 @@ export function MediaPreview({ client, collection, id, filename, mimeType, compa
   mimeType?: string;
   compact?: boolean;
 }) {
-  const [url, setUrl] = useState<string>();
+  const [preview, setPreview] = useState<{ url: string; mimeType: string }>();
   const [error, setError] = useState<string>();
   useEffect(() => {
     let active = true;
     let objectUrl: string | undefined;
-    setUrl(undefined);
+    setPreview(undefined);
     setError(undefined);
     const operations = mediaOperations(client, collection);
     if (!operations?.readFile) return;
@@ -75,20 +75,21 @@ export function MediaPreview({ client, collection, id, filename, mimeType, compa
       if (!active) return;
       if (!blob) { setError("File is unavailable."); return; }
       objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
+      setPreview({ url: objectUrl, mimeType: blob.type });
     }).catch((cause: unknown) => {
       if (active) setError(cause instanceof Error ? cause.message : "Could not load file.");
     });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [client, collection, id]);
+  const resolvedMimeType = mimeType ?? preview?.mimeType;
   if (error) return <p className="text-xs text-destructive" role="alert">{error}</p>;
-  if (!url) return compact ? <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"><FileText size={18} /></span> : <p className="text-xs text-muted-foreground">Loading file…</p>;
-  if (compact) return mimeType?.startsWith("image/")
-    ? <img className="size-10 shrink-0 border border-border bg-background object-contain" src={url} alt="" />
+  if (!preview) return compact ? <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"><FileText size={18} /></span> : <p className="text-xs text-muted-foreground">Loading file…</p>;
+  if (compact) return resolvedMimeType?.startsWith("image/")
+    ? <img className="size-10 shrink-0 border border-border bg-background object-contain" src={preview.url} alt="" />
     : <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"><FileText size={18} /></span>;
   return <div className="flex flex-col items-start gap-2 [&_img]:max-h-64 [&_img]:max-w-full [&_img]:border [&_img]:border-border [&_img]:object-contain">
-    {mimeType?.startsWith("image/") && <img src={url} alt={filename ?? "Uploaded image"} />}
-    <a href={url} download={filename || "download"} className="inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2"><Download size={14} /> {filename || "Download file"}</a>
+    {resolvedMimeType?.startsWith("image/") && <img src={preview.url} alt={filename ?? "Uploaded image"} />}
+    <a href={preview.url} download={filename || "download"} className="inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2"><Download size={14} /> {filename || "Download file"}</a>
   </div>;
 }
 

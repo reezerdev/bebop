@@ -15,7 +15,8 @@ export type FieldOptions = {
     position?: "main" | "sidebar";
     hidden?: boolean;
     readOnly?: boolean;
-    input?: "textarea";
+    input?: "textarea" | "select";
+    options?: readonly [SelectOption, ...SelectOption[]];
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
   };
 };

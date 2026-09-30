@@ -11,7 +11,7 @@ type BebopAdminFieldOptions = {
     position?: "main" | "sidebar";
     hidden?: boolean;
     readOnly?: boolean;
-    input?: "textarea";
+    input?: "textarea" | "select";
     date?: { pickerAppearance?: "dayOnly" | "dayAndTime" };
     defaultColumns?: readonly string[];
     allowCreate?: boolean;

@@ -5,6 +5,7 @@ const namePattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 type StoredFieldKind = Exclude<FieldDefinition["type"], "join" | "relationship" | "upload" | "checkbox"> | "relation" | "upload" | "boolean" | "integer";
 
 function fieldKind(field: Exclude<FieldDefinition, { type: "join" }>): StoredFieldKind {
+  if (field.type === "text" && field.admin?.input === "select") return "select" as const;
   if (field.type === "relationship") return "relation" as const;
   if (field.type === "upload") return "upload" as const;
   if (field.type === "checkbox") return "boolean" as const;
@@ -14,6 +15,12 @@ function fieldKind(field: Exclude<FieldDefinition, { type: "join" }>): StoredFie
 
 function selectOptionValue(option: string | { label: string; value: string }): string {
   return typeof option === "string" ? option : option.value;
+}
+
+function fieldAdminOptions(admin: FieldOptions["admin"] | undefined): Omit<NonNullable<FieldOptions["admin"]>, "options"> | undefined {
+  if (!admin) return undefined;
+  const { options: _options, ...displayOptions } = admin;
+  return displayOptions;
 }
 
 export function normalizeConfig(config: BebopConfig) {
@@ -37,6 +44,8 @@ export function normalizeConfig(config: BebopConfig) {
             ...(field.admin ? { admin: field.admin } : {}),
           };
         }
+        const adminSelectOptions = field.type === "text" && field.admin?.input === "select" ? field.admin.options : undefined;
+        const selectOptions = field.type === "select" ? field.options : adminSelectOptions;
         return {
           name: field.name,
           storageName: field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name,
@@ -44,10 +53,10 @@ export function normalizeConfig(config: BebopConfig) {
           kind: fieldKind(field),
           required: Boolean(field.required),
           definition: field,
-          ...(field.admin ? { admin: field.admin } : {}),
-          ...(field.type === "select" ? { options: field.options.map(selectOptionValue) } : {}),
-          ...(field.type === "select" && field.options.some((option) => typeof option !== "string")
-            ? { optionLabels: Object.fromEntries(field.options.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
+          ...(field.admin ? { admin: fieldAdminOptions(field.admin) } : {}),
+          ...(selectOptions ? { options: selectOptions.map(selectOptionValue) } : {}),
+          ...(selectOptions?.some((option) => typeof option !== "string")
+            ? { optionLabels: Object.fromEntries(selectOptions.flatMap((option) => typeof option === "string" ? [] : [[option.value, option.label]])) }
             : {}),
           ...(field.type === "relationship" || field.type === "upload" ? { relationTo: field.relationTo } : {}),
         };
@@ -190,7 +199,9 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
       { name: "name", storageName: "name", label: "Name", kind: "text", required: true },
       { name: "email", storageName: "email", label: "Email", kind: "text", required: true },
       { name: "emailVerified", storageName: "emailVerified", label: "Email verified", kind: "boolean", required: true },
-      { name: "image", storageName: "image", label: "Image", kind: "text", required: false },
+      ...(collection.fields.some((field) => field.name === "image" && field.kind === "upload")
+        ? []
+        : [{ name: "image", storageName: "image", label: "Image", kind: "text", required: false }]),
       { name: "role", storageName: "role", label: "Role", kind: "select", required: false, options: ["user", "admin"] },
       { name: "banned", storageName: "banned", label: "Banned", kind: "boolean", required: false },
       { name: "banReason", storageName: "banReason", label: "Ban reason", kind: "text", required: false },
@@ -602,7 +613,7 @@ function validateConfig(config: BebopConfig): void {
     const storedNames = new Set<string>(["id", ...(definition.upload ? ["filename", "mimeType", "filesize", "data"] : [])]);
     const fieldNames = new Set<string>([
       ...(definition.upload ? ["filename", "mimeType", "filesize"] : []),
-      ...(definition.auth ? ["name", "email", "emailVerified", "image", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt"] : []),
+      ...(definition.auth ? ["name", "email", "emailVerified", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt"] : []),
     ]);
     for (const field of fields) {
       const fieldName = field.name;
@@ -625,11 +636,11 @@ function validateConfig(config: BebopConfig): void {
           "id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt",
           "role", "banned", "banReason", "banExpires",
         ]);
-        if (reservedAuthFields.has(fieldName)) {
+        if (reservedAuthFields.has(fieldName) && !(fieldName === "image" && field.type === "upload")) {
           throw new Error(`Field "${collectionName}.${fieldName}" is provided by Better Auth; define only custom user fields in the auth collection.`);
         }
-        if (!["text", "number", "checkbox", "date", "json", "select"].includes(field.type)) {
-          throw new Error(`Auth field "${collectionName}.${fieldName}" must be a scalar text, number, checkbox, date, json, or select field.`);
+        if (!["text", "number", "checkbox", "date", "json", "select", "upload"].includes(field.type)) {
+          throw new Error(`Auth field "${collectionName}.${fieldName}" must be a scalar text, number, checkbox, date, json, select, or upload field.`);
         }
       }
 
@@ -734,8 +745,24 @@ function validateConfig(config: BebopConfig): void {
         if (fieldAdmin?.readOnly !== undefined && (field.type !== "relationship" || typeof fieldAdmin.readOnly !== "boolean")) {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.readOnly must be a boolean on a relationship field.`);
         }
-        if (fieldAdmin?.input !== undefined && (field.type !== "text" || fieldAdmin.input !== "textarea")) {
-          throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" on a text field.`);
+        if (fieldAdmin?.input !== undefined && (field.type !== "text" || !["textarea", "select"].includes(fieldAdmin.input))) {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.input must be "textarea" or "select" on a text field.`);
+        }
+        if (fieldAdmin?.options !== undefined && fieldAdmin.input !== "select") {
+          throw new Error(`Field "${collectionName}.${fieldName}" admin.options require admin.input "select".`);
+        }
+        if (fieldAdmin?.input === "select") {
+          const options = fieldAdmin.options;
+          if (!Array.isArray(options) || options.length === 0) {
+            throw new Error(`Field "${collectionName}.${fieldName}" admin.input "select" requires at least one option.`);
+          }
+          const values = options.map(selectOptionValue);
+          if (values.some((value) => !value.trim()) || new Set(values).size !== values.length) {
+            throw new Error(`Field "${collectionName}.${fieldName}" admin.options must have unique non-empty values.`);
+          }
+          if (options.some((option) => typeof option !== "string" && !option.label.trim())) {
+            throw new Error(`Field "${collectionName}.${fieldName}" admin.options must have non-empty labels.`);
+          }
         }
         if (fieldAdmin?.date !== undefined && (field.type !== "date" || !["dayOnly", "dayAndTime", undefined].includes(fieldAdmin.date.pickerAppearance))) {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.date must configure a date field.`);

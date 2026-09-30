@@ -19,6 +19,7 @@ export const schema = {
     firstName: s.string().optional(),
     lastName: s.string().optional(),
     position: s.string().optional(),
+    imageId: s.string().optional(),
   }, {
   }),
 

@@ -44,15 +44,17 @@ function authAdditionalFields(config: BebopConfig): BetterAuthAdditionalFields {
   if (!definition) return fields;
 
   for (const field of definition.fields) {
-    if (field.type === "join" || field.type === "relationship" || field.type === "upload") continue;
-    if (reservedUserFields.has(field.name)) continue;
-    const type = field.type === "text" ? "string"
+    if (field.type === "join" || field.type === "relationship") continue;
+    const storageName = field.type === "upload" ? `${field.name}Id` : field.name;
+    if (reservedUserFields.has(storageName)) continue;
+    const type = field.type === "upload" ? "string"
+      : field.type === "text" ? "string"
       : field.type === "number" ? "number"
         : field.type === "checkbox" ? "boolean"
           : field.type === "date" ? "date"
             : field.type === "json" ? "json"
               : field.options.map((option) => typeof option === "string" ? option : option.value);
-    fields[field.name] = {
+    fields[storageName] = {
       type,
       required: Boolean(field.required),
       // Custom values must be set by trusted code or an explicitly enabled field.

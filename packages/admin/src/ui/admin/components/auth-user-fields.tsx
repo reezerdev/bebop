@@ -1,27 +1,35 @@
 import { EditorField } from "./common.js";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 
 import { Controller, Control, FieldErrors, FieldPath, UseFormRegister } from "react-hook-form";
 
 import type { BebopAdminCollection } from "../../../types.js";
 
 import { Input } from "../../../components/ui/input.js";
+import { Button } from "../../../components/ui/button.js";
 import { Label } from "../../../components/ui/label.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select.js";
+import { MediaPreview, PendingUploadPreview, UploadDropzone, validateSelectedFile } from "../../upload.js";
 
 import { humanize, selectLabel } from "../record-values.js";
 
 import { AuthUserFormValues, authUserProfileFields } from "../auth-user-values.js";
+import type { BebopAdminProps } from "../types.js";
 
-export function AuthUserFields({ collection, register, control, errors, includePassword = false, passwordPanel, disabled = false }: {
+export function AuthUserFields({ collection, register, control, errors, client, manifest, pendingImage, onPendingImageChange, includePassword = false, passwordPanel, disabled = false }: {
   collection: BebopAdminCollection;
   register: UseFormRegister<AuthUserFormValues>;
   control: Control<AuthUserFormValues>;
   errors: FieldErrors<AuthUserFormValues>;
+  client: BebopAdminProps["client"];
+  manifest: BebopAdminProps["manifest"];
+  pendingImage?: File;
+  onPendingImageChange: (file?: File) => void;
   includePassword?: boolean;
   passwordPanel?: ReactNode;
   disabled?: boolean;
 }) {
+  const [imageError, setImageError] = useState<string>();
   const roleField = collection.fields.find((field) => field.name === "role");
   const options = roleField?.kind === "select" && roleField.options?.length ? roleField.options : ["user", "admin"];
   const roleLabel = (value: string) => {
@@ -86,9 +94,36 @@ export function AuthUserFields({ collection, register, control, errors, includeP
               </label>
             </EditorField>;
           }
+          if (field.kind === "upload" && field.relationTo) {
+            const mediaCollection = manifest.collections[field.relationTo];
+            return <EditorField key={field.name} error={error}>
+              <Label htmlFor={`bebop-user-${field.name}`} className="text-[13px] font-normal normal-case tracking-normal">{label}</Label>
+              <Controller control={control} name={name} render={({ field: input }) => <div className="flex flex-col gap-3">
+                {pendingImage
+                  ? <PendingUploadPreview file={pendingImage} onClear={() => { onPendingImageChange(undefined); setImageError(undefined); }} />
+                  : typeof input.value === "string" && input.value
+                    ? <MediaPreview client={client} collection={field.relationTo ?? ""} id={input.value} filename={field.label} />
+                    : null}
+                {mediaCollection?.upload
+                  ? <UploadDropzone
+                    onFile={(file) => {
+                      const validation = validateSelectedFile(file, mediaCollection.upload);
+                      setImageError(validation);
+                      if (!validation) onPendingImageChange(file);
+                    }}
+                    accept={mediaCollection.upload.mimeTypes.join(",")}
+                    disabled={disabled}
+                    label={input.value || pendingImage ? "Replace image" : "Upload image"}
+                    error={imageError}
+                  />
+                  : <p role="alert" className="text-xs text-destructive">The configured upload collection is unavailable.</p>}
+                {!pendingImage && typeof input.value === "string" && input.value && <Button type="button" variant="outline" size="sm" className="w-fit normal-case tracking-normal" disabled={disabled} onClick={() => { input.onChange(""); input.onBlur(); }}>Remove image</Button>}
+              </div>} />
+            </EditorField>;
+          }
           return <EditorField key={field.name} error={error}>
             <Label htmlFor={`bebop-user-${field.name}`} className="text-[13px] font-normal normal-case tracking-normal">{label}</Label>
-            <Input id={`bebop-user-${field.name}`} autoComplete={field.name === "image" ? "url" : "off"} aria-invalid={Boolean(error)} {...register(name, field.required ? { required: `Enter ${field.label.toLocaleLowerCase()}.` } : undefined)} />
+            <Input id={`bebop-user-${field.name}`} autoComplete="off" aria-invalid={Boolean(error)} {...register(name, field.required ? { required: `Enter ${field.label.toLocaleLowerCase()}.` } : undefined)} />
           </EditorField>;
         })}
       </div>

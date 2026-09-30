@@ -61,8 +61,8 @@ function EditorRoute({ app, client, manifest, createDefaults, preflightCreate, p
   if (!collection) return <NotFoundPage />;
   if (collection.auth) {
     return id
-      ? <AuthUserEditor key={`${collection.slug}:${id}`} collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} id={id} />
-      : <AuthUserCreate collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
+      ? <AuthUserEditor key={`${collection.slug}:${id}`} collection={collection} client={client} manifest={manifest} authClient={authClient} canManageUsers={Boolean(canManageUsers)} id={id} />
+      : <AuthUserCreate collection={collection} client={client} manifest={manifest} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
   }
   const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
   return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} joinContext={joinContext} relationOptions={relationOptions} />;

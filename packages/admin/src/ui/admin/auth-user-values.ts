@@ -16,7 +16,7 @@ const authUserBuiltinFieldNames = new Set([
 export function authUserProfileFields(collection: BebopAdminCollection): BebopAdminStoredField[] {
   return collection.fields.filter((field): field is BebopAdminStoredField =>
     (field.name === "image" || !authUserBuiltinFieldNames.has(field.name)) &&
-    (field.kind === "text" || field.kind === "select" || field.kind === "boolean"),
+    (field.kind === "text" || field.kind === "select" || field.kind === "boolean" || field.kind === "upload"),
   ).sort((left, right) => Number(left.name === "image") - Number(right.name === "image"));
 }
 
@@ -29,7 +29,7 @@ export function authUserFormDefaults(collection: BebopAdminCollection, user?: Re
     password: "",
   };
   for (const field of authUserProfileFields(collection)) {
-    const value = user?.[field.name];
+    const value = user?.[field.storageName];
     values[field.name] = field.kind === "boolean" ? value === true : String(value ?? "");
   }
   return values;
@@ -40,10 +40,10 @@ export function authUserProfileData(collection: BebopAdminCollection, values: Au
   for (const field of authUserProfileFields(collection)) {
     const value = values[field.name] ?? (field.kind === "boolean" ? false : "");
     if (existingUser) {
-      const previousValue = existingUser[field.name] ?? (field.kind === "boolean" ? false : "");
-      if (!Object.is(value, previousValue)) data[field.name] = value;
+      const previousValue = existingUser[field.storageName] ?? (field.kind === "boolean" ? false : "");
+      if (!Object.is(value, previousValue)) data[field.storageName] = value;
     } else if (field.required || value !== "") {
-      data[field.name] = value;
+      data[field.storageName] = value;
     }
   }
   return data;

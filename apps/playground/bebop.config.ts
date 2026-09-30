@@ -18,7 +18,11 @@ export default defineConfig({
       },
       fields: [
         { name: "username", label: "Username", type: "text" },
-        { name: "gender", label: "Gender", type: "text" },
+        { name: "gender", label: "Gender", type: "text", admin: { input: "select", options: [
+          { label: "Male", value: "male" },
+          { label: "Female", value: "female" },
+          { label: "Not specified", value: "unspecified" },
+        ] } },
         { name: "mode", label: "Mode", type: "select", options: [
           { label: "Light", value: "light" },
           { label: "Dark", value: "dark" },
@@ -30,6 +34,7 @@ export default defineConfig({
         { name: "firstName", label: "First name", type: "text" },
         { name: "lastName", label: "Last name", type: "text" },
         { name: "position", label: "Position", type: "text" },
+        { name: "image", label: "Image", type: "upload", relationTo: "media" },
       ],
     }),
     collection({
@@ -211,7 +216,7 @@ export default defineConfig({
           { label: "Private", value: "private" },
           { label: "Protected", value: "protected" },
         ], admin: { position: "sidebar" } },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "sidebar", readOnly: true } },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
       ],
     }),
     collection({
@@ -281,7 +286,7 @@ export default defineConfig({
         { name: "content", type: "text", admin: { input: "textarea" } },
         { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
         { name: "visibility", type: "select", required: true, options: ["public", "private"] },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "sidebar", readOnly: true } },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
       ],
     }),
     collection({

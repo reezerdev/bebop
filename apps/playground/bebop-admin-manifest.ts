@@ -37,13 +37,6 @@ export const bebopAdminManifest = {
           "required": true
         },
         {
-          "name": "image",
-          "storageName": "image",
-          "label": "Image",
-          "kind": "text",
-          "required": false
-        },
-        {
           "name": "role",
           "storageName": "role",
           "label": "Role",
@@ -100,8 +93,21 @@ export const bebopAdminManifest = {
           "name": "gender",
           "storageName": "gender",
           "label": "Gender",
-          "kind": "text",
-          "required": false
+          "kind": "select",
+          "required": false,
+          "admin": {
+            "input": "select"
+          },
+          "options": [
+            "male",
+            "female",
+            "unspecified"
+          ],
+          "optionLabels": {
+            "male": "Male",
+            "female": "Female",
+            "unspecified": "Not specified"
+          }
         },
         {
           "name": "mode",
@@ -153,6 +159,14 @@ export const bebopAdminManifest = {
           "label": "Position",
           "kind": "text",
           "required": false
+        },
+        {
+          "name": "image",
+          "storageName": "imageId",
+          "label": "Image",
+          "kind": "upload",
+          "required": false,
+          "relationTo": "media"
         }
       ],
       "timestamps": true,
@@ -526,7 +540,7 @@ export const bebopAdminManifest = {
           "kind": "relation",
           "required": true,
           "admin": {
-            "position": "sidebar",
+            "position": "main",
             "readOnly": true
           },
           "relationTo": "streams"
@@ -612,7 +626,7 @@ export const bebopAdminManifest = {
           "kind": "relation",
           "required": true,
           "admin": {
-            "position": "sidebar",
+            "position": "main",
             "readOnly": true
           },
           "relationTo": "streams"

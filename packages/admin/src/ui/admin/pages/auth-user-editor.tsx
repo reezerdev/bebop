@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 
 import { useNavigate, useOutletContext } from "react-router-dom";
-import type { BebopAdminCollection } from "../../../types.js";
+import type { BebopAdminCollection, BebopAdminStoredField } from "../../../types.js";
 
 import { Button } from "../../../components/ui/button.js";
 import { Input } from "../../../components/ui/input.js";
@@ -13,21 +13,37 @@ import { Label } from "../../../components/ui/label.js";
 
 import { useToastManager } from "../../../components/ui/toast.js";
 
-import type { BebopAdminProps, AdminOutletContext } from "../types.js";
+import type { BebopAdminProps, AdminOutletContext, BebopAdminClient } from "../types.js";
 
 import { formatDate } from "../record-values.js";
 
 import { AuthUserFormValues, authUserFormDefaults, authUserProfileData, primaryAuthRole } from "../auth-user-values.js";
 
-export function AuthUserCreate({ collection, authClient, canManageUsers }: {
+type UploadMutationClient = {
+  create: (data: Record<string, unknown>) => Promise<{ doc?: { id?: string } }>;
+};
+
+async function uploadUserImage(client: BebopAdminClient, field: BebopAdminStoredField, file: File): Promise<string> {
+  const collectionSlug = field.relationTo ?? "";
+  const mutations = (client as Record<string, unknown>)[collectionSlug] as UploadMutationClient | undefined;
+  if (!mutations?.create) throw new Error(`The Bebop mutation client is missing the "${collectionSlug}" upload collection.`);
+  const result = await mutations.create({ file });
+  if (!result.doc?.id) throw new Error("The uploaded image did not return a media document ID.");
+  return result.doc.id;
+}
+
+export function AuthUserCreate({ collection, client, manifest, authClient, canManageUsers }: {
   collection: BebopAdminCollection;
+  client: BebopAdminProps["client"];
+  manifest: BebopAdminProps["manifest"];
   authClient?: BebopAdminProps["authClient"];
   canManageUsers: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const [saveError, setSaveError] = useState<string>();
-  const { register, control, handleSubmit, formState: { errors, isSubmitting } } = useForm<AuthUserFormValues>({
+  const [pendingImage, setPendingImage] = useState<File>();
+  const { register, control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<AuthUserFormValues>({
     defaultValues: authUserFormDefaults(collection),
   });
 
@@ -41,12 +57,20 @@ export function AuthUserCreate({ collection, authClient, canManageUsers }: {
   const onSubmit = handleSubmit(async (values) => {
     setSaveError(undefined);
     try {
+      const imageField = collection.fields.find((field): field is BebopAdminStoredField => field.name === "image" && field.kind === "upload");
+      let submittedValues = values;
+      if (pendingImage && imageField) {
+        const imageId = await uploadUserImage(client, imageField, pendingImage);
+        setValue(imageField.name, imageId, { shouldDirty: true });
+        submittedValues = { ...values, [imageField.name]: imageId };
+        setPendingImage(undefined);
+      }
       const response = await authClient.admin.createUser({
-        name: values.name.trim(),
-        email: values.email.trim(),
-        password: values.password,
-        role: primaryAuthRole(values.role),
-        data: { emailVerified: values.emailVerified, ...authUserProfileData(collection, values) },
+        name: submittedValues.name.trim(),
+        email: submittedValues.email.trim(),
+        password: submittedValues.password,
+        role: primaryAuthRole(submittedValues.role),
+        data: { emailVerified: submittedValues.emailVerified, ...authUserProfileData(collection, submittedValues) },
       });
       if (response.error || !response.data?.user) {
         throw new Error(response.error?.message || "Better Auth did not return the created user.");
@@ -72,14 +96,16 @@ export function AuthUserCreate({ collection, authClient, canManageUsers }: {
           </>}
         />
         {saveError && <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{saveError}</p>}
-        <AuthUserFields collection={collection} register={register} control={control} errors={errors} includePassword disabled={isSubmitting} />
+        <AuthUserFields collection={collection} register={register} control={control} errors={errors} client={client} manifest={manifest} pendingImage={pendingImage} onPendingImageChange={setPendingImage} includePassword disabled={isSubmitting} />
       </form>
     </div>
   );
 }
 
-export function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
+export function AuthUserEditor({ collection, client, manifest, authClient, canManageUsers, id }: {
   collection: BebopAdminCollection;
+  client: BebopAdminProps["client"];
+  manifest: BebopAdminProps["manifest"];
   authClient?: BebopAdminProps["authClient"];
   canManageUsers: boolean;
   id: string;
@@ -94,7 +120,8 @@ export function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
   const [changingPassword, setChangingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<AuthUserFormValues>({
+  const [pendingImage, setPendingImage] = useState<File>();
+  const { register, control, handleSubmit, reset, setValue, formState: { errors, isSubmitting, isDirty } } = useForm<AuthUserFormValues>({
     defaultValues: authUserFormDefaults(collection),
   });
 
@@ -147,22 +174,30 @@ export function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
       setSaveError("Passwords do not match.");
       return;
     }
-    const data: Record<string, unknown> = {};
-    Object.assign(data, authUserProfileData(collection, values, user));
-    const normalizedName = values.name.trim();
-    const normalizedEmail = values.email.trim();
-    const normalizedRole = primaryAuthRole(values.role);
-    if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
-    if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
-    if (normalizedRole !== primaryAuthRole(user.role)) data.role = normalizedRole;
-    if (values.emailVerified !== (user.emailVerified === true)) data.emailVerified = values.emailVerified;
-    if (!Object.keys(data).length && !changingPassword) {
-      reset(authUserFormDefaults(collection, user));
-      return;
-    }
-    let updatedUser = user;
-    let profileUpdated = false;
     try {
+      let submittedValues = values;
+      const imageField = collection.fields.find((field): field is BebopAdminStoredField => field.name === "image" && field.kind === "upload");
+      if (pendingImage && imageField) {
+        const imageId = await uploadUserImage(client, imageField, pendingImage);
+        setValue(imageField.name, imageId, { shouldDirty: true });
+        submittedValues = { ...values, [imageField.name]: imageId };
+        setPendingImage(undefined);
+      }
+      const data: Record<string, unknown> = {};
+      Object.assign(data, authUserProfileData(collection, submittedValues, user));
+      const normalizedName = submittedValues.name.trim();
+      const normalizedEmail = submittedValues.email.trim();
+      const normalizedRole = primaryAuthRole(submittedValues.role);
+      if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
+      if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
+      if (normalizedRole !== primaryAuthRole(user.role)) data.role = normalizedRole;
+      if (submittedValues.emailVerified !== (user.emailVerified === true)) data.emailVerified = submittedValues.emailVerified;
+      if (!Object.keys(data).length && !changingPassword) {
+        reset(authUserFormDefaults(collection, user));
+        return;
+      }
+      let updatedUser = user;
+      let profileUpdated = false;
       if (Object.keys(data).length) {
         const response = await authClient.admin.updateUser({ userId: id, data });
         if (response.error || !response.data) {
@@ -229,7 +264,7 @@ export function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
           }
           actions={
             <>
-              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={(!isDirty && !(changingPassword && (newPassword.length > 0 || confirmPassword.length > 0))) || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
+              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={(!isDirty && !pendingImage && !(changingPassword && (newPassword.length > 0 || confirmPassword.length > 0))) || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
               <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
             </>
           }
@@ -240,6 +275,10 @@ export function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
           register={register}
           control={control}
           errors={errors}
+          client={client}
+          manifest={manifest}
+          pendingImage={pendingImage}
+          onPendingImageChange={setPendingImage}
           disabled={isSubmitting}
           passwordPanel={changingPassword ? <>
             <EditorField>

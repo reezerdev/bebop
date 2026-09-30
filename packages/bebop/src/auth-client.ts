@@ -27,6 +27,10 @@ export type BebopAuthAdminClient = {
       data?: (Record<string, unknown> & { id: string }) | null;
       error?: { message?: string } | null;
     }>;
+    setUserPassword: (input: { userId: string; newPassword: string }) => Promise<{
+      data?: { status: boolean } | null;
+      error?: { message?: string } | null;
+    }>;
     removeUser: (input: { userId: string }) => Promise<{
       data?: { success: boolean } | null;
       error?: { message?: string } | null;

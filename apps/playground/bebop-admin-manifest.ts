@@ -88,6 +88,71 @@ export const bebopAdminManifest = {
           "label": "Updated at",
           "kind": "date",
           "required": true
+        },
+        {
+          "name": "username",
+          "storageName": "username",
+          "label": "Username",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "gender",
+          "storageName": "gender",
+          "label": "Gender",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "mode",
+          "storageName": "mode",
+          "label": "Mode",
+          "kind": "select",
+          "required": false,
+          "options": [
+            "light",
+            "dark"
+          ],
+          "optionLabels": {
+            "light": "Light",
+            "dark": "Dark"
+          }
+        },
+        {
+          "name": "language",
+          "storageName": "language",
+          "label": "Language",
+          "kind": "select",
+          "required": false,
+          "options": [
+            "en",
+            "es"
+          ],
+          "optionLabels": {
+            "en": "English",
+            "es": "Spanish"
+          }
+        },
+        {
+          "name": "firstName",
+          "storageName": "firstName",
+          "label": "First name",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "lastName",
+          "storageName": "lastName",
+          "label": "Last name",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "position",
+          "storageName": "position",
+          "label": "Position",
+          "kind": "text",
+          "required": false
         }
       ],
       "timestamps": true,

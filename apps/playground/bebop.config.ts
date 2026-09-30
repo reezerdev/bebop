@@ -16,7 +16,21 @@ export default defineConfig({
         defaultColumns: ["name", "email", "role", "createdAt"],
         listSearchableFields: ["name", "email"],
       },
-      fields: [],
+      fields: [
+        { name: "username", label: "Username", type: "text" },
+        { name: "gender", label: "Gender", type: "text" },
+        { name: "mode", label: "Mode", type: "select", options: [
+          { label: "Light", value: "light" },
+          { label: "Dark", value: "dark" },
+        ] },
+        { name: "language", label: "Language", type: "select", options: [
+          { label: "English", value: "en" },
+          { label: "Spanish", value: "es" },
+        ] },
+        { name: "firstName", label: "First name", type: "text" },
+        { name: "lastName", label: "Last name", type: "text" },
+        { name: "position", label: "Position", type: "text" },
+      ],
     }),
     collection({
       slug: "media",

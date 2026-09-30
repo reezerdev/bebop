@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState, useEffect, type ComponentPropsW
 import { useAll, useDb, useOne } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
 import type { MutationErrorEvent, PermissionAdvice } from "jazz-tools";
-import { Controller, useForm, type Control, type FieldValues, type RegisterOptions, type UseFormRegister } from "react-hook-form";
+import { Controller, useForm, type Control, type FieldErrors, type FieldPath, type FieldValues, type RegisterOptions, type UseFormRegister } from "react-hook-form";
 import {
   ArrowDown,
   ArrowLeft,
@@ -95,6 +95,10 @@ export type BebopAuthAdminClient = {
     }>;
     updateUser: (input: { userId: string; data: Record<string, unknown> }) => Promise<{
       data?: (Record<string, unknown> & { id: string }) | null;
+      error?: { message?: string } | null;
+    }>;
+    setUserPassword: (input: { userId: string; newPassword: string }) => Promise<{
+      data?: { status: boolean } | null;
       error?: { message?: string } | null;
     }>;
     removeUser: (input: { userId: string }) => Promise<{
@@ -838,6 +842,161 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
   );
 }
 
+type AuthUserFormValues = {
+  name: string;
+  email: string;
+  role: string;
+  emailVerified: boolean;
+  password: string;
+  [field: string]: string | boolean;
+};
+
+const authUserBuiltinFieldNames = new Set([
+  "id", "name", "email", "emailVerified", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt",
+]);
+
+function authUserProfileFields(collection: BebopAdminCollection) {
+  return collection.fields.filter((field) =>
+    (field.name === "image" || !authUserBuiltinFieldNames.has(field.name)) &&
+    (field.kind === "text" || field.kind === "select" || field.kind === "boolean"),
+  ).sort((left, right) => Number(left.name === "image") - Number(right.name === "image"));
+}
+
+function authUserFormDefaults(collection: BebopAdminCollection, user?: Record<string, unknown>): AuthUserFormValues {
+  const values: AuthUserFormValues = {
+    name: String(user?.name ?? ""),
+    email: String(user?.email ?? ""),
+    role: primaryAuthRole(user?.role),
+    emailVerified: user?.emailVerified === true,
+    password: "",
+  };
+  for (const field of authUserProfileFields(collection)) {
+    const value = user?.[field.name];
+    values[field.name] = field.kind === "boolean" ? value === true : String(value ?? "");
+  }
+  return values;
+}
+
+function authUserProfileData(collection: BebopAdminCollection, values: AuthUserFormValues, existingUser?: Record<string, unknown>) {
+  const data: Record<string, unknown> = {};
+  for (const field of authUserProfileFields(collection)) {
+    const value = values[field.name] ?? (field.kind === "boolean" ? false : "");
+    if (existingUser) {
+      const previousValue = existingUser[field.name] ?? (field.kind === "boolean" ? false : "");
+      if (!Object.is(value, previousValue)) data[field.name] = value;
+    } else if (field.required || value !== "") {
+      data[field.name] = value;
+    }
+  }
+  return data;
+}
+
+function primaryAuthRole(value: unknown): string {
+  const roles = (Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [])
+    .map((role) => String(role).trim())
+    .filter(Boolean);
+  return roles.includes("admin") ? "admin" : roles[0] ?? "user";
+}
+
+function AuthUserFields({ collection, register, control, errors, includePassword = false, passwordPanel, disabled = false }: {
+  collection: BebopAdminCollection;
+  register: UseFormRegister<AuthUserFormValues>;
+  control: Control<AuthUserFormValues>;
+  errors: FieldErrors<AuthUserFormValues>;
+  includePassword?: boolean;
+  passwordPanel?: ReactNode;
+  disabled?: boolean;
+}) {
+  const roleField = collection.fields.find((field) => field.name === "role");
+  const options = roleField?.kind === "select" && roleField.options?.length ? roleField.options : ["user", "admin"];
+  const roleLabel = (value: string) => {
+    const label = roleField?.kind === "select" ? selectLabel(roleField, value) : formatLabel(value);
+    return label.charAt(0).toLocaleUpperCase() + label.slice(1);
+  };
+  const profileFields = authUserProfileFields(collection);
+
+  return (
+    <fieldset disabled={disabled} className="m-0 grid min-w-0 grid-cols-1 border-0 p-0 lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]">
+      <section aria-label="Email and password" className="col-span-1 mb-2 mt-7 flex min-w-0 flex-col gap-6 rounded-[3px] bg-card px-6 py-8 text-card-foreground ring-1 ring-foreground/5 sm:px-10 sm:py-10 lg:col-span-2">
+        <EditorField error={errors.email?.message}>
+          <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
+            required: "Enter an email address.",
+            pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
+          })} />
+        </EditorField>
+        {passwordPanel}
+        {includePassword && <EditorField error={errors.password?.message}>
+          <Label htmlFor="bebop-user-password" className="text-[13px] font-normal normal-case tracking-normal">Password <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register("password", { required: "Enter an initial password." })} />
+          <p className="text-xs text-muted-foreground">Better Auth hashes and stores this password; the admin UI does not keep a copy.</p>
+        </EditorField>}
+        <EditorField>
+          <label htmlFor="bebop-user-email-verified" className="flex min-h-10 cursor-pointer items-center gap-2 text-[13px]">
+            <input id="bebop-user-email-verified" type="checkbox" className="size-4 accent-primary" {...register("emailVerified")} />
+            <span>Email verified</span>
+          </label>
+        </EditorField>
+      </section>
+      <div className="min-w-0 space-y-6 py-7 lg:pr-10">
+        <EditorField error={errors.name?.message}>
+          <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
+          <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
+        </EditorField>
+        {profileFields.map((field) => {
+          const name = field.name as FieldPath<AuthUserFormValues>;
+          const error = errors[name]?.message;
+          const label = <>{field.label}{field.required && <> <span className="text-destructive">*</span></>}</>;
+          if (field.kind === "select") {
+            return <EditorField key={field.name} error={error}>
+              <Label htmlFor={`bebop-user-${field.name}`} className="text-[13px] font-normal normal-case tracking-normal">{label}</Label>
+              <Controller
+                control={control}
+                name={name}
+                rules={field.required ? { required: `Select ${field.label.toLocaleLowerCase()}.` } : undefined}
+                render={({ field: input }) => <Select value={String(input.value ?? "")} onValueChange={input.onChange}>
+                  <SelectTrigger id={`bebop-user-${field.name}`} ref={input.ref} onBlur={input.onBlur} className="w-full">
+                    <SelectValue placeholder={`Select ${field.label.toLocaleLowerCase()}`}>{(value: string | null) => value ? selectLabel(field, value) : `Select ${field.label.toLocaleLowerCase()}`}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>{(field.options ?? []).map((option) => <SelectItem key={option} value={option}>{selectLabel(field, option)}</SelectItem>)}</SelectContent>
+                </Select>}
+              />
+            </EditorField>;
+          }
+          if (field.kind === "boolean") {
+            return <EditorField key={field.name} error={error}>
+              <label htmlFor={`bebop-user-${field.name}`} className="flex min-h-10 cursor-pointer items-center gap-2 text-[13px]">
+                <input id={`bebop-user-${field.name}`} type="checkbox" className="size-4 accent-primary" {...register(name, field.required ? { required: `Select ${field.label.toLocaleLowerCase()}.` } : undefined)} />
+                <span>{label}</span>
+              </label>
+            </EditorField>;
+          }
+          return <EditorField key={field.name} error={error}>
+            <Label htmlFor={`bebop-user-${field.name}`} className="text-[13px] font-normal normal-case tracking-normal">{label}</Label>
+            <Input id={`bebop-user-${field.name}`} autoComplete={field.name === "image" ? "url" : "off"} aria-invalid={Boolean(error)} {...register(name, field.required ? { required: `Enter ${field.label.toLocaleLowerCase()}.` } : undefined)} />
+          </EditorField>;
+        })}
+      </div>
+      <aside className="min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l lg:pl-8" aria-label="Additional user information">
+        <EditorField error={errors.role?.message}>
+          <Label htmlFor="bebop-user-role" className="text-[13px] font-normal normal-case tracking-normal">Role <span className="text-destructive">*</span></Label>
+          <Controller
+            control={control}
+            name="role"
+            rules={{ required: "Select a role." }}
+            render={({ field: input }) => <Select value={input.value || "user"} onValueChange={input.onChange}>
+              <SelectTrigger id="bebop-user-role" ref={input.ref} onBlur={input.onBlur} className="w-full">
+                <SelectValue placeholder="Select role">{(value: string | null) => roleLabel(value ?? input.value ?? "user")}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{roleLabel(option)}</SelectItem>)}</SelectContent>
+            </Select>}
+          />
+        </EditorField>
+      </aside>
+    </fieldset>
+  );
+}
+
 function AuthUserCreate({ collection, authClient, canManageUsers }: {
   collection: BebopAdminCollection;
   authClient?: BebopAdminProps["authClient"];
@@ -846,7 +1005,9 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
   const navigate = useNavigate();
   const toast = useToastManager();
   const [saveError, setSaveError] = useState<string>();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<{ name: string; email: string; password: string }>();
+  const { register, control, handleSubmit, formState: { errors, isSubmitting } } = useForm<AuthUserFormValues>({
+    defaultValues: authUserFormDefaults(collection),
+  });
 
   if (!canManageUsers) {
     return <section><PageTitle title={`Create ${collection.labels.singular}`} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Only a Better Auth administrator can create users.</p></section>;
@@ -855,10 +1016,16 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
     return <section><PageTitle title={`Create ${collection.labels.singular}`} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
   }
 
-  const onSubmit = handleSubmit(async ({ name, email, password }) => {
+  const onSubmit = handleSubmit(async (values) => {
     setSaveError(undefined);
     try {
-      const response = await authClient.admin.createUser({ name: name.trim(), email: email.trim(), password });
+      const response = await authClient.admin.createUser({
+        name: values.name.trim(),
+        email: values.email.trim(),
+        password: values.password,
+        role: primaryAuthRole(values.role),
+        data: { emailVerified: values.emailVerified, ...authUserProfileData(collection, values) },
+      });
       if (response.error || !response.data?.user) {
         throw new Error(response.error?.message || "Better Auth did not return the created user.");
       }
@@ -883,26 +1050,7 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
           </>}
         />
         {saveError && <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{saveError}</p>}
-        <fieldset disabled={isSubmitting} className="m-0 grid min-w-0 grid-cols-1 border-0 p-0">
-          <div className="min-w-0 space-y-6 py-7 lg:pr-10">
-            <EditorField error={errors.name?.message}>
-              <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
-              <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
-            </EditorField>
-            <EditorField error={errors.email?.message}>
-              <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
-              <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
-                required: "Enter an email address.",
-                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
-              })} />
-            </EditorField>
-            <EditorField error={errors.password?.message}>
-              <Label htmlFor="bebop-user-password" className="text-[13px] font-normal normal-case tracking-normal">Password <span className="text-destructive">*</span></Label>
-              <Input id="bebop-user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register("password", { required: "Enter an initial password." })} />
-              <p className="text-xs text-muted-foreground">Better Auth hashes and stores this password; the admin UI does not keep a copy.</p>
-            </EditorField>
-          </div>
-        </fieldset>
+        <AuthUserFields collection={collection} register={register} control={control} errors={errors} includePassword disabled={isSubmitting} />
       </form>
     </div>
   );
@@ -921,7 +1069,12 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
-  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<{ name: string; email: string; role: string; emailVerified: boolean }>();
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const { register, control, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<AuthUserFormValues>({
+    defaultValues: authUserFormDefaults(collection),
+  });
 
   useEffect(() => {
     if (!canManageUsers || !authClient) return;
@@ -935,7 +1088,9 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
         setUser(undefined);
         return;
       }
-      setUser(response.data);
+      const loadedUser = response.data;
+      setUser(loadedUser);
+      reset(authUserFormDefaults(collection, loadedUser));
     }).catch((caught: unknown) => {
       if (!active) return;
       setLoadError(caught instanceof Error ? caught.message : "Better Auth could not load this user.");
@@ -944,17 +1099,7 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [authClient, canManageUsers, id]);
-
-  useEffect(() => {
-    if (!user) return;
-    reset({
-      name: String(user.name ?? ""),
-      email: String(user.email ?? ""),
-      role: String(user.role ?? "user"),
-      emailVerified: user.emailVerified === true,
-    });
-  }, [reset, user]);
+  }, [authClient, canManageUsers, collection, id, reset]);
 
   const title = user?.name ? String(user.name) : user?.email ? String(user.email) : id;
   useEffect(() => {
@@ -969,28 +1114,60 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
     return <section><PageTitle title={collection.labels.singular} /><p role="alert" className="border border-border px-4 py-3 text-sm text-muted-foreground">Pass a Better Auth client configured with adminClient() to enable user management.</p></section>;
   }
 
-  const onSubmit = handleSubmit(async ({ name, email, role, emailVerified }) => {
+  const onSubmit = handleSubmit(async (values) => {
     if (!user) return;
     setSaveError(undefined);
-    const data: Record<string, unknown> = {};
-    const normalizedName = name.trim();
-    const normalizedEmail = email.trim();
-    const normalizedRole = role.trim();
-    if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
-    if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
-    if (normalizedRole !== String(user.role ?? "user")) data.role = normalizedRole;
-    if (emailVerified !== (user.emailVerified === true)) data.emailVerified = emailVerified;
-    if (!Object.keys(data).length) {
-      reset({ name: String(user.name ?? ""), email: String(user.email ?? ""), role: String(user.role ?? "user"), emailVerified: user.emailVerified === true });
+    if (changingPassword && !newPassword) {
+      setSaveError("Enter a new password.");
       return;
     }
+    if (changingPassword && newPassword !== confirmPassword) {
+      setSaveError("Passwords do not match.");
+      return;
+    }
+    const data: Record<string, unknown> = {};
+    Object.assign(data, authUserProfileData(collection, values, user));
+    const normalizedName = values.name.trim();
+    const normalizedEmail = values.email.trim();
+    const normalizedRole = primaryAuthRole(values.role);
+    if (normalizedName !== String(user.name ?? "")) data.name = normalizedName;
+    if (normalizedEmail !== String(user.email ?? "")) data.email = normalizedEmail;
+    if (normalizedRole !== primaryAuthRole(user.role)) data.role = normalizedRole;
+    if (values.emailVerified !== (user.emailVerified === true)) data.emailVerified = values.emailVerified;
+    if (!Object.keys(data).length && !changingPassword) {
+      reset(authUserFormDefaults(collection, user));
+      return;
+    }
+    let updatedUser = user;
+    let profileUpdated = false;
     try {
-      const response = await authClient.admin.updateUser({ userId: id, data });
-      if (response.error || !response.data) {
-        throw new Error(response.error?.message || "Better Auth did not return the updated user.");
+      if (Object.keys(data).length) {
+        const response = await authClient.admin.updateUser({ userId: id, data });
+        if (response.error || !response.data) {
+          throw new Error(response.error?.message || "Better Auth did not return the updated user.");
+        }
+        updatedUser = response.data;
+        profileUpdated = true;
+        setUser(updatedUser);
+        reset(authUserFormDefaults(collection, updatedUser));
       }
-      setUser(response.data);
-      toast.add({ type: "success", title: `${collection.labels.singular} updated`, description: "Better Auth saved the account changes." });
+      if (changingPassword) {
+        const response = await authClient.admin.setUserPassword({ userId: id, newPassword });
+        if (response.error || !response.data?.status) {
+          const reason = response.error?.message || "Better Auth did not confirm the password change.";
+          throw new Error(profileUpdated ? `Profile changes were saved, but the password could not be changed: ${reason}` : reason);
+        }
+      }
+      if (!profileUpdated) setUser(updatedUser);
+      reset(authUserFormDefaults(collection, updatedUser));
+      setChangingPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.add({
+        type: "success",
+        title: `${collection.labels.singular} updated`,
+        description: changingPassword ? "Account changes and password were saved." : "Better Auth saved the account changes.",
+      });
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : `Could not update ${collection.labels.singular.toLocaleLowerCase()}.`;
       setSaveError(message);
@@ -1017,7 +1194,6 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
     </div>
   );
 
-  const userFields = new Map(collection.fields.map((field) => [field.name, field]));
   return (
     <div>
       <EditorHeading title={title} />
@@ -1031,58 +1207,42 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
           }
           actions={
             <>
-              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
+              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={(!isDirty && !(changingPassword && (newPassword.length > 0 || confirmPassword.length > 0))) || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
               <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
             </>
           }
         />
         {saveError && <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{saveError}</p>}
-        <fieldset disabled={isSubmitting} className="m-0 grid min-w-0 grid-cols-1 border-0 p-0 lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]">
-          <div className="min-w-0 space-y-6 py-7 lg:pr-10">
-            <EditorField error={errors.name?.message}>
-              <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
-              <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
-            </EditorField>
-            <EditorField error={errors.email?.message}>
-              <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
-              <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
-                required: "Enter an email address.",
-                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
-              })} />
-            </EditorField>
-          </div>
-          <aside className="min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l lg:pl-8" aria-label="Additional user information">
+        <AuthUserFields
+          collection={collection}
+          register={register}
+          control={control}
+          errors={errors}
+          disabled={isSubmitting}
+          passwordPanel={changingPassword ? <>
             <EditorField>
-              <Label htmlFor="bebop-user-role" className="text-[13px] font-normal normal-case tracking-normal">Role</Label>
-              <Controller
-                control={control}
-                name="role"
-                rules={{ required: "Select a role." }}
-                render={({ field: input }) => {
-                  const roleField = userFields.get("role");
-                  const options = roleField?.kind === "select" ? roleField.options ?? ["user", "admin"] : ["user", "admin"];
-                  const roleLabel = (value: string) => {
-                    const label = roleField?.kind === "select" ? selectLabel(roleField, value) : formatLabel(value);
-                    return label.charAt(0).toLocaleUpperCase() + label.slice(1);
-                  };
-                  return <Select value={input.value} onValueChange={input.onChange}>
-                    <SelectTrigger id="bebop-user-role" ref={input.ref} onBlur={input.onBlur} className="w-full">
-                      <SelectValue>{(value: string | null) => value ? roleLabel(value) : "Select role"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{roleLabel(option)}</SelectItem>)}</SelectContent>
-                  </Select>;
-                }}
-              />
-              {errors.role?.message && <p className="text-xs text-destructive">{errors.role.message}</p>}
+              <Label htmlFor="bebop-user-new-password" className="text-[13px] font-normal normal-case tracking-normal">New Password <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-new-password" type="password" autoComplete="new-password" aria-required="true" value={newPassword} onChange={(event) => setNewPassword(event.currentTarget.value)} />
             </EditorField>
             <EditorField>
-              <label htmlFor="bebop-user-email-verified" className="flex min-h-10 cursor-pointer items-center gap-2 text-[13px]">
-                <input id="bebop-user-email-verified" type="checkbox" className="size-4 accent-primary" {...register("emailVerified")} />
-                <span>Email verified</span>
-              </label>
+              <Label htmlFor="bebop-user-confirm-password" className="text-[13px] font-normal normal-case tracking-normal">Confirm Password <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-confirm-password" type="password" autoComplete="new-password" aria-required="true" value={confirmPassword} onChange={(event) => setConfirmPassword(event.currentTarget.value)} />
             </EditorField>
-          </aside>
-        </fieldset>
+            <div>
+              <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => {
+                setChangingPassword(false);
+                setNewPassword("");
+                setConfirmPassword("");
+                setSaveError(undefined);
+              }}>Cancel</Button>
+            </div>
+          </> : <div>
+            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => {
+              setChangingPassword(true);
+              setSaveError(undefined);
+            }}>Change Password</Button>
+          </div>}
+        />
       </form>
     </div>
   );

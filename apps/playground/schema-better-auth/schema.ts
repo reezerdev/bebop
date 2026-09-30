@@ -12,6 +12,13 @@ export const schema = {
     banned: s.boolean().optional(),
     banReason: s.string().optional(),
     banExpires: s.timestamp().optional(),
+    username: s.string().optional(),
+    gender: s.string().optional(),
+    mode: s.enum("light", "dark").optional(),
+    language: s.enum("en", "es").optional(),
+    firstName: s.string().optional(),
+    lastName: s.string().optional(),
+    position: s.string().optional(),
   }, {
   }),
 

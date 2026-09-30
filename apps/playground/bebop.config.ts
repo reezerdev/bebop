@@ -180,7 +180,7 @@ export default defineConfig({
       },
       admin: {
         useAsTitle: "name",
-        defaultColumns: ["name", "workspace", "status", "assignee", "dueAt"],
+        defaultColumns: ["name", "workspace", "stream", "status", "assignee", "dueAt"],
         listSearchableFields: ["name", "content"],
       },
       fields: [
@@ -211,7 +211,7 @@ export default defineConfig({
           { label: "Private", value: "private" },
           { label: "Protected", value: "protected" },
         ], admin: { position: "sidebar" } },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { hidden: true } },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "sidebar", readOnly: true } },
       ],
     }),
     collection({
@@ -281,7 +281,7 @@ export default defineConfig({
         { name: "content", type: "text", admin: { input: "textarea" } },
         { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
         { name: "visibility", type: "select", required: true, options: ["public", "private"] },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { hidden: true } },
+        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "sidebar", readOnly: true } },
       ],
     }),
     collection({

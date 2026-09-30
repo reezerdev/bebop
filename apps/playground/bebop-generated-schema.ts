@@ -10,32 +10,9 @@ const schema = {
       "filename": s.string(),
       "mimeType": s.string(),
       "filesize": s.int(),
-      "fileId": s.uuid()
+      "data": s.bytes()
     },
-    {
-      "file": s.rel("bebop_files_media", "fileId")
-    },
-  ),
-  "bebop_files_media": s.table(
-    {
-      "ownerAccount": s.uuid(),
-      "mediaId": s.uuid().optional(),
-      "partIds": s.array(s.uuid()),
-      "partSizes": s.array(s.int())
-    },
-    {
-      "media": s.rel("media", "mediaId")
-    },
-  ),
-  "bebop_file_parts_media": s.table(
-    {
-      "data": s.bytes(),
-      "ownerAccount": s.uuid(),
-      "fileId": s.uuid()
-    },
-    {
-      "file": s.rel("bebop_files_media", "fileId")
-    },
+    {},
   ),
   "workspaces": s.table(
     {

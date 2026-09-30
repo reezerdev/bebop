@@ -73,14 +73,6 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.media.allowDelete.never();
   }
-  policy.bebop_files_media.allowInsert.where({ ownerAccount: session.user.account });
-  policy.bebop_files_media.allowRead.where(allowedTo.read("media"));
-  policy.bebop_files_media.allowUpdate.whereOld({ ownerAccount: session.user.account, mediaId: null }).whereNew({ ownerAccount: session.user.account });
-  policy.bebop_files_media.allowDelete.where(anyOf([{ ownerAccount: session.user.account, mediaId: null }, allowedTo.delete("media")]));
-  policy.bebop_file_parts_media.allowInsert.where({ ownerAccount: session.user.account });
-  policy.bebop_file_parts_media.allowRead.where(allowedTo.read("file"));
-  policy.bebop_file_parts_media.allowUpdate.never();
-  policy.bebop_file_parts_media.allowDelete.where(allowedTo.delete("file"));
   const workspacesReadPermissions = bebopConfig.collections[2].permissions;
   if (workspacesReadPermissions?.read) {
     workspacesReadPermissions?.read({

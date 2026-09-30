@@ -80,7 +80,7 @@ The client runs field validation and `beforeChange` before a direct write, then 
 
 Command-mode mutations use `commandTransport`, run on the host through `createBebopHandler`, and are returned only after the handler confirms Jazz global durability. They report `durability: "global"`. See [access control and server writes](./access-control.md#command-collections).
 
-Uploads are still in progress. The current client offers `create({ file })`, `update(id, { file })`, and `readFile(id)` for upload-enabled collections. It stores bounded file byte rows in Jazz and returns local-first mutation results. Command mode currently rejects upload-enabled collections. Treat these upload method details as provisional until that feature is complete.
+Upload-enabled collections expose `create({ file })`, `update(id, { file })`, and `readFile(id)`. Bebop streams the file into a hidden `s.bytes()` column on the collection row; Jazz's large-value storage handles its internal chunking. Bebop does not generate separate file or file-part tables. Normal `query`, `search`, and `findById` reads select collection fields and upload metadata without downloading the bytes. `readFile()` fetches byte pages and assembles a `Blob`. Upload writes are local-first and return the same mutation result and `waitForGlobal()` behavior as other direct writes. Command mode currently rejects upload-enabled collections.
 
 ## Stable behavior for v1
 

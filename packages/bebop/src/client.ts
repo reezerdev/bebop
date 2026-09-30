@@ -16,7 +16,7 @@ type RequiredStoredKeys<TFields extends Fields> = {
 export type CollectionCreateData<TFields extends Fields> = Pick<StoredFields<TFields>, RequiredStoredKeys<TFields>> &
   Partial<Omit<StoredFields<TFields>, RequiredStoredKeys<TFields>>>;
 export type CollectionUpdateData<TFields extends Fields> = Partial<StoredFields<TFields>>;
-export type BebopUploadMetadata = { filename: string; mimeType: string; filesize: number; fileId: string };
+export type BebopUploadMetadata = { filename: string; mimeType: string; filesize: number };
 export type BebopClientDocument<TFields extends Fields, TUpload extends boolean> = CollectionDocument<TFields> & (TUpload extends true ? BebopUploadMetadata : object);
 
 type QueryValue<T> = Exclude<T, undefined> | (undefined extends T ? null : never);
@@ -149,11 +149,11 @@ export class BebopHookError extends Error {
   }
 }
 
-function localWrite(write: WriteHandle<unknown, unknown>, extraWrites: WriteHandle<unknown, unknown>[] = []) {
+function localWrite(write: WriteHandle<unknown, unknown>) {
   return {
     durability: "local" as const,
     write,
-    waitForGlobal: async () => { await Promise.all([...extraWrites, write].map((handle) => handle.wait({ tier: "global" }))); },
+    waitForGlobal: async () => { await write.wait({ tier: "global" }); },
   };
 }
 
@@ -173,10 +173,17 @@ type BebopQuery = QueryBuilder<Record<string, unknown> & { id: string }> & {
 
 type BebopTable = TableProxy<Record<string, unknown> & { id: string }, Record<string, unknown>> & {
   select(...fields: string[]): BebopQuery;
+  select(selection: Record<string, { from: number; to: number }>): BebopQuery;
   where(input: Record<string, unknown>): BebopQuery;
 };
+type StreamingBebopTable = TableProxy<
+  Record<string, unknown> & { id: string },
+  Record<string, unknown>,
+  Record<string, unknown> & { data: ReadableStream<Uint8Array> },
+  Record<string, unknown> & { data: ReadableStream<Uint8Array> }
+>;
 type BebopAppWithUnion = { union(queries: Readonly<Record<string, BebopQuery>>): BebopQuery };
-type AdminUploadDocument = { fileId?: string; mimeType?: string };
+type AdminUploadDocument = { filesize?: number; mimeType?: string };
 
 function nonnegativeInteger(value: number | undefined, name: string): number | undefined {
   if (value === undefined) return undefined;
@@ -200,7 +207,6 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
     if (!table) throw new Error(`Generated Bebop app is missing collection "${collectionName}".`);
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
-    const readLocalDocument = (id: string) => db.one(table.where({ id }));
     const decodeCommandDocument = (value: Readonly<Record<string, unknown>>) => {
       const document = { ...value };
       for (const field of definition.fields) {
@@ -213,17 +219,23 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       }
       return document as CollectionDocument<Fields>;
     };
-    const uploadTable = definition.upload ? (app as Record<string, unknown>)[`bebop_files_${collectionName}`] as BebopTable | undefined : undefined;
-    const partTable = definition.upload ? (app as Record<string, unknown>)[`bebop_file_parts_${collectionName}`] as BebopTable | undefined : undefined;
-    if (definition.upload && !uploadTable) throw new Error(`Generated Bebop app is missing file table for "${collectionName}".`);
-    if (definition.upload && !partTable) throw new Error(`Generated Bebop app is missing file parts table for "${collectionName}".`);
     const maxFileSize = config.upload?.limits?.fileSize ?? 20 * 1024 * 1024;
     const mimeTypes = typeof definition.upload === "object" ? definition.upload.mimeTypes ?? [] : [];
     const writableFields = new Set(definition.fields.flatMap((field) => field.type === "join"
       ? []
       : [field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name]));
     const storedFields = new Set(writableFields);
-    if (definition.upload) for (const name of ["filename", "mimeType", "filesize", "fileId"]) storedFields.add(name);
+    if (definition.upload) for (const name of ["filename", "mimeType", "filesize"]) storedFields.add(name);
+    const selectedCollectionFields = [
+      "id",
+      ...storedFields,
+    ];
+    const selectCollection = (includeTimestamps = false) => definition.upload
+      ? table.select(...selectedCollectionFields, ...(includeTimestamps ? ["$createdAt", "$updatedAt"] : []))
+      : table.select("*", ...(includeTimestamps ? ["$createdAt", "$updatedAt"] : []));
+    const readLocalDocument = (id: string) => definition.upload
+      ? db.one(selectCollection().where({ id }))
+      : db.one(table.where({ id }));
     const validateWriteData = (data: Record<string, unknown>) => {
       for (const name of Object.keys(data)) {
         if (!writableFields.has(name)) throw new Error(`Unknown ${collectionName} write field "${name}".`);
@@ -274,8 +286,11 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       validateSearchFields(fields);
       const where = validatedWhere(options.where as Record<string, unknown> | undefined) ?? {};
       const queries = search
-        ? Object.fromEntries(fields.map((field, index) => ["field_" + index, table.where({ ...where, [field]: { contains: search } })]))
-        : { all: table.where(where) };
+        ? Object.fromEntries(fields.map((field, index) => [
+          "field_" + index,
+          (definition.upload ? selectCollection() : table).where({ ...where, [field]: { contains: search } }),
+        ]))
+        : { all: (definition.upload ? selectCollection() : table).where(where) };
       let result = (app as unknown as BebopAppWithUnion).union(queries);
       result = orderQuery(result, options.orderBy as BebopQueryOptions<Fields>["orderBy"]);
       const limit = nonnegativeInteger(options.limit, "limit");
@@ -294,51 +309,8 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       const filename = "name" in file && typeof file.name === "string" && file.name.trim() ? file.name : "upload";
       return { file, filename, mimeType, filesize: file.size };
     };
-    const readPartIds = async (fileId: string): Promise<string[]> => {
-      if (!uploadTable) return [];
-      const file = await db.one(uploadTable.select("partIds").where({ id: fileId })) as { partIds?: string[] } | null;
-      return file?.partIds ?? [];
-    };
-    const discardStagedFile = (fileId: string, partIds: readonly string[]) => {
-      if (partTable) for (const partId of partIds) db.delete(partTable, partId);
-      if (uploadTable) db.delete(uploadTable, fileId);
-    };
-    const stageFile = async (file: Blob) => {
-      if (!uploadTable || !partTable) throw new Error(`Missing file tables for ${collectionName}.`);
-      const ownerAccount = db.getAuthState().session?.user.account;
-      if (!ownerAccount) throw new Error("Sign in before uploading a file.");
-      // alpha.57's insertStreaming can publish a local row and later reject its commit.
-      // Consume the browser stream in bounded chunks using ordinary s.bytes() rows.
-      const fileWrite = db.insert(uploadTable, { ownerAccount, partIds: [], partSizes: [] });
-      const fileId = fileWrite.value.id;
-      const partIds: string[] = [];
-      const partSizes: number[] = [];
-      const writes: WriteHandle<unknown, unknown>[] = [fileWrite];
-      const reader = file.stream().getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          for (let offset = 0; offset < value.byteLength; offset += 256 * 1024) {
-            const bytes = new Uint8Array(value.subarray(offset, offset + 256 * 1024));
-            const partWrite = db.insert(partTable, { ownerAccount, fileId, data: bytes });
-            writes.push(partWrite);
-            partIds.push(partWrite.value.id);
-            partSizes.push(bytes.byteLength);
-          }
-        }
-        writes.push(db.update(uploadTable, fileId, { partIds, partSizes }));
-        return { id: fileId, partIds, writes };
-      } catch (error) {
-        await reader.cancel().catch(() => {});
-        discardStagedFile(fileId, partIds);
-        throw error;
-      } finally {
-        reader.releaseLock();
-      }
-    };
     const query: BebopCollectionClient<Fields>["query"] = (options = {}) => {
-      let result = table.select("*", ...(options.includeTimestamps ? ["$createdAt", "$updatedAt"] : []));
+      let result = selectCollection(options.includeTimestamps);
       const where = validatedWhere(options.where as Record<string, unknown> | undefined);
       if (where) result = result.where(where);
       if (options.orderBy) {
@@ -387,23 +359,19 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         const document = { ...context.data, ...patch };
         validateWriteData(document);
         await validateCollectionData(definition, document, "create");
-        let staged: Awaited<ReturnType<typeof stageFile>> | undefined;
         let write: WriteHandle<unknown, unknown>;
         let doc: CollectionDocument<Fields>;
         if (definition.upload) {
           const { file: validatedFile, ...metadata } = mediaFile!;
-          staged = await stageFile(validatedFile);
-          try {
-            write = await db.transaction((tx) => {
-              const created = tx.insert(table, { ...document, ...metadata, fileId: staged!.id });
-              tx.update(uploadTable!, staged!.id, { mediaId: created.id });
-              return created;
-            });
-            doc = write.value as CollectionDocument<Fields>;
-          } catch (error) {
-            discardStagedFile(staged.id, staged.partIds);
-            throw error;
-          }
+          const streamingTable = table as unknown as StreamingBebopTable;
+          write = await db.insertStreaming(streamingTable, {
+            ...document,
+            ...metadata,
+            data: validatedFile.stream(),
+          }) as WriteHandle<unknown, unknown>;
+          const created = await readLocalDocument((write.value as { id: string }).id) as CollectionDocument<Fields> | null;
+          if (!created) throw new Error(`Jazz did not return the newly uploaded ${collectionName} document.`);
+          doc = created;
         } else {
           write = db.insert(table, document) as WriteResult<CollectionDocument<Fields>>;
           doc = write.value as CollectionDocument<Fields>;
@@ -413,7 +381,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         } catch (error) {
           throw new BebopHookError("afterChange", error, write);
         }
-        return { doc, ...localWrite(write, staged?.writes) };
+        return { doc, ...localWrite(write) };
       },
 
       async update(id, data) {
@@ -440,29 +408,16 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         const document = { ...context.data, ...patch };
         validateWriteData(document);
         await validateCollectionData(definition, document, "update", originalDoc!);
-        let staged: Awaited<ReturnType<typeof stageFile>> | undefined;
         let write: WriteHandle<unknown, unknown>;
         let changes = document;
         if (file !== undefined) {
           const { file: validatedFile, ...metadata } = mediaFile!;
-          staged = await stageFile(validatedFile);
-          changes = { ...document, ...metadata, fileId: staged.id };
-          const oldFileId = (originalDoc as AdminUploadDocument).fileId;
-          const oldPartIds = oldFileId ? await readPartIds(oldFileId) : [];
-          try {
-            write = await db.transaction((tx) => {
-              tx.update(table, id, changes);
-              tx.update(uploadTable!, staged!.id, { mediaId: id });
-              if (oldFileId) {
-                for (const partId of oldPartIds) tx.delete(partTable!, partId);
-                tx.delete(uploadTable!, oldFileId);
-              }
-              return { ...originalDoc, ...changes };
-            });
-          } catch (error) {
-            discardStagedFile(staged.id, staged.partIds);
-            throw error;
-          }
+          changes = { ...document, ...metadata };
+          const streamingTable = table as unknown as StreamingBebopTable;
+          write = await db.updateStreaming(streamingTable, id, {
+            ...changes,
+            data: validatedFile.stream(),
+          }) as WriteHandle<unknown, unknown>;
         } else {
           write = db.update(table, id, document) as WriteHandle<unknown, unknown>;
         }
@@ -472,7 +427,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         } catch (error) {
           throw new BebopHookError("afterChange", error, write);
         }
-        return { doc, ...localWrite(write, staged?.writes) };
+        return { doc, ...localWrite(write) };
       },
 
       async delete(id) {
@@ -483,15 +438,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         }
         const doc = await readLocalDocument(id) as CollectionDocument<Fields> | null ?? undefined;
         await hooks?.beforeDelete?.({ id, ...(doc ? { doc } : {}) });
-        const oldFileId = (doc as AdminUploadDocument | undefined)?.fileId;
-        const oldPartIds = oldFileId ? await readPartIds(oldFileId) : [];
-        const write = definition.upload && oldFileId && uploadTable
-          ? await db.transaction((tx) => {
-            for (const partId of oldPartIds) tx.delete(partTable!, partId);
-            tx.delete(uploadTable, oldFileId);
-            tx.delete(table, id);
-          })
-          : db.delete(table, id) as WriteHandle<unknown, unknown>;
+        const write = db.delete(table, id) as WriteHandle<unknown, unknown>;
         try {
           await hooks?.afterDelete?.({ id, ...(doc ? { doc } : {}) });
         } catch (error) {
@@ -500,15 +447,18 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         return { id, ...(doc ? { doc } : {}), ...localWrite(write) };
       },
       async readFile(id: string) {
-        if (!uploadTable || !partTable) throw new Error(`${collectionName} is not upload-enabled.`);
+        if (!definition.upload) throw new Error(`${collectionName} is not upload-enabled.`);
         const media = await readLocalDocument(id) as AdminUploadDocument | null;
-        if (!media?.fileId) return null;
-        const partIds = await readPartIds(media.fileId);
+        if (!media || typeof media.filesize !== "number") return null;
         const chunks: BlobPart[] = [];
-        for (const partId of partIds) {
-          const part = await db.one(partTable.select("data").where({ id: partId })) as { data?: Uint8Array } | null;
-          if (!(part?.data instanceof Uint8Array)) throw new Error(`Missing file part "${partId}".`);
-          chunks.push(Uint8Array.from(part.data));
+        const pageSize = 1024 * 1024;
+        for (let from = 0; from < media.filesize; from += pageSize) {
+          const to = Math.min(from + pageSize, media.filesize);
+          const page = await db.one(table.select({ data: { from, to } }).where({ id })) as { data?: unknown } | null;
+          if (!(page?.data instanceof Uint8Array) || page.data.byteLength !== to - from) {
+            throw new Error(`Jazz returned an incomplete bytes page for ${collectionName} document "${id}".`);
+          }
+          chunks.push(Uint8Array.from(page.data));
         }
         return new Blob(chunks, { type: media.mimeType ?? "application/octet-stream" });
       },

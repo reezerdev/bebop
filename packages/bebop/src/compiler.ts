@@ -131,8 +131,9 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
       );
     }
     if (collection.upload) {
-      columns.push(`"fileId": s.uuid()`);
-      relations.push(`"file": s.rel(${JSON.stringify(`bebop_files_${collection.name}`)}, "fileId")`);
+      // Keep upload bytes on the collection row so the collection's Jazz access
+      // policy also governs the binary value.
+      columns.push(`"data": s.bytes()`);
     }
 
     const relationObject = relations.length
@@ -140,9 +141,7 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
       : "{}";
 
     const mainTable = `  ${JSON.stringify(collection.name)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
-    return collection.upload
-      ? `${mainTable},\n  ${JSON.stringify(`bebop_files_${collection.name}`)}: s.table(\n    {\n      "ownerAccount": s.uuid(),\n      "mediaId": s.uuid().optional(),\n      "partIds": s.array(s.uuid()),\n      "partSizes": s.array(s.int())\n    },\n    {\n      "media": s.rel(${JSON.stringify(collection.name)}, "mediaId")\n    },\n  ),\n  ${JSON.stringify(`bebop_file_parts_${collection.name}`)}: s.table(\n    {\n      "data": s.bytes(),\n      "ownerAccount": s.uuid(),\n      "fileId": s.uuid()\n    },\n    {\n      "file": s.rel(${JSON.stringify(`bebop_files_${collection.name}`)}, "fileId")\n    },\n  )`
-      : mainTable;
+    return mainTable;
   });
 
   const authImport = model.auth
@@ -312,7 +311,6 @@ function compilePermissionsFromModel(
       typeof access === "object" && operations.some(([operation]) => access[operation] === undefined)
     );
   });
-  const hasUploads = appCollections.some((collection) => collection.upload);
   const grants = model.collections
     .map((collection, index) => ({ collection, index }))
     .filter(({ collection }) => !collection.auth)
@@ -321,17 +319,6 @@ function compilePermissionsFromModel(
       const access = collection.access;
       const permissions = collection.permissions;
       const blockedCommandWrites = options.blockCommandWrites && collection.writeMode === "command";
-      const fileRules = collection.upload ? [
-        `  policy.bebop_files_${collectionName}.allowInsert.where({ ownerAccount: session.user.account });`,
-        `  policy.bebop_files_${collectionName}.allowRead.where(allowedTo.read("media"));`,
-        `  policy.bebop_files_${collectionName}.allowUpdate.whereOld({ ownerAccount: session.user.account, mediaId: null }).whereNew({ ownerAccount: session.user.account });`,
-        `  policy.bebop_files_${collectionName}.allowDelete.where(anyOf([{ ownerAccount: session.user.account, mediaId: null }, allowedTo.delete("media")]));`,
-        `  policy.bebop_file_parts_${collectionName}.allowInsert.where({ ownerAccount: session.user.account });`,
-        `  policy.bebop_file_parts_${collectionName}.allowRead.where(allowedTo.read("file"));`,
-        `  policy.bebop_file_parts_${collectionName}.allowUpdate.never();`,
-        `  policy.bebop_file_parts_${collectionName}.allowDelete.where(allowedTo.delete("file"));`,
-      ] : [];
-
       if (permissions !== undefined) {
         const rules = permissionOperations.map(([operation, jazzOperation]) => {
           if (blockedCommandWrites && operation !== "read") {
@@ -339,7 +326,7 @@ function compilePermissionsFromModel(
           }
           return compileCollectionPermissionCallback(collectionName, index, operation, jazzOperation);
         });
-        return [...rules, ...fileRules];
+        return rules;
       }
 
       if (blockedCommandWrites) {
@@ -357,17 +344,16 @@ function compilePermissionsFromModel(
           `  policy.${collectionName}.allowInsert.never();`,
           `  policy.${collectionName}.allowUpdate.never();`,
           `  policy.${collectionName}.allowDelete.never();`,
-          ...fileRules,
         ];
       }
       if (access === "public") {
-        return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.always();`), ...fileRules];
+        return operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.always();`);
       }
       if (access === "authenticated") {
-        return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`), ...fileRules];
+        return operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`);
       }
       if (!access) {
-        return [...operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`), ...fileRules];
+        return operations.map(([, jazzOperation]) => `  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`);
       }
       const rules: string[] = [`  const ${collectionName}Access: Exclude<CollectionDefinition["access"], "public" | "authenticated"> = bebopConfig.collections[${index}].access;`];
       for (const [accessOperation, jazzOperation] of operations) {
@@ -381,7 +367,7 @@ function compilePermissionsFromModel(
           rules.push(`  policy.${collectionName}.allow${jazzOperation}.where(authenticatedSession);`);
         }
       }
-      return [...rules, ...fileRules];
+      return rules;
     })
     .join("\n");
 
@@ -404,7 +390,6 @@ function compilePermissionsFromModel(
   const permissionContextNames = new Set<string>(["policy"]);
   if (hasAccessCallbacks || hasCollectionPermissions) for (const name of ["session", "allOf", "anyOf", "isCreator", "allowedTo"]) permissionContextNames.add(name);
   else if (hasAuthenticatedAccess) permissionContextNames.add("session");
-  if (hasUploads) for (const name of ["session", "anyOf", "allowedTo"]) permissionContextNames.add(name);
   const permissionContext = [...permissionContextNames].join(", ");
   const authenticatedHelper = hasAuthenticatedAccess
     ? `\n  const authenticatedSession = session.where({ authMode: { in: ["external", "local-first"] } });\n`
@@ -514,9 +499,6 @@ function validateConfig(config: BebopConfig): void {
     if (!namePattern.test(collectionName)) {
       throw new Error(`Invalid collection name "${collectionName}". Use letters, numbers, and underscores.`);
     }
-    if (collectionName.startsWith("bebop_files_") || collectionName.startsWith("bebop_file_parts_")) {
-      throw new Error(`Collection name "${collectionName}" uses the reserved Bebop file table prefix.`);
-    }
     if (definition.upload !== undefined && definition.upload !== true && (typeof definition.upload !== "object" || definition.upload === null || (definition.upload.mimeTypes !== undefined && !Array.isArray(definition.upload.mimeTypes)))) {
       throw new Error(`Collection "${collectionName}" upload must be true or contain mimeTypes.`);
     }
@@ -613,7 +595,7 @@ function validateConfig(config: BebopConfig): void {
       }
     }
 
-    const storedNames = new Set<string>(["id", ...(definition.upload ? ["filename", "mimeType", "filesize", "fileId"] : [])]);
+    const storedNames = new Set<string>(["id", ...(definition.upload ? ["filename", "mimeType", "filesize", "data"] : [])]);
     const fieldNames = new Set<string>([
       ...(definition.upload ? ["filename", "mimeType", "filesize"] : []),
       ...(definition.auth ? ["name", "email", "emailVerified", "image", "role", "banned", "banReason", "banExpires", "createdAt", "updatedAt"] : []),

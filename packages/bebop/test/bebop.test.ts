@@ -315,15 +315,15 @@ test("authenticated access grants only non-anonymous Jazz sessions", () => {
   assert.doesNotMatch(permissions, /allow.*\.always\(\)/);
 });
 
-test("permission helpers include those needed by auth and uploads together", () => {
+test("upload bytes use the Media collection's own permission rules", () => {
   const config = defineConfig({ collections: [
     { slug: "media", upload: true, access: "public", fields: [{ name: "alt", type: "text" }] },
     { slug: "tasks", access: "authenticated", fields: [{ name: "title", type: "text" }] },
   ] });
   const permissions = compilePermissions(config);
-  assert.match(permissions, /\(\{ policy, session, anyOf, allowedTo \}\)/);
+  assert.match(permissions, /\(\{ policy, session \}\)/);
   assert.match(permissions, /policy\.tasks\.allowRead\.where\(authenticatedSession\)/);
-  assert.match(permissions, /policy\.bebop_files_media\.allowDelete\.where\(anyOf/);
+  assert.doesNotMatch(permissions, /bebop_files_media|bebop_file_parts_media|allowedTo/);
 });
 
 test("command collections deny deployed direct writes and retain a policy reference artifact", () => {
@@ -968,7 +968,7 @@ test("shared client forwards asynchronous Jazz mutation rejections", () => {
   assert.equal(receivedCode, "permission_denied");
 });
 
-test("upload fields generate metadata, hidden chunk tables, and inherited file permissions", () => {
+test("upload fields generate one Media table with a hidden bytes column", () => {
   const config = defineConfig({ collections: [
     { slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }], access: "public" },
     { slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] },
@@ -976,13 +976,11 @@ test("upload fields generate metadata, hidden chunk tables, and inherited file p
   const artifacts = compileArtifacts(config);
   assert.deepEqual(artifacts, compileArtifacts(config));
   assert.match(artifacts.schema, /"data": s\.bytes\(\)/);
-  assert.match(artifacts.schema, /"bebop_files_media": s\.table/);
-  assert.match(artifacts.schema, /"bebop_file_parts_media": s\.table/);
   assert.match(artifacts.schema, /"filename": s\.string\(\)/);
-  assert.match(artifacts.schema, /"fileId": s\.uuid\(\)/);
+  assert.doesNotMatch(artifacts.schema, /bebop_files_media|bebop_file_parts_media|"fileId"/);
   assert.match(artifacts.schema, /"imageId": s\.uuid\(\)\.optional\(\)/);
-  assert.match(artifacts.permissions, /allowRead\.where\(allowedTo\.read\("media"\)\)/);
-  assert.match(artifacts.permissions, /allowRead\.where\(allowedTo\.read\("file"\)\)/);
+  assert.match(artifacts.permissions, /policy\.media\.allowRead\.always\(\)/);
+  assert.doesNotMatch(artifacts.permissions, /bebop_files_media|bebop_file_parts_media/);
   assert.match(artifacts.adminManifest, /"maxFileSize": 20971520/);
 });
 
@@ -994,48 +992,98 @@ test("upload configuration rejects invalid targets, reserved names, and size lim
   assert.throws(() => compileSchema(defineConfig({ collections: [
     { slug: "media", upload: true, fields: [{ name: "filename", type: "text" }] },
   ] })), /Duplicate field name|conflicts with another stored field/);
+  assert.throws(() => compileSchema(defineConfig({ collections: [
+    { slug: "media", upload: true, fields: [{ name: "data", type: "text" }] },
+  ] })), /conflicts with another stored field/);
   assert.throws(() => compileSchema(defineConfig({ upload: { limits: { fileSize: 0 } }, collections: [
     { slug: "media", upload: true, fields: [{ name: "alt", type: "text" }] },
   ] })), /fileSize must be a positive/);
 });
 
-test("upload client streams bytes and links, replaces, reads, and deletes Media with hooks", async () => {
+test("upload client streams one Media row, excludes bytes from list reads, and pages file reads", async () => {
   const order: string[] = [];
   const rows = new Map<string, Record<string, unknown>>();
   let nextId = 1;
-  const makeTable = (name: string) => ({
-    name,
-    where(condition: Record<string, unknown>) { return { name, condition }; },
-    select(..._columns: string[]) { return { where: (condition: Record<string, unknown>) => ({ name, condition }) }; },
-  });
+  const pageSelections: { from: number; to: number }[] = [];
+  const selections: unknown[] = [];
+  const project = (row: Record<string, unknown>, selection: unknown) => {
+    if (Array.isArray(selection)) {
+      return Object.fromEntries(selection.flatMap((field) => typeof field === "string" && field in row ? [[field, row[field]]] : []));
+    }
+    if (selection && typeof selection === "object") {
+      const [field, range] = Object.entries(selection)[0] ?? [];
+      if (field === "data" && range && typeof range === "object") {
+        const { from, to } = range as { from: number; to: number };
+        pageSelections.push({ from, to });
+        return { data: (row.data as Uint8Array).slice(from, to) };
+      }
+    }
+    return { ...row };
+  };
+  const makeTable = (name: string) => {
+    const makeQuery = (selection: unknown, condition: Record<string, unknown> = {}) => ({
+      name,
+      selection,
+      condition,
+      where(nextCondition: Record<string, unknown>) { this.condition = nextCondition; return this; },
+      orderBy() { return this; },
+      limit() { return this; },
+      offset() { return this; },
+    });
+    return {
+      name,
+      where(condition: Record<string, unknown>) { return makeQuery(undefined, condition); },
+      select(...selectors: unknown[]) {
+        const selection = selectors.length === 1 && !Array.isArray(selectors[0]) && typeof selectors[0] === "object"
+          ? selectors[0]
+          : selectors;
+        selections.push(selection);
+        return makeQuery(selection);
+      },
+    };
+  };
   const mediaTable = makeTable("media");
-  const fileTable = makeTable("files");
-  const partTable = makeTable("parts");
   const write = <T>(value: T) => ({ value, wait: async () => value, txId: Promise.resolve("tx") });
+  const readStream = async (stream: ReadableStream<Uint8Array>) => {
+    const reader = stream.getReader();
+    const parts: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+    const size = parts.reduce((total, part) => total + part.byteLength, 0);
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
+    return bytes;
+  };
   const db = {
-    getAuthState: () => ({ session: { user: { account: "account-1" } } }),
-    one: async (query: { name: string; condition: { id: string } }) => rows.get(`${query.name}:${query.condition.id}`) ?? null,
-    insert: (table: { name: string }, data: Record<string, unknown>) => {
-      if (table.name === "files") order.push("stage");
-      const id = `${table.name}-${nextId++}`;
-      rows.set(`${table.name}:${id}`, { id, ...data });
-      return write({ id, ...data });
+    one: async (query: { name: string; condition: { id: string }; selection: unknown }) => {
+      const row = rows.get(`${query.name}:${query.condition.id}`);
+      return row ? project(row, query.selection) : null;
     },
-    transaction: async (callback: (tx: unknown) => unknown) => {
-      order.push("transaction");
-      const tx = {
-        insert(table: { name: string }, data: Record<string, unknown>) {
-          const id = `media-${nextId++}`;
-          const value = { id, ...data };
-          rows.set(`${table.name}:${id}`, value);
-          return value;
-        },
-        update(table: { name: string }, id: string, data: Record<string, unknown>) {
-          rows.set(`${table.name}:${id}`, { ...rows.get(`${table.name}:${id}`), ...data });
-        },
-        delete(table: { name: string }, id: string) { rows.delete(`${table.name}:${id}`); },
-      };
-      return write(await callback(tx));
+    all: async (query: { name: string; selection: unknown }) => [...rows.entries()]
+      .filter(([key]) => key.startsWith(`${query.name}:`))
+      .map(([, row]) => project(row, query.selection)),
+    insertStreaming: async (table: { name: string }, data: Record<string, unknown> & { data: ReadableStream<Uint8Array> }) => {
+      order.push("stream-insert");
+      const id = `media-${nextId++}`;
+      const value = { id, ...data, data: await readStream(data.data) };
+      rows.set(`${table.name}:${id}`, value);
+      return write({ id });
+    },
+    updateStreaming: async (table: { name: string }, id: string, data: Record<string, unknown> & { data: ReadableStream<Uint8Array> }) => {
+      order.push("stream-update");
+      const value = { ...rows.get(`${table.name}:${id}`), ...data, data: await readStream(data.data) };
+      rows.set(`${table.name}:${id}`, value);
+      return write({ id });
+    },
+    insert: (table: { name: string }, data: Record<string, unknown>) => {
+      const id = `media-${nextId++}`;
+      const value = { id, ...data };
+      rows.set(`${table.name}:${id}`, value);
+      return write(value);
     },
     update: (table: { name: string }, id: string, data: Record<string, unknown>) => {
       rows.set(`${table.name}:${id}`, { ...rows.get(`${table.name}:${id}`), ...data });
@@ -1044,7 +1092,7 @@ test("upload client streams bytes and links, replaces, reads, and deletes Media 
     delete: (table: { name: string }, id: string) => { rows.delete(`${table.name}:${id}`); return write(undefined); },
     onMutationError: () => () => {},
   };
-  const config = defineConfig({ upload: { limits: { fileSize: 400_000 } }, collections: [{
+  const config = defineConfig({ upload: { limits: { fileSize: 3_000_000 } }, collections: [{
     slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }],
     hooks: {
       beforeChange: ({ operation }) => { order.push(`before:${operation}`); return { alt: "caption" }; },
@@ -1053,23 +1101,36 @@ test("upload client streams bytes and links, replaces, reads, and deletes Media 
       afterDelete: () => { order.push("after:delete"); },
     },
   }] });
-  const client = createBebopClient({ app: { media: mediaTable, bebop_files_media: fileTable, bebop_file_parts_media: partTable } as never, config, db: db as unknown as Db });
-  await assert.rejects(client.media.create({ file: new File([new Uint8Array(400_001)], "large.png", { type: "image/png" }) }), /upload limit/);
+  const client = createBebopClient({ app: { media: mediaTable } as never, config, db: db as unknown as Db });
+  await assert.rejects(client.media.create({ file: new File([new Uint8Array(3_000_001)], "large.png", { type: "image/png" }) }), /upload limit/);
   await assert.rejects(client.media.create({ file: new File(["text"], "notes.txt", { type: "text/plain" }) }), /not allowed/);
-  const firstBytes = new Uint8Array(300_000).fill(65);
+  const firstBytes = new Uint8Array(2 * 1024 * 1024 + 17).fill(65);
   const first = await client.media.create({ file: new File([firstBytes], "first.png", { type: "image/png" }) });
   assert.equal(first.doc.filename, "first.png");
   assert.equal(first.doc.alt, "caption");
-  assert.equal((rows.get(`files:${first.doc.fileId}`) as { mediaId: string }).mediaId, first.doc.id);
-  assert.equal((rows.get(`files:${first.doc.fileId}`) as { partIds: string[] }).partIds.length, 2);
-  assert.deepEqual(new Uint8Array(await (await client.media.readFile(first.doc.id))!.arrayBuffer()), firstBytes);
+  assert.equal(rows.size, 1);
+  assert.equal("fileId" in first.doc, false);
+  assert.equal(Buffer.compare(Buffer.from(rows.get(`media:${first.doc.id}`)?.data as Uint8Array), Buffer.from(firstBytes)), 0);
+  client.media.query();
+  const selected = selections.at(-1);
+  assert.ok(Array.isArray(selected));
+  assert.equal(selected.includes("data"), false);
+  assert.equal(rows.get(`media:${first.doc.id}`)?.data instanceof Uint8Array, true);
+  assert.equal((await client.media.find())[0]?.data, undefined);
+  assert.equal(Buffer.compare(Buffer.from(await (await client.media.readFile(first.doc.id))!.arrayBuffer()), Buffer.from(firstBytes)), 0);
+  assert.deepEqual(pageSelections, [
+    { from: 0, to: 1024 * 1024 },
+    { from: 1024 * 1024, to: 2 * 1024 * 1024 },
+    { from: 2 * 1024 * 1024, to: 2 * 1024 * 1024 + 17 },
+  ]);
   await first.waitForGlobal();
   await assert.rejects(client.media.update(first.doc.id, { fileId: "invalid" } as never), /Unknown media write field/);
   const second = await client.media.update(first.doc.id, { file: new File(["second"], "second.png", { type: "image/png" }) });
   assert.equal(second.doc.filename, "second.png");
-  assert.equal(rows.has(`files:${first.doc.fileId}`), false);
+  assert.equal(rows.size, 1);
+  assert.equal("fileId" in second.doc, false);
   assert.equal(await (await client.media.readFile(first.doc.id))?.text(), "second");
   await client.media.delete(first.doc.id);
-  assert.equal(rows.has(`files:${second.doc.fileId}`), false);
-  assert.deepEqual(order, ["before:create", "stage", "transaction", "after:create", "before:update", "stage", "transaction", "after:update", "before:delete", "transaction", "after:delete"]);
+  assert.equal(rows.size, 0);
+  assert.deepEqual(order, ["before:create", "stream-insert", "after:create", "before:update", "stream-update", "after:update", "before:delete", "after:delete"]);
 });

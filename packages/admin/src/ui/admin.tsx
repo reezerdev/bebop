@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect, type ComponentPropsWithRef, type ReactNode } from "react";
 import { useAll, useDb, useOne } from "jazz-tools/react";
 import type { QueryBuilder } from "jazz-tools";
 import type { MutationErrorEvent, PermissionAdvice } from "jazz-tools";
@@ -416,7 +416,7 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUse
     },
   ]);
 
-  return canAccessAdmin ? route : <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 text-foreground"><p role="alert">You do not have access to the Bebop admin.</p></main>;
+  return canAccessAdmin ? route : <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 font-sans text-foreground"><p role="alert">You do not have access to the Bebop admin.</p></main>;
 }
 
 function AdminLayout({
@@ -462,23 +462,23 @@ function AdminLayout({
   return (
     <AdminPortalContainer.Provider value={portalContainer}>
     <Toaster>
-    <div ref={portalContainer} className="bebop-admin min-h-svh bg-background text-foreground">
-      <aside className={`admin-sidebar ${sidebarCollapsed ? "admin-sidebar-hidden" : ""} ${mobileOpen ? "admin-sidebar-open" : ""}`}>
-        <div className="admin-sidebar-header">
+    <div ref={portalContainer} className="bebop-admin min-h-svh bg-background font-sans text-foreground">
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-68 flex-col border-r border-sidebar-border bg-background text-sidebar-foreground transition-transform duration-200 ${sidebarCollapsed ? "-translate-x-full" : ""} ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}`}>
+        <div className="flex h-12 shrink-0 items-center px-4 max-md:hidden">
           <Button variant="outline" size="icon-xs" aria-label="Collapse sidebar" onClick={() => setSidebarCollapsed(true)}>
             <ArrowLeft size={18} />
           </Button>
         </div>
-        <div className="admin-sidebar-scroll">
-          <button className="admin-nav-heading" aria-expanded={collectionsOpen} onClick={() => setCollectionsOpen((open) => !open)}>
+        <div className="flex-1 overflow-y-auto px-5 pt-1 pb-6">
+          <button className="mb-1 flex w-full items-center justify-between bg-transparent py-1 text-left text-[13px] text-muted-foreground hover:text-foreground" aria-expanded={collectionsOpen} onClick={() => setCollectionsOpen((open) => !open)}>
             <span>Collections</span><ChevronUp size={16} className={collectionsOpen ? "" : "rotate-180"} />
           </button>
-          {collectionsOpen && <nav aria-label="Collections" className="admin-collection-nav">
+          {collectionsOpen && <nav aria-label="Collections" className="flex flex-col">
             {collections.map((collection) => (
               <NavLink
                 key={collection.slug}
                 to={`/admin/collections/${collection.slug}`}
-                className={({ isActive }) => `admin-nav-link ${isActive ? "admin-nav-active" : ""}`}
+                className={({ isActive }) => `flex min-h-7 items-center text-[14px] leading-5 no-underline transition-colors hover:text-foreground ${isActive ? "font-normal text-foreground" : "font-light text-sidebar-foreground"}`}
                 onClick={() => setMobileOpen(false)}
               >
                 <span className="truncate">{collection.labels.plural}</span>
@@ -486,8 +486,8 @@ function AdminLayout({
             ))}
           </nav>}
         </div>
-        <div className="admin-sidebar-footer">
-          <div className="admin-avatar">{avatarInitials}</div>
+        <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-none bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">{avatarInitials}</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-sidebar-foreground">{userName}</p>
             <p className="truncate text-xs text-sidebar-foreground/60">{userEmail}</p>
@@ -499,22 +499,22 @@ function AdminLayout({
           )}
         </div>
       </aside>
-      {mobileOpen && <button className="admin-mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
-      <div className={`admin-main ${sidebarCollapsed ? "admin-main-expanded" : ""}`}>
-        <header className="admin-topbar">
-          <Button variant="ghost" size="icon" className="admin-mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
+      {mobileOpen && <button className="hidden max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-black/30" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
+      <div className={`min-h-svh transition-[padding] duration-200 max-md:pl-0 ${sidebarCollapsed ? "pl-0" : "pl-68"}`}>
+        <header className="sticky top-0 z-20 flex h-12 items-center bg-background px-6 lg:px-15 max-md:px-3">
+          <Button variant="ghost" size="icon" className="hidden max-md:mr-2 max-md:inline-flex" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
             <Menu size={18} />
           </Button>
-          {sidebarCollapsed && <Button variant="outline" size="icon" className="admin-sidebar-expand" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}><ChevronRight size={18} /></Button>}
-          <div className="admin-breadcrumbs">
-            <Link to="/admin" className="admin-brand-mark" aria-label="Bebop dashboard">b</Link>
-            <span className="admin-breadcrumb-divider">/</span>
+          {sidebarCollapsed && <Button variant="outline" size="icon" className="mr-3 max-md:hidden" aria-label="Expand sidebar" onClick={() => setSidebarCollapsed(false)}><ChevronRight size={18} /></Button>}
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <Link to="/admin" className="flex size-8 items-center justify-center rounded-none bg-foreground text-base font-bold lowercase text-background no-underline" aria-label="Bebop dashboard">b</Link>
+            <span className="text-muted-foreground">/</span>
             {currentCollection ? <Link to={`/admin/collections/${currentCollection.slug}`} className="hover:underline">{currentCollection.labels.plural}</Link> : <span>Dashboard</span>}
             {(isCreateRoute || isDocumentRoute) && <><span className="text-muted-foreground">/</span><span className="max-w-56 truncate" title={currentDocumentBreadcrumb}>{isCreateRoute ? `New ${currentCollection?.labels.singular ?? "document"}` : currentDocumentBreadcrumb ?? "Document"}</span></>}
             {activeCollection && !currentCollection && <span>Not found</span>}
           </div>
         </header>
-        <main className="admin-content">
+        <main className="mx-auto w-full max-w-[1440px] px-6 pt-2 pb-6 lg:px-15 max-md:p-4">
           {mutationError && <div className="mb-5 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{mutationError}</div>}
           <Outlet context={{ setDocumentBreadcrumb } satisfies AdminOutletContext} />
         </main>
@@ -548,22 +548,26 @@ function PageTitle({
   );
 }
 
-function EditorHeading({ title, action }: { title: string; action?: ReactNode }) {
-  return <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1>{action}</div>;
+function SelectionCheckbox(props: ComponentPropsWithRef<"input">) {
+  return <input {...props} type="checkbox" className="appearance-none inline-grid size-4 shrink-0 cursor-pointer place-content-center border border-input bg-transparent before:content-[''] before:h-1 before:w-[0.45rem] before:scale-0 before:-rotate-45 before:border-b-2 before:border-l-2 before:border-primary-foreground checked:border-primary checked:bg-primary checked:before:scale-100 indeterminate:border-primary indeterminate:bg-primary indeterminate:before:h-0 indeterminate:before:scale-100 indeterminate:before:rotate-0 indeterminate:before:border-l-0 indeterminate:before:border-b-0 indeterminate:before:border-t-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50" />;
 }
 
-function EditorMeta({ details, actions }: { details: ReactNode; actions?: ReactNode }) {
+function EditorHeading({ title, action, modal = false }: { title: string; action?: ReactNode; modal?: boolean }) {
+  return <div className={`flex min-h-20 items-center justify-between gap-4 border-b border-border pb-4 ${modal ? "px-6 pt-4 lg:px-11" : ""}`}><h1 className="min-w-0 truncate text-[32px] font-normal leading-tight tracking-tight" title={title}>{title}</h1>{action}</div>;
+}
+
+function EditorMeta({ details, actions, modal = false }: { details: ReactNode; actions?: ReactNode; modal?: boolean }) {
   return (
-    <div className="admin-editor-meta">
-      <div className="admin-editor-dates">{details}</div>
-      <div className="admin-editor-actions">{actions}</div>
+    <div className={`flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border py-3 ${modal ? "px-6 lg:px-11" : ""}`}>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]">{details}</div>
+      <div className="ml-auto flex items-center gap-2">{actions}</div>
     </div>
   );
 }
 
 function EditorField({ children, error }: { children: ReactNode; error?: ReactNode }) {
   return (
-    <div className="admin-editor-field">
+    <div className="flex flex-col gap-2 [&_[data-slot=input]]:h-10 [&_[data-slot=input]]:w-full [&_[data-slot=input]]:border [&_[data-slot=input]]:border-input [&_[data-slot=input]]:bg-muted/50 [&_[data-slot=input]]:px-3 [&_[data-slot=input]]:py-2 [&_[data-slot=input]]:text-[13px] [&_[data-slot=select-trigger]]:h-10 [&_[data-slot=select-trigger]]:w-full [&_[data-slot=select-trigger]]:border [&_[data-slot=select-trigger]]:border-input [&_[data-slot=select-trigger]]:bg-muted/50 [&_[data-slot=select-trigger]]:px-3 [&_[data-slot=select-trigger]]:py-2 [&_[data-slot=select-trigger]]:text-[13px] [&_[data-slot=textarea]]:min-h-32 [&_[data-slot=textarea]]:w-full [&_[data-slot=textarea]]:border [&_[data-slot=textarea]]:border-input [&_[data-slot=textarea]]:bg-muted/50 [&_[data-slot=textarea]]:px-3 [&_[data-slot=textarea]]:py-2 [&_[data-slot=textarea]]:text-[13px]">
       {children}
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
     </div>
@@ -578,11 +582,11 @@ function DashboardPage({ manifest, canManageUsers }: { manifest: BebopAdminManif
   return (
     <section>
       <h1 className="mb-6 text-[32px] font-normal leading-tight tracking-tight">Collections</h1>
-      <div className="admin-collection-grid">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {collections.map((collection) => (
-          <article key={collection.slug} className="admin-collection-card">
-            <Link to={`/admin/collections/${collection.slug}`} className="admin-collection-title">{collection.labels.plural}</Link>
-            <Link to={`/admin/collections/${collection.slug}/create`} className="admin-collection-add" aria-label={`Create ${collection.labels.singular}`}>
+          <article key={collection.slug} className="flex min-h-40 items-start justify-between rounded-none border border-border bg-card p-5 text-card-foreground transition-colors hover:border-foreground/20">
+            <Link to={`/admin/collections/${collection.slug}`} className="pt-1 text-base font-medium text-card-foreground no-underline hover:underline">{collection.labels.plural}</Link>
+            <Link to={`/admin/collections/${collection.slug}/create`} className="flex size-9 shrink-0 items-center justify-center rounded-none border border-border text-card-foreground no-underline transition-colors hover:bg-accent" aria-label={`Create ${collection.labels.singular}`}>
               <Plus size={19} />
             </Link>
           </article>
@@ -722,24 +726,24 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
   }
   return (
     <section>
-      <div className="admin-list-heading">
+      <div className="mb-4 flex flex-wrap items-center justify-start gap-3">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          {selectedUsers.length > 0 && <div className="admin-selection-bar" aria-label="Selected users">
+          {selectedUsers.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected users">
             <span>{selectedUsers.length} selected</span>
             <span aria-hidden="true">—</span>
-            <button type="button" className="admin-selection-action" onClick={toggleAllPageUsers}>{allPageUsersSelected ? "Clear selection" : `Select all (${users.length})`}</button>
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={toggleAllPageUsers}>{allPageUsersSelected ? "Clear selection" : `Select all (${users.length})`}</button>
             <span aria-hidden="true">—</span>
-            <button type="button" className="admin-selection-action" disabled={selectedUsers.length !== 1} onClick={() => {
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedUsers.length !== 1} onClick={() => {
               const selectedUser = selectedUsers[0];
               if (selectedUser) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(selectedUser.id)}`);
             }}>Edit</button>
-            <button type="button" className="admin-selection-action" onClick={() => { setDeleteError(undefined); setPendingUserDelete(selectedUsers); }}>Delete</button>
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setPendingUserDelete(selectedUsers); }}>Delete</button>
           </div>}
           <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
         </div>
       </div>
-      <div className="admin-table-toolbar">
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2 max-md:items-stretch max-md:[&>div:first-child]:basis-full max-md:[&>div:last-child]:ml-auto">
         {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -751,23 +755,23 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
           />
         </div>}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <details className="admin-table-menu">
-            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
-            <div className="admin-table-menu-content">
-              <p className="admin-table-menu-label">Visible columns</p>
+          <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent">Columns <ChevronDown size={15} /></summary>
+            <div className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg">
+              <p className="mb-1 px-2 py-1 text-xs font-medium text-muted-foreground">Visible columns</p>
               {availableColumns.map((column) => {
                 const checked = visibleColumns.includes(column);
-                return <label key={column} className="admin-menu-checkbox">
+                return <label key={column} className="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 text-sm hover:bg-accent [&_input]:accent-primary">
                   <input type="checkbox" checked={checked} disabled={checked && visibleColumns.length === 1} onChange={() => setVisibleColumns((current) => checked ? current.filter((name) => name !== column) : [...current, column])} />
                   <span>{fieldByName(collection, column)?.label ?? formatLabel(column)}</span>
                 </label>;
               })}
             </div>
           </details>
-          {filterFields.length > 0 && <details className="admin-table-menu">
-            <summary className="admin-table-menu-trigger">Filters <ChevronDown size={15} /></summary>
-            <div className="admin-table-menu-content admin-filter-menu">
-              {filterFields.map((field) => <label key={field.name} className="admin-filter-field">
+          {filterFields.length > 0 && <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent">Filters <ChevronDown size={15} /></summary>
+            <div className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg flex max-h-[70vh] w-64 flex-col gap-3 overflow-y-auto">
+              {filterFields.map((field) => <label key={field.name} className="flex flex-col gap-1.5 px-1 text-xs font-medium text-muted-foreground">
                 <span>{field.label}</span>
                 <Select value={filters[field.name] || filterAllValue} onValueChange={(value) => { setFilters((current) => ({ ...current, [field.name]: value === filterAllValue ? "" : value ?? "" })); setPage(1); }}>
                   <SelectTrigger className="w-full" aria-label={`Filter by ${field.label}`}><SelectValue>{filters[field.name] ? field.kind === "boolean" ? filters[field.name] === "true" ? "Yes" : "No" : selectLabel(field, filters[field.name]) : `All ${field.label.toLocaleLowerCase()}`}</SelectValue></SelectTrigger>
@@ -783,17 +787,17 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
       </div>
       {error && <p role="alert" className="mb-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
       {deleteError && <p role="alert" className="mb-4 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{deleteError}</p>}
-      <div className="admin-table-section">
+      <div className="min-w-0 w-full [&_[data-slot=table-container]]:min-w-0 [&_[data-slot=table]]:text-[13px]">
         <Table>
-          <TableHeader><TableRow><TableHead className="w-12"><input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label="Select all users on this page" checked={allPageUsersSelected} disabled={!users.length} onChange={toggleAllPageUsers} /></TableHead>{columns.map((name) => {
+          <TableHeader><TableRow><TableHead className="w-12"><SelectionCheckbox ref={selectAllCheckbox} aria-label="Select all users on this page" checked={allPageUsersSelected} disabled={!users.length} onChange={toggleAllPageUsers} /></TableHead>{columns.map((name) => {
             const active = sort.field === name;
             const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
-            return <TableHead key={name} className="h-10 text-[13px] font-normal normal-case tracking-normal"><button className="admin-sort-button" onClick={() => { setSort((current) => ({ field: name, direction: current.field === name && current.direction === "asc" ? "desc" : "asc" })); setPage(1); }}>{fieldByName(collection, name)?.label ?? formatLabel(name)}<SortIcon size={13} /></button></TableHead>;
+            return <TableHead key={name} className="h-10 text-[13px] font-normal normal-case tracking-normal"><button className="inline-flex items-center gap-2 font-normal text-muted-foreground hover:text-foreground" onClick={() => { setSort((current) => ({ field: name, direction: current.field === name && current.direction === "asc" ? "desc" : "asc" })); setPage(1); }}>{fieldByName(collection, name)?.label ?? formatLabel(name)}<SortIcon size={13} /></button></TableHead>;
           })}{collection.timestamps && <TableHead className="h-10 text-[13px] font-normal normal-case tracking-normal">Updated</TableHead>}</TableRow></TableHeader>
           <TableBody>
             {result?.users.map((user, index) => <TableRow key={user.id} className={`${selectedUserIds.has(user.id) ? "bg-accent" : index % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"}`}>
-              <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${String(user.name ?? user.email ?? user.id)}`} checked={selectedUserIds.has(user.id)} onChange={() => setSelectedUserIds((current) => { const next = new Set(current); if (next.has(user.id)) next.delete(user.id); else next.add(user.id); return next; })} /></TableCell>
-              {columns.map((name) => <TableCell key={name} className="admin-table-cell">
+              <TableCell className="w-12"><SelectionCheckbox aria-label={`Select ${String(user.name ?? user.email ?? user.id)}`} checked={selectedUserIds.has(user.id)} onChange={() => setSelectedUserIds((current) => { const next = new Set(current); if (next.has(user.id)) next.delete(user.id); else next.add(user.id); return next; })} /></TableCell>
+              {columns.map((name) => <TableCell key={name} className="whitespace-normal py-4 align-top">
                 {name === columns[0]
                   ? <Link to={`/admin/collections/${collection.slug}/${encodeURIComponent(user.id)}`} className="underline underline-offset-2 hover:text-primary">{formatCell(fieldByName(collection, name), user[name])}</Link>
                   : formatCell(fieldByName(collection, name), user[name])}
@@ -804,7 +808,7 @@ function AuthUsersList({ collection, authClient, canManageUsers }: {
             {loading && !result && <TableRow><TableCell colSpan={columns.length + Number(collection.timestamps) + 1} className="py-8 text-center text-sm text-muted-foreground">Loading users…</TableCell></TableRow>}
           </TableBody>
         </Table>
-        <div className="admin-table-pagination">
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground">
           <span>{total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}` : "0 users"}</span>
           <div className="flex items-center justify-end gap-2">
             <span className="mr-1">Per Page:</span>
@@ -866,7 +870,7 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
   });
 
   return (
-    <div className="admin-editor">
+    <div>
       <EditorHeading title={`New ${collection.labels.singular}`} />
       <form onSubmit={onSubmit} noValidate>
         <EditorMeta
@@ -876,9 +880,9 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
             <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
           </>}
         />
-        {saveError && <p role="alert" className="admin-editor-message text-destructive">{saveError}</p>}
-        <fieldset disabled={isSubmitting} className="admin-editor-grid admin-editor-grid-single">
-          <div className="admin-editor-main">
+        {saveError && <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{saveError}</p>}
+        <fieldset disabled={isSubmitting} className="m-0 grid min-w-0 grid-cols-1 border-0 p-0">
+          <div className="min-w-0 space-y-6 py-7 lg:pr-10">
             <EditorField error={errors.name?.message}>
               <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
@@ -985,13 +989,13 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
   });
 
   if (loading) return (
-    <div className="admin-editor">
+    <div>
       <EditorHeading title={collection.labels.singular} />
-      <p className="admin-editor-message text-muted-foreground" role="status">Loading user…</p>
+      <p className="border-b border-border py-3 text-[13px] text-muted-foreground" role="status">Loading user…</p>
     </div>
   );
   if (loadError || !user) return (
-    <div className="admin-editor">
+    <div>
       <EditorHeading title={collection.labels.singular} />
       <EditorMeta
         details={<span className="text-muted-foreground">Could not load this user.</span>}
@@ -999,13 +1003,13 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
           <Button variant="outline" size="sm" className="normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>
         }
       />
-      <p role="alert" className="admin-editor-message text-destructive">{loadError ?? "User not found."}</p>
+      <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{loadError ?? "User not found."}</p>
     </div>
   );
 
   const userFields = new Map(collection.fields.map((field) => [field.name, field]));
   return (
-    <div className="admin-editor">
+    <div>
       <EditorHeading title={title} />
       <form onSubmit={onSubmit} noValidate>
         <EditorMeta
@@ -1022,9 +1026,9 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
             </>
           }
         />
-        {saveError && <p role="alert" className="admin-editor-message text-destructive">{saveError}</p>}
-        <fieldset disabled={isSubmitting} className="admin-editor-grid">
-          <div className="admin-editor-main">
+        {saveError && <p role="alert" className="border-b border-border py-3 text-[13px] text-destructive">{saveError}</p>}
+        <fieldset disabled={isSubmitting} className="m-0 grid min-w-0 grid-cols-1 border-0 p-0 lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]">
+          <div className="min-w-0 space-y-6 py-7 lg:pr-10">
             <EditorField error={errors.name?.message}>
               <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
@@ -1037,16 +1041,16 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
               })} />
             </EditorField>
           </div>
-          <aside className="admin-editor-side" aria-label="Additional user information">
-            <div className="admin-editor-field">
+          <aside className="min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l lg:pl-8" aria-label="Additional user information">
+            <div className="flex flex-col gap-2">
               <span className="text-[13px] text-muted-foreground">Role</span>
               <span className="text-[13px]">{formatCell(userFields.get("role"), user.role)}</span>
             </div>
-            <div className="admin-editor-field">
+            <div className="flex flex-col gap-2">
               <span className="text-[13px] text-muted-foreground">Email verified</span>
               <span className="text-[13px]">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</span>
             </div>
-            <div className="admin-editor-document-id"><span>Document ID</span><code>{user.id}</code></div>
+            <div className="flex flex-col gap-1 border-t border-border pt-5 text-xs text-muted-foreground"><span>Document ID</span><code className="break-all text-foreground">{user.id}</code></div>
           </aside>
         </fieldset>
       </form>
@@ -1121,8 +1125,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
   const columns = allColumns.filter((column) => visibleColumns.includes(column));
   const relatedIdsByCollection = new Map<string, Set<string>>();
   const titleFields = collectionTitleFields(collection);
-  const titleFieldNames = titleFields.map((field) => field.name);
-  for (const column of [...new Set([...columns, ...titleFieldNames, ...(searchActive ? collection.listSearchableFields : [])])]) {
+  for (const column of [...new Set([...columns, ...(searchActive ? collection.listSearchableFields : [])])]) {
     const field = fieldByName(collection, column);
     if ((field?.kind !== "relation" && field?.kind !== "upload") || !field.relationTo || !manifest.collections[field.relationTo] || relationOptions?.[field.relationTo]) continue;
     const ids = relatedIdsByCollection.get(field.relationTo) ?? new Set<string>();
@@ -1227,39 +1230,39 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
           onChange={onRelatedOptions}
         />
       ))}
-      <div className="admin-list-heading">
+      <div className="mb-4 flex flex-wrap items-center justify-start gap-3">
         <h1 className="text-[32px] font-normal leading-tight tracking-tight">{collection.labels.plural}</h1>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          {!selectMode && selectedRows.length > 0 && <div className="admin-selection-bar" aria-label="Selected documents">
+          {!selectMode && selectedRows.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected documents">
             <span>{selectedRows.length} selected</span>
             <span aria-hidden="true">—</span>
-            {selectablePageRows.length > 0 && <button type="button" className="admin-selection-action" onClick={togglePageSelection}>{allPageSelected ? "Clear selection" : `Select all (${selectablePageRows.length})`}</button>}
+            {selectablePageRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={togglePageSelection}>{allPageSelected ? "Clear selection" : `Select all (${selectablePageRows.length})`}</button>}
             <span aria-hidden="true">—</span>
-            <button type="button" className="admin-selection-action" disabled={selectedRows.length !== 1 || selectedRows[0] === undefined || rowPermissions[selectedRows[0].id]?.update === "denied"} onClick={() => {
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedRows.length !== 1 || selectedRows[0] === undefined || rowPermissions[selectedRows[0].id]?.update === "denied"} onClick={() => {
               const row = selectedRows[0];
               if (row) navigate(`/admin/collections/${collection.slug}/${encodeURIComponent(row.id)}`);
             }}>Edit</button>
-            {selectedDeletableRows.length > 0 && <button type="button" className="admin-selection-action" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedDeletableRows); }}>Delete</button>}
+            {selectedDeletableRows.length > 0 && <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setDeleteError(undefined); setOperationError(undefined); setPendingDelete(selectedDeletableRows); }}>Delete</button>}
           </div>}
           <Button variant="secondary" size="xs" className="text-[13px] font-medium normal-case tracking-normal" onClick={() => selectMode ? onCreate?.() : navigate(`/admin/collections/${collection.slug}/create`)}>Create New</Button>
         </div>
       </div>
       {operationError && <p className="mb-3 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{operationError}</p>}
-      <div className="admin-table-toolbar">
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2 max-md:items-stretch max-md:[&>div:first-child]:basis-full max-md:[&>div:last-child]:ml-auto">
         {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="h-8 pl-10 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>}
         <div className="flex shrink-0 items-center gap-2">
-          <details className="admin-table-menu">
-            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
-            <div className="admin-table-menu-content">
-              <p className="admin-table-menu-label">Visible columns</p>
+          <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent">Columns <ChevronDown size={15} /></summary>
+            <div className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg">
+              <p className="mb-1 px-2 py-1 text-xs font-medium text-muted-foreground">Visible columns</p>
               {allColumns.map((column) => {
                 const field = fieldByName(collection, column);
                 const checked = visibleColumns.includes(column);
                 return (
-                  <label key={column} className="admin-menu-checkbox">
+                  <label key={column} className="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 text-sm hover:bg-accent [&_input]:accent-primary">
                     <input
                       type="checkbox"
                       checked={checked}
@@ -1272,11 +1275,11 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
               })}
             </div>
           </details>
-          {filterFields.length > 0 && <details className="admin-table-menu">
-            <summary className="admin-table-menu-trigger">Filters <ChevronDown size={15} /></summary>
-            <div className="admin-table-menu-content admin-filter-menu">
+          {filterFields.length > 0 && <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent">Filters <ChevronDown size={15} /></summary>
+            <div className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg flex max-h-[70vh] w-64 flex-col gap-3 overflow-y-auto">
               {filterFields.map((field) => (
-                <label key={field.name} className="admin-filter-field">
+                <label key={field.name} className="flex flex-col gap-1.5 px-1 text-xs font-medium text-muted-foreground">
                   <span>{field.label}</span>
                   <Select
                     value={filters[field.name] || filterAllValue}
@@ -1314,12 +1317,12 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
             {!rows.length && <Button variant="secondary" className="mt-4" onClick={() => navigate(`/admin/collections/${collection.slug}/create`)}><Plus size={16} /> Create New</Button>}
           </div>
         ) : (
-          <div className="admin-table-section">
+          <div className="min-w-0 w-full [&_[data-slot=table-container]]:min-w-0 [&_[data-slot=table]]:text-[13px]">
             <Table>
               <TableHeader>
                 <TableRow>
                   {!selectMode && <TableHead className="w-12">
-                    <input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label="Select all documents on this page" checked={allPageSelected} disabled={selectablePageRows.length === 0} onChange={togglePageSelection} />
+                    <SelectionCheckbox ref={selectAllCheckbox} aria-label="Select all documents on this page" checked={allPageSelected} disabled={selectablePageRows.length === 0} onChange={togglePageSelection} />
                   </TableHead>}
                   {columns.map((column) => {
                     const field = fieldByName(collection, column);
@@ -1327,7 +1330,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                     const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
                     return (
                       <TableHead key={column} className="h-10 text-[13px] font-normal normal-case tracking-normal">
-                        <button className="admin-sort-button" onClick={() => toggleSort(column)}>
+                        <button className="inline-flex items-center gap-2 font-normal text-muted-foreground hover:text-foreground" onClick={() => toggleSort(column)}>
                           {field?.label ?? humanize(column)}<SortIcon size={13} />
                         </button>
                       </TableHead>
@@ -1342,9 +1345,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                 ) : pageRows.map((row, rowIndex) => (
                   <TableRow key={row.id} className={`${selectedIds.has(row.id) ? "bg-accent" : rowIndex % 2 === 0 ? "bg-muted/50 hover:bg-muted" : "hover:bg-muted/50"} ${selectMode ? "cursor-pointer" : ""}`} onClick={selectMode ? () => onSelect?.(row) : undefined}>
                     {!selectMode && <TableCell className="w-12" onClick={(event) => event.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="admin-checkbox"
+                      <SelectionCheckbox
                         aria-label={`Select ${recordTitle(collection, row, displayRelationOptions) ?? row.id}`}
                         checked={selectedIds.has(row.id)}
                         disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"}
@@ -1355,13 +1356,11 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                       const field = fieldByName(collection, column);
                       const value = field ? valueFor(field, row) : row[column];
                       const isTitle = linkedColumn === column;
-                      const displayValue = (isTitle && titleFields.length > 1) || field?.name === titleField?.name
-                        ? recordTitle(collection, row, displayRelationOptions) ?? formatCell(field, value, displayRelationOptions)
-                        : formatCell(field, value, displayRelationOptions);
+                      const displayValue = formatCell(field, value, displayRelationOptions);
                       return (
-                        <TableCell key={column} className={`admin-table-cell ${isTitle ? "font-medium" : ""}`}>
+                        <TableCell key={column} className={`whitespace-normal py-4 align-top ${isTitle ? "font-medium" : ""}`}>
                           {isTitle && selectMode ? (
-                            <button type="button" className="admin-media-picker-row-button" onClick={(event) => { event.stopPropagation(); onSelect?.(row); }}>
+                            <button type="button" className="inline-flex min-w-0 items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onSelect?.(row); }}>
                               {collection.upload && <MediaPreview client={client} collection={collection.slug} id={row.id} filename={String(row.filename ?? "")} mimeType={String(row.mimeType ?? "")} compact />}
                               <span className="underline underline-offset-2 hover:text-primary">{displayValue}</span>
                             </button>
@@ -1378,7 +1377,7 @@ function CollectionList({ app, client, collection, manifest, relationOptions, se
                 ))}
               </TableBody>
             </Table>
-            <div className="admin-table-pagination">
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground">
               <span>{rangeStart}–{rangeEnd} of {totalRows}</span>
               <div className="flex items-center justify-end gap-2">
                 <span className="mr-1">Per Page:</span>
@@ -1744,7 +1743,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
     return (
       <EditorField key={field.name} error={errors[field.name] ? String(errors[field.name]?.message ?? "Invalid value") : undefined}>
         {field.kind === "boolean" ? (
-          <label className="admin-editor-checkbox-label">
+          <label className="flex min-h-10 cursor-pointer items-center gap-2 text-[13px]">
             <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
             <span>{field.label}</span>
             {field.required && <span className="text-destructive">*</span>}
@@ -1773,7 +1772,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
   }
 
   return (
-    <div className={`admin-editor ${modal ? "admin-editor-modal" : ""}`}>
+    <div>
       {[...titleRelationIds].map(([slug, ids]) => {
         const relatedCollection = manifest.collections[slug];
         return relatedCollection ? <RelatedCollectionLabels
@@ -1786,9 +1785,10 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
           onChange={onTitleRelatedOptions}
         /> : null;
       })}
-      <EditorHeading title={title} action={modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>} />
+      <EditorHeading title={title} modal={Boolean(modal)} action={modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>} />
       <form onSubmit={handleSubmit(save)}>
         <EditorMeta
+          modal={Boolean(modal)}
           details={id && collection.timestamps ? <>
             <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(existing?.$updatedAt, true)}</span>
             <span><span className="text-muted-foreground">Created: </span>{formatDate(existing?.$createdAt, true)}</span>
@@ -1800,12 +1800,12 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             </>
           }
         />
-        {permissionAdvice === "denied" && <p className="admin-editor-message text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
-        {saveError && <p className="admin-editor-message text-destructive" role="alert">{saveError}</p>}
-        {saveApplied && !saveError && <p className="admin-editor-message text-muted-foreground" role="status">The local change was applied. Jazz may still be syncing it.</p>}
-        <fieldset disabled={Boolean(saveApplied || (id && permissionAdvice === "denied"))} className={`admin-editor-grid ${sidebarFields.length ? "" : "admin-editor-grid-single"}`}>
-          <div className="admin-editor-main">
-            {collection.upload && <div className="admin-editor-field">
+        {permissionAdvice === "denied" && <p className="border-b border-border py-3 text-[13px] text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
+        {saveError && <p className="border-b border-border py-3 text-[13px] text-destructive" role="alert">{saveError}</p>}
+        {saveApplied && !saveError && <p className="border-b border-border py-3 text-[13px] text-muted-foreground" role="status">The local change was applied. Jazz may still be syncing it.</p>}
+        <fieldset disabled={Boolean(saveApplied || (id && permissionAdvice === "denied"))} className={`m-0 grid min-w-0 grid-cols-1 border-0 p-0 ${sidebarFields.length ? "lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]" : ""}`}>
+          <div className={`min-w-0 space-y-6 py-7 ${modal ? "px-6 lg:px-11" : "lg:pr-10"}`}>
+            {collection.upload && <div className="flex flex-col gap-2">
               <Label className="text-[13px] font-normal">File {!id && <span className="text-destructive">*</span>}</Label>
               {selectedFile
                 ? <PendingUploadPreview file={selectedFile} onClear={() => setSelectedFile(undefined)} />
@@ -1815,9 +1815,9 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             </div>}
             {mainFields.map(renderField)}
           </div>
-          {sidebarFields.length > 0 && <aside className="admin-editor-side" aria-label="Additional fields">
+          {sidebarFields.length > 0 && <aside className={`min-w-0 space-y-6 border-t border-border py-7 lg:border-t-0 lg:border-l ${modal ? "px-6 lg:px-11" : "lg:pl-8"}`} aria-label="Additional fields">
             {sidebarFields.map(renderField)}
-            {id && <div className="admin-editor-document-id"><span>Document ID</span><code>{id}</code></div>}
+            {id && <div className="flex flex-col gap-1 border-t border-border pt-5 text-xs text-muted-foreground"><span>Document ID</span><code className="break-all text-foreground">{id}</code></div>}
           </aside>}
         </fieldset>
       </form>
@@ -1839,10 +1839,10 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
         swipeDirection="right"
       >
         <DrawerContent
-          className="admin-media-drawer bebop-admin"
+          className="rounded-none border-l border-border bg-background font-sans text-foreground shadow-2xl bebop-admin"
           style={{ width: "90vw", height: "100dvh", maxHeight: "100dvh", margin: 0 }}
         >
-          <div ref={mediaPortal} className="admin-media-drawer-inner">
+          <div ref={mediaPortal} className="h-full min-h-0 overflow-y-auto">
             {mediaDialog && (() => {
               const mediaCollection = manifest.collections[mediaDialog.collectionSlug];
               if (!mediaCollection) return null;
@@ -1860,8 +1860,8 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
                   {mediaDialog.mode === "choose" ? `Choose ${mediaCollection.labels.plural}` : `${mediaDialog.mode === "create" ? "Create" : "Edit"} ${mediaCollection.labels.singular}`}
                 </DrawerTitle>
                 <AdminPortalContainer.Provider value={mediaPortal}>
-                  {mediaDialog.mode === "choose" ? <div className="admin-media-picker">
-                    <Button type="button" className="admin-media-picker-close" variant="ghost" size="icon" aria-label="Close media picker" onClick={closeMediaDialog}><X size={20} /></Button>
+                  {mediaDialog.mode === "choose" ? <div className="relative min-h-full px-6 py-8 lg:px-15 max-md:px-4 max-md:py-5">
+                    <Button type="button" className="absolute right-4 top-4 z-10" variant="ghost" size="icon" aria-label="Close media picker" onClick={closeMediaDialog}><X size={20} /></Button>
                     <CollectionList
                       app={app}
                       client={client}
@@ -1946,8 +1946,6 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
   const someRowsSelected = selectableRows.some((row) => selectedIds.has(row.id));
   const allColumns = columnsAvailable.map((candidate) => candidate.name);
   const visible = allColumns.filter((name) => visibleColumns.includes(name));
-  const titleFields = target ? collectionTitleFields(target) : [];
-  const titleField = titleFields[0];
   const linkedColumn = visible[0];
   const totalRows = idResult.data?.length ?? 0;
   const readDenied = target?.writeMode !== "command" && rows.some((row) => readPermissions[row.id] === "denied");
@@ -1998,12 +1996,12 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-medium">{field.label}</h2>
         <div className="flex items-center gap-2">
-          {selectedRows.length > 0 && <div className="admin-selection-bar" aria-label="Selected related records">
+          {selectedRows.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Selected related records">
             <span>{selectedRows.length} selected</span>
             <span aria-hidden="true">—</span>
-            <button type="button" className="admin-selection-action" onClick={toggleAllRows}>{allRowsSelected ? "Clear selection" : `Select all (${selectableRows.length})`}</button>
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" onClick={toggleAllRows}>{allRowsSelected ? "Clear selection" : `Select all (${selectableRows.length})`}</button>
             <span aria-hidden="true">—</span>
-            <button type="button" className="admin-selection-action" disabled={selectedRows.length !== 1} onClick={() => {
+            <button type="button" className="cursor-pointer bg-transparent text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" disabled={selectedRows.length !== 1} onClick={() => {
               const row = selectedRows[0];
               if (row) navigate(`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`);
             }}>Edit</button>
@@ -2014,14 +2012,14 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
             disabled={createAdvice === "denied"}
             onClick={() => navigate(`/admin/collections/${field.collection}/create?${contextualQuery}`)}
           ><Plus size={15} /> Add New</Button>}
-          <details className="admin-table-menu">
-            <summary className="admin-table-menu-trigger">Columns <ChevronDown size={15} /></summary>
-            <div className="admin-table-menu-content">
-              <p className="admin-table-menu-label">Visible columns</p>
+          <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex h-8 cursor-pointer items-center gap-2 rounded-none bg-secondary px-3 text-[13px] text-secondary-foreground hover:bg-accent">Columns <ChevronDown size={15} /></summary>
+            <div className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] min-w-52 overflow-y-auto rounded-none border border-border bg-popover p-2 text-popover-foreground shadow-lg">
+              <p className="mb-1 px-2 py-1 text-xs font-medium text-muted-foreground">Visible columns</p>
               {allColumns.map((column) => {
                 const candidate = fieldByName(targetCollection!, column);
                 const checked = visibleColumns.includes(column);
-                return <label key={column} className="admin-menu-checkbox">
+                return <label key={column} className="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 text-sm hover:bg-accent [&_input]:accent-primary">
                   <input type="checkbox" checked={checked} disabled={checked && visibleColumns.length === 1} onChange={() => setVisibleColumns((current) => checked ? current.filter((name) => name !== column) : [...current, column])} />
                   <span>{candidate?.label ?? humanize(column)}</span>
                 </label>;
@@ -2043,15 +2041,15 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
           <p className="mt-1 text-sm text-muted-foreground">{rows.length ? "Try another search." : `Records related to this ${source.labels.singular.toLocaleLowerCase()} will appear here.`}</p>
         </div>
       ) : (
-        <div className="admin-join-table-surface">
-          <div className="admin-table-section">
+        <div className="min-w-0 border border-border bg-muted/50">
+          <div className="min-w-0 w-full [&_[data-slot=table-container]]:min-w-0 [&_[data-slot=table]]:text-[13px]">
             <Table>
-              <TableHeader><TableRow><TableHead className="w-12"><input ref={selectAllCheckbox} type="checkbox" className="admin-checkbox" aria-label={`Select all ${targetCollection.labels.plural.toLocaleLowerCase()}`} checked={allRowsSelected} disabled={selectableRows.length === 0} onChange={toggleAllRows} /></TableHead>{visible.map((column) => {
+              <TableHeader><TableRow><TableHead className="w-12"><SelectionCheckbox ref={selectAllCheckbox} aria-label={`Select all ${targetCollection.labels.plural.toLocaleLowerCase()}`} checked={allRowsSelected} disabled={selectableRows.length === 0} onChange={toggleAllRows} /></TableHead>{visible.map((column) => {
                 const candidate = fieldByName(targetCollection, column);
                 const activeSort = sort.field === column;
                 const SortIcon = activeSort ? sort.direction === "asc" ? ArrowUp : ArrowDown : ArrowUpDown;
                 return <TableHead key={column} className="h-10 text-[13px] font-normal normal-case tracking-normal">
-                  <button className="admin-sort-button" onClick={() => setSort((current) => ({ field: column, direction: current.field === column && current.direction === "asc" ? "desc" : "asc" }))}>
+                  <button className="inline-flex items-center gap-2 font-normal text-muted-foreground hover:text-foreground" onClick={() => setSort((current) => ({ field: column, direction: current.field === column && current.direction === "asc" ? "desc" : "asc" }))}>
                     {candidate?.label ?? humanize(column)}<SortIcon size={13} />
                   </button>
                 </TableHead>;
@@ -2059,16 +2057,14 @@ function JoinFieldPanel({ app, client, manifest, source, field, parentId, parent
               <TableBody>{readableRows.length === 0
                 ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0) + 1} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
                 : readableRows.map((row) => <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-accent" : "hover:bg-muted"}>
-                    <TableCell className="w-12"><input type="checkbox" className="admin-checkbox" aria-label={`Select ${recordTitle(targetCollection, row, relationOptions) ?? row.id}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
+                    <TableCell className="w-12"><SelectionCheckbox aria-label={`Select ${recordTitle(targetCollection, row, relationOptions) ?? row.id}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
                     {visible.map((column) => {
                       const candidate = fieldByName(targetCollection, column);
                       const value = candidate ? valueFor(candidate, row) : row[column];
                       const displayValue = candidate?.kind === "relation" && candidate.name === field.on && value === parentId
                         ? parentLabel
-                        : (column === linkedColumn && titleFields.length > 1) || candidate?.name === titleField?.name
-                          ? recordTitle(targetCollection, row, relationOptions) ?? formatCell(candidate, value, relationOptions)
                         : formatCell(candidate, value, relationOptions);
-                      return <TableCell key={column} className="admin-table-cell">
+                      return <TableCell key={column} className="whitespace-normal py-4 align-top">
                         {column === linkedColumn
                           ? <Link to={`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`} className="underline underline-offset-2 hover:text-primary">{displayValue}</Link>
                           : displayValue}

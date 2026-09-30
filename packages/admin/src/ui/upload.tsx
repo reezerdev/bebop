@@ -36,7 +36,7 @@ export function UploadDropzone({ onFile, accept, disabled, label = "Create New",
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  return <div className={`admin-upload-dropzone ${dragging ? "admin-upload-dragging" : ""}`}
+  return <div className={`relative flex min-h-16 flex-wrap items-center justify-between gap-3 border border-dashed px-4 py-3 text-[13px] ${dragging ? "border-primary bg-primary/10" : "border-border bg-muted/30"}`}
     onDragOver={(event) => { if (disabled) return; event.preventDefault(); setDragging(true); }}
     onDragLeave={() => setDragging(false)}
     onDrop={(event) => { event.preventDefault(); setDragging(false); if (!disabled && event.dataTransfer.files[0]) onFile(event.dataTransfer.files[0]); }}>
@@ -45,12 +45,12 @@ export function UploadDropzone({ onFile, accept, disabled, label = "Create New",
       if (file) onFile(file);
       event.currentTarget.value = "";
     }} />
-    <div className="admin-upload-actions">
+    <div className="flex flex-wrap items-center gap-2">
       <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => input.current?.click()}><ImagePlus size={15} /> {label}</Button>
       {chooseExisting && <><span className="text-muted-foreground">or</span><Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={chooseExisting}>Choose from existing</Button></>}
     </div>
-    <span className="admin-upload-hint">or drag and drop a file</span>
-    {error && <p className="admin-upload-error" role="alert">{error}</p>}
+    <span className="text-xs text-muted-foreground">or drag and drop a file</span>
+    {error && <p className="w-full text-xs text-destructive" role="alert">{error}</p>}
   </div>;
 }
 
@@ -82,13 +82,13 @@ export function MediaPreview({ client, collection, id, filename, mimeType, compa
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [client, collection, id]);
   if (error) return <p className="text-xs text-destructive" role="alert">{error}</p>;
-  if (!url) return compact ? <span className="admin-media-thumbnail-placeholder"><FileText size={18} /></span> : <p className="text-xs text-muted-foreground">Loading file…</p>;
+  if (!url) return compact ? <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"><FileText size={18} /></span> : <p className="text-xs text-muted-foreground">Loading file…</p>;
   if (compact) return mimeType?.startsWith("image/")
-    ? <img className="admin-media-thumbnail" src={url} alt="" />
-    : <span className="admin-media-thumbnail-placeholder"><FileText size={18} /></span>;
-  return <div className="admin-media-preview">
+    ? <img className="size-10 shrink-0 border border-border bg-background object-contain" src={url} alt="" />
+    : <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"><FileText size={18} /></span>;
+  return <div className="flex flex-col items-start gap-2 [&_img]:max-h-64 [&_img]:max-w-full [&_img]:border [&_img]:border-border [&_img]:object-contain">
     {mimeType?.startsWith("image/") && <img src={url} alt={filename ?? "Uploaded image"} />}
-    <a href={url} download={filename || "download"} className="admin-media-download"><Download size={14} /> {filename || "Download file"}</a>
+    <a href={url} download={filename || "download"} className="inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-2"><Download size={14} /> {filename || "Download file"}</a>
   </div>;
 }
 
@@ -111,15 +111,15 @@ export function PendingUploadPreview({ file, onClear }: { file: File; onClear: (
   const size = `${Math.max(1, Math.ceil(file.size / 1024))} KB`;
   const details = file.type ? `${size} — ${file.type}` : size;
 
-  return <div className="admin-upload-pending">
+  return <div className="flex min-h-[124px] items-stretch gap-5 border border-border bg-muted/30">
     {isImage && previewUrl
-      ? <img className="admin-upload-pending-image" src={previewUrl} alt="" />
-      : <span className="admin-upload-pending-placeholder" aria-hidden="true"><FileText size={24} /></span>}
-    <div className="admin-upload-pending-details">
+      ? <img className="h-[124px] w-[120px] shrink-0 bg-white object-contain" src={previewUrl} alt="" />
+      : <span className="flex h-[124px] w-[120px] shrink-0 items-center justify-center bg-background text-muted-foreground" aria-hidden="true"><FileText size={24} /></span>}
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-2 py-4 text-[13px]">
       <span className="truncate" title={file.name}>{file.name}</span>
       <span className="text-xs text-muted-foreground">{details}</span>
     </div>
-    <div className="admin-upload-pending-actions">
+    <div className="flex shrink-0 items-start p-3">
       <Button type="button" variant="ghost" size="icon" aria-label={`Remove selected file ${file.name}`} title="Remove selected file" onClick={onClear}><X size={16} /></Button>
     </div>
   </div>;
@@ -149,31 +149,31 @@ export function UploadFieldInput({ field, client, collection, value, onChange, o
     onCreateNew(file);
   }
   const [dragging, setDragging] = useState(false);
-  return <div className="admin-upload-field">
-    {value ? <div className="admin-upload-selected">
+  return <div className="flex flex-col gap-3">
+    {value ? <div className="flex min-h-16 items-center gap-3 border border-border bg-muted/30 px-3 py-2 text-sm">
       <MediaPreview client={client} collection={field.relationTo ?? ""} id={value} filename={selected?.filename} mimeType={selected?.mimeType} compact />
-      <div className="admin-upload-selected-details">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate">{selected?.filename ?? value}</span>
         {selected && <span className="text-xs text-muted-foreground">{Math.max(1, Math.ceil(selected.filesize / 1024))} KB{selected.mimeType ? ` — ${selected.mimeType}` : ""}</span>}
       </div>
-      <div className="admin-upload-selected-actions">
+      <div className="flex shrink-0 items-center gap-1">
         <Button type="button" variant="ghost" size="icon-xs" aria-label={`Edit ${selected?.filename ?? "media"}`} title="Edit media" onClick={() => onEdit(value)}><Pencil size={14} /></Button>
         <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${selected?.filename ?? "media"}`} title="Remove from field" onClick={() => { onChange(null); onBlur(); }}><X size={15} /></Button>
       </div>
     </div> : <>
-      <div className={`admin-upload-dropzone ${dragging ? "admin-upload-dragging" : ""}`}
+      <div className={`relative flex min-h-16 flex-wrap items-center justify-between gap-3 border border-dashed px-4 py-3 text-[13px] ${dragging ? "border-primary bg-primary/10" : "border-border bg-muted/30"}`}
         onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) requestCreate(file); }}>
-        <div className="admin-upload-actions">
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={() => requestCreate()}><ImagePlus size={15} /> Create New</Button>
           <span className="text-muted-foreground">or</span>
           <Button type="button" variant="secondary" size="sm" onClick={onChooseExisting}>Choose from existing</Button>
         </div>
-        <span className="admin-upload-hint">or drag and drop a file</span>
+        <span className="text-xs text-muted-foreground">or drag and drop a file</span>
       </div>
     </>}
-    {error && <p className="admin-upload-error" role="alert">{error}</p>}
+    {error && <p className="w-full text-xs text-destructive" role="alert">{error}</p>}
     <button id={`field-${field.name}`} type="button" className="sr-only" tabIndex={-1} ref={inputRef} onBlur={onBlur} aria-label={`Select ${field.label}`} />
   </div>;
 }

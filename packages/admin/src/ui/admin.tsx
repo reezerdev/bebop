@@ -516,6 +516,28 @@ function PageTitle({
   );
 }
 
+function EditorHeading({ title, action }: { title: string; action?: ReactNode }) {
+  return <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1>{action}</div>;
+}
+
+function EditorMeta({ details, actions }: { details: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className="admin-editor-meta">
+      <div className="admin-editor-dates">{details}</div>
+      <div className="admin-editor-actions">{actions}</div>
+    </div>
+  );
+}
+
+function EditorField({ children, error }: { children: ReactNode; error?: ReactNode }) {
+  return (
+    <div className="admin-editor-field">
+      {children}
+      {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function DashboardPage({ manifest, canManageUsers }: { manifest: BebopAdminManifest; canManageUsers: boolean }) {
   const collections = Object.values(manifest.collections)
     .filter((collection) => !collection.auth || canManageUsers)
@@ -812,39 +834,39 @@ function AuthUserCreate({ collection, authClient, canManageUsers }: {
   });
 
   return (
-    <section>
-      <PageTitle
-        title={`Create ${collection.labels.singular}`}
-        description="Better Auth hashes and stores the password; Bebop does not keep a copy."
-        action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>}
-      />
-      <form className="max-w-2xl space-y-6" onSubmit={onSubmit} noValidate>
-        <div className="space-y-2">
-          <Label htmlFor="bebop-user-name">Name <span className="text-destructive">*</span></Label>
-          <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
-          {errors.name && <p role="alert" className="text-sm text-destructive">{errors.name.message}</p>}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="bebop-user-email">Email <span className="text-destructive">*</span></Label>
-          <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
-            required: "Enter an email address.",
-            pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
-          })} />
-          {errors.email && <p role="alert" className="text-sm text-destructive">{errors.email.message}</p>}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="bebop-user-password">Password <span className="text-destructive">*</span></Label>
-          <Input id="bebop-user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register("password", { required: "Enter an initial password." })} />
-          <p className="text-xs text-muted-foreground">Better Auth hashes and stores this password; the admin UI does not keep a copy.</p>
-          {errors.password && <p role="alert" className="text-sm text-destructive">{errors.password.message}</p>}
-        </div>
-        {saveError && <p role="alert" className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{saveError}</p>}
-        <div className="flex items-center gap-2 border-t border-border pt-5">
-          <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating…" : `Create ${collection.labels.singular}`}</Button>
-          <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
-        </div>
+    <div className="admin-editor">
+      <EditorHeading title={`New ${collection.labels.singular}`} />
+      <form onSubmit={onSubmit} noValidate>
+        <EditorMeta
+          details={<span className="text-muted-foreground">New document</span>}
+          actions={<>
+            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting}>{isSubmitting ? "Creating…" : "Create"}</Button>
+            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
+          </>}
+        />
+        {saveError && <p role="alert" className="admin-editor-message text-destructive">{saveError}</p>}
+        <fieldset disabled={isSubmitting} className="admin-editor-grid admin-editor-grid-single">
+          <div className="admin-editor-main">
+            <EditorField error={errors.name?.message}>
+              <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
+            </EditorField>
+            <EditorField error={errors.email?.message}>
+              <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
+                required: "Enter an email address.",
+                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
+              })} />
+            </EditorField>
+            <EditorField error={errors.password?.message}>
+              <Label htmlFor="bebop-user-password" className="text-[13px] font-normal normal-case tracking-normal">Password <span className="text-destructive">*</span></Label>
+              <Input id="bebop-user-password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register("password", { required: "Enter an initial password." })} />
+              <p className="text-xs text-muted-foreground">Better Auth hashes and stores this password; the admin UI does not keep a copy.</p>
+            </EditorField>
+          </div>
+        </fieldset>
       </form>
-    </section>
+    </div>
   );
 }
 
@@ -932,19 +954,19 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
 
   if (loading) return (
     <div className="admin-editor">
-      <div className="admin-editor-heading"><h1>{collection.labels.singular}</h1></div>
+      <EditorHeading title={collection.labels.singular} />
       <p className="admin-editor-message text-muted-foreground" role="status">Loading user…</p>
     </div>
   );
   if (loadError || !user) return (
     <div className="admin-editor">
-      <div className="admin-editor-heading"><h1>{collection.labels.singular}</h1></div>
-      <div className="admin-editor-meta">
-        <span className="text-muted-foreground">Could not load this user.</span>
-        <div className="admin-editor-actions">
+      <EditorHeading title={collection.labels.singular} />
+      <EditorMeta
+        details={<span className="text-muted-foreground">Could not load this user.</span>}
+        actions={
           <Button variant="outline" size="sm" className="normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>
-        </div>
-      </div>
+        }
+      />
       <p role="alert" className="admin-editor-message text-destructive">{loadError ?? "User not found."}</p>
     </div>
   );
@@ -952,37 +974,38 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
   const userFields = new Map(collection.fields.map((field) => [field.name, field]));
   return (
     <div className="admin-editor">
-      <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1></div>
+      <EditorHeading title={title} />
       <form onSubmit={onSubmit} noValidate>
-        <div className="admin-editor-meta">
-          <div className="admin-editor-dates">
-            <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(user.updatedAt, true)}</span>
-            <span><span className="text-muted-foreground">Created: </span>{formatDate(user.createdAt, true)}</span>
-          </div>
-          <div className="admin-editor-actions">
-            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
-            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
-          </div>
-        </div>
+        <EditorMeta
+          details={
+            <>
+              <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(user.updatedAt, true)}</span>
+              <span><span className="text-muted-foreground">Created: </span>{formatDate(user.createdAt, true)}</span>
+            </>
+          }
+          actions={
+            <>
+              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
+              <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
+            </>
+          }
+        />
         {saveError && <p role="alert" className="admin-editor-message text-destructive">{saveError}</p>}
         <fieldset disabled={isSubmitting} className="admin-editor-grid">
           <div className="admin-editor-main">
-            <div className="admin-editor-field">
+            <EditorField error={errors.name?.message}>
               <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
-              {errors.name && <p role="alert" className="text-xs text-destructive">{errors.name.message}</p>}
-            </div>
-            <div className="admin-editor-field">
+            </EditorField>
+            <EditorField error={errors.email?.message}>
               <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
                 required: "Enter an email address.",
                 pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
               })} />
-              {errors.email && <p role="alert" className="text-xs text-destructive">{errors.email.message}</p>}
-            </div>
+            </EditorField>
           </div>
           <aside className="admin-editor-side" aria-label="Additional user information">
-            <div className="admin-editor-document-id"><span>Document ID</span><code>{user.id}</code></div>
             <div className="admin-editor-field">
               <span className="text-[13px] text-muted-foreground">Role</span>
               <span className="text-[13px]">{formatCell(userFields.get("role"), user.role)}</span>
@@ -991,6 +1014,7 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
               <span className="text-[13px] text-muted-foreground">Email verified</span>
               <span className="text-[13px]">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</span>
             </div>
+            <div className="admin-editor-document-id"><span>Document ID</span><code>{user.id}</code></div>
           </aside>
         </fieldset>
       </form>
@@ -1665,7 +1689,7 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
 
   function renderField(field: BebopAdminStoredField) {
     return (
-      <div key={field.name} className="admin-editor-field">
+      <EditorField key={field.name} error={errors[field.name] ? String(errors[field.name]?.message ?? "Invalid value") : undefined}>
         {field.kind === "boolean" ? (
           <label className="admin-editor-checkbox-label">
             <input type="checkbox" className="size-4 accent-primary" {...register(field.name, { required: field.required })} />
@@ -1691,27 +1715,26 @@ function DocumentEditor({ app, client, manifest, collection, id, createDefaults,
             />
           </>
         )}
-        {errors[field.name] && <p className="text-xs text-destructive" role="alert">{String(errors[field.name]?.message ?? "Invalid value")}</p>}
-      </div>
+      </EditorField>
     );
   }
 
   return (
     <div className={`admin-editor ${modal ? "admin-editor-modal" : ""}`}>
-      <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1>{modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>}</div>
+      <EditorHeading title={title} action={modal && <Button type="button" variant="ghost" size="icon" aria-label="Close media editor" onClick={modal.onClose}><X size={20} /></Button>} />
       <form onSubmit={handleSubmit(save)}>
-        <div className="admin-editor-meta">
-          <div className="admin-editor-dates">
-            {id && collection.timestamps ? <>
-              <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(existing?.$updatedAt, true)}</span>
-              <span><span className="text-muted-foreground">Created: </span>{formatDate(existing?.$createdAt, true)}</span>
-            </> : <span className="text-muted-foreground">{modal ? `${id ? "Editing" : "Creating new"} ${collection.labels.singular}` : "New document"}</span>}
-          </div>
-          <div className="admin-editor-actions">
-            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : modal || id ? "Save" : "Create"}</Button>
-            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => modal ? modal.onClose() : navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
-          </div>
-        </div>
+        <EditorMeta
+          details={id && collection.timestamps ? <>
+            <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(existing?.$updatedAt, true)}</span>
+            <span><span className="text-muted-foreground">Created: </span>{formatDate(existing?.$createdAt, true)}</span>
+          </> : <span className="text-muted-foreground">{modal ? `${id ? "Editing" : "Creating new"} ${collection.labels.singular}` : "New document"}</span>}
+          actions={
+            <>
+              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : modal || id ? "Save" : "Create"}</Button>
+              <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => modal ? modal.onClose() : navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
+            </>
+          }
+        />
         {permissionAdvice === "denied" && <p className="admin-editor-message text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
         {saveError && <p className="admin-editor-message text-destructive" role="alert">{saveError}</p>}
         {saveApplied && !saveError && <p className="admin-editor-message text-muted-foreground" role="status">The local change was applied. Jazz may still be syncing it.</p>}

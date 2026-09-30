@@ -199,6 +199,13 @@
 .admin-login-brand { @apply mb-12 flex items-center justify-center gap-3 text-[30px] font-medium tracking-tight; }
 .admin-login-brand-mark { @apply flex size-9 items-center justify-center bg-foreground text-xl font-bold text-background; }
 .admin-login-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.admin-login-eyebrow { @apply mb-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase; }
+.admin-login-heading { @apply mb-3 text-xl font-medium tracking-tight; }
+.admin-login-copy { @apply mb-6 text-sm leading-6 text-muted-foreground; }
+.admin-login-actions { @apply flex flex-col items-center gap-4; }
+.admin-login-secondary { @apply cursor-pointer bg-transparent text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground; }
+.admin-login-secondary:focus-visible, .admin-login-inline-action:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.admin-login-inline-action { @apply ml-1 cursor-pointer bg-transparent font-medium text-foreground underline underline-offset-2; }
 .admin-login-form { @apply flex flex-col; }
 .admin-login-form label { @apply mb-1.5 text-xs font-medium; }
 .admin-login-form label span { @apply text-destructive; }
@@ -207,6 +214,10 @@
 .admin-login-submit { @apply mt-1 flex h-10 w-full items-center justify-center rounded-none bg-primary px-4 text-xs font-semibold tracking-widest text-primary-foreground uppercase transition-colors hover:bg-primary/80 disabled:cursor-wait disabled:opacity-50; }
 .admin-login-submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-login-error { @apply mb-4 border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive; }
+.admin-login-notice { @apply mt-4 border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground; }
+.admin-login-switch { @apply mt-6 text-center text-xs text-muted-foreground; }
+.admin-login-switch button { @apply cursor-pointer bg-transparent p-0 font-semibold text-foreground hover:underline; }
+.admin-login-switch button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .admin-collection-grid { @apply grid gap-4 sm:grid-cols-2 xl:grid-cols-3; }
 .admin-collection-card { @apply flex min-h-40 items-start justify-between rounded-none border border-border bg-card p-5 text-card-foreground transition-colors hover:border-foreground/20; }
 .admin-collection-title { @apply pt-1 text-base font-medium text-card-foreground no-underline hover:underline; }

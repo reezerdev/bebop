@@ -930,54 +930,71 @@ function AuthUserEditor({ collection, authClient, canManageUsers, id }: {
     }
   });
 
-  if (loading) return <section><PageTitle title={collection.labels.singular} /><p className="py-8 text-sm text-muted-foreground">Loading user…</p></section>;
-  if (loadError || !user) return <section><PageTitle title={collection.labels.singular} action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>} /><p role="alert" className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{loadError ?? "User not found."}</p></section>;
+  if (loading) return (
+    <div className="admin-editor">
+      <div className="admin-editor-heading"><h1>{collection.labels.singular}</h1></div>
+      <p className="admin-editor-message text-muted-foreground" role="status">Loading user…</p>
+    </div>
+  );
+  if (loadError || !user) return (
+    <div className="admin-editor">
+      <div className="admin-editor-heading"><h1>{collection.labels.singular}</h1></div>
+      <div className="admin-editor-meta">
+        <span className="text-muted-foreground">Could not load this user.</span>
+        <div className="admin-editor-actions">
+          <Button variant="outline" size="sm" className="normal-case tracking-normal" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>
+        </div>
+      </div>
+      <p role="alert" className="admin-editor-message text-destructive">{loadError ?? "User not found."}</p>
+    </div>
+  );
 
   const userFields = new Map(collection.fields.map((field) => [field.name, field]));
   return (
-    <section>
-      <PageTitle
-        title={title}
-        description={String(user.email ?? "")}
-        action={<Button variant="outline" onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Back to Users</Button>}
-      />
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
-        <form className="border border-border bg-card p-6" onSubmit={onSubmit} noValidate>
-          <h2 className="text-base font-medium">Account details</h2>
-          <p className="mb-6 mt-1 text-sm text-muted-foreground">Changes are saved through Better Auth.</p>
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="bebop-user-name">Name <span className="text-destructive">*</span></Label>
+    <div className="admin-editor">
+      <div className="admin-editor-heading"><h1 className="truncate" title={title}>{title}</h1></div>
+      <form onSubmit={onSubmit} noValidate>
+        <div className="admin-editor-meta">
+          <div className="admin-editor-dates">
+            <span><span className="text-muted-foreground">Last Modified: </span>{formatDate(user.updatedAt, true)}</span>
+            <span><span className="text-muted-foreground">Created: </span>{formatDate(user.createdAt, true)}</span>
+          </div>
+          <div className="admin-editor-actions">
+            <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save"}</Button>
+            <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" disabled={isSubmitting} onClick={() => navigate(`/admin/collections/${collection.slug}`)}>Cancel</Button>
+          </div>
+        </div>
+        {saveError && <p role="alert" className="admin-editor-message text-destructive">{saveError}</p>}
+        <fieldset disabled={isSubmitting} className="admin-editor-grid">
+          <div className="admin-editor-main">
+            <div className="admin-editor-field">
+              <Label htmlFor="bebop-user-name" className="text-[13px] font-normal normal-case tracking-normal">Name <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-name" autoComplete="name" aria-invalid={Boolean(errors.name)} {...register("name", { required: "Enter a name." })} />
-              {errors.name && <p role="alert" className="text-sm text-destructive">{errors.name.message}</p>}
+              {errors.name && <p role="alert" className="text-xs text-destructive">{errors.name.message}</p>}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="bebop-user-email">Email <span className="text-destructive">*</span></Label>
+            <div className="admin-editor-field">
+              <Label htmlFor="bebop-user-email" className="text-[13px] font-normal normal-case tracking-normal">Email <span className="text-destructive">*</span></Label>
               <Input id="bebop-user-email" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register("email", {
                 required: "Enter an email address.",
                 pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
               })} />
-              {errors.email && <p role="alert" className="text-sm text-destructive">{errors.email.message}</p>}
+              {errors.email && <p role="alert" className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
           </div>
-          {saveError && <p role="alert" className="mt-5 border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{saveError}</p>}
-          <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
-            <Button type="submit" disabled={!isDirty || isSubmitting}>{isSubmitting ? "Saving…" : "Save changes"}</Button>
-            <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => reset({ name: String(user.name ?? ""), email: String(user.email ?? "") })}>Reset</Button>
-          </div>
-        </form>
-        <aside className="border border-border bg-card p-6">
-          <h2 className="text-base font-medium">User info</h2>
-          <dl className="mt-5 space-y-4 text-sm">
-            <div><dt className="text-muted-foreground">ID</dt><dd className="mt-1 break-all font-mono text-xs">{user.id}</dd></div>
-            <div><dt className="text-muted-foreground">Role</dt><dd className="mt-1">{formatCell(userFields.get("role"), user.role)}</dd></div>
-            <div><dt className="text-muted-foreground">Email verified</dt><dd className="mt-1">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</dd></div>
-            <div><dt className="text-muted-foreground">Created</dt><dd className="mt-1">{formatDate(user.createdAt, true)}</dd></div>
-            <div><dt className="text-muted-foreground">Updated</dt><dd className="mt-1">{formatDate(user.updatedAt, true)}</dd></div>
-          </dl>
-        </aside>
-      </div>
-    </section>
+          <aside className="admin-editor-side" aria-label="Additional user information">
+            <div className="admin-editor-document-id"><span>Document ID</span><code>{user.id}</code></div>
+            <div className="admin-editor-field">
+              <span className="text-[13px] text-muted-foreground">Role</span>
+              <span className="text-[13px]">{formatCell(userFields.get("role"), user.role)}</span>
+            </div>
+            <div className="admin-editor-field">
+              <span className="text-[13px] text-muted-foreground">Email verified</span>
+              <span className="text-[13px]">{formatCell(userFields.get("emailVerified"), user.emailVerified)}</span>
+            </div>
+          </aside>
+        </fieldset>
+      </form>
+    </div>
   );
 }
 

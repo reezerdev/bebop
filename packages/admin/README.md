@@ -37,7 +37,7 @@ import "@bebopdev/admin/styles.css";
 
 ## Admin sign-in screen
 
-The host still owns authentication and routing. For an admin-specific sign-in screen, render `BebopAdminLogin` from the host's signed-out branch for `/admin`; it uses the admin theme and delegates credential handling to the host. This keeps each app's own sign-in page independent.
+The host still owns authentication and routing. For an admin-specific sign-in screen, render `BebopAdminLogin` from the host's signed-out branch for `/admin`; it uses the admin theme and delegates credential handling to the host. This keeps each app's own sign-in page independent. If the host supports first-user setup, pass `firstUserSetup`: the package checks availability and owns the first-admin prompt and form, while the host supplies the server status check and account creation handler.
 
 ```tsx
 import { BebopAdminLogin } from "@bebopdev/admin";
@@ -47,8 +47,22 @@ import { BebopAdminLogin } from "@bebopdev/admin";
     const result = await authClient.signIn.email({ email, password });
     if (result.error) throw new Error(result.error.message ?? "Could not log in.");
   }}
+  firstUserSetup={{
+    checkAvailability: async () => {
+      const response = await fetch("/api/admin-setup", { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not check admin setup.");
+      const result = await response.json() as { available?: boolean };
+      return result.available === true;
+    },
+    onCreateFirstAdmin: async ({ name, email, password }) => {
+      const result = await authClient.signUp.email({ name, email, password });
+      if (result.error) throw new Error(result.error.message ?? "Could not create first admin.");
+    },
+  }}
 />
 ```
+
+The setup status endpoint should report whether the auth system has any users. The auth server must enforce that first-user creation is allowed only while the user store is empty and grants that account admin access.
 
 For `writeMode: "command"` collections, the admin reads list pages, counts, joins, and document details from Jazz's remote tier. This keeps a globally confirmed server write visible when the browser's local replica has not received it yet. These admin views wait for Core while offline. The generated client remains local-first by default, and direct collections keep local-first admin reads.
 

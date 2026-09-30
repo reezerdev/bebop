@@ -174,7 +174,7 @@
 }
 
 .admin-sidebar {
-  @apply fixed inset-y-0 left-0 z-40 flex w-68 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200;
+  @apply fixed inset-y-0 left-0 z-40 flex w-68 flex-col border-r border-sidebar-border bg-background text-sidebar-foreground transition-transform duration-200;
 }
 .admin-sidebar-hidden { @apply -translate-x-full; }
 .admin-sidebar-header { @apply flex h-12 shrink-0 items-center px-4; }

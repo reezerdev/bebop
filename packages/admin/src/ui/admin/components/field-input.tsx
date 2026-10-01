@@ -122,6 +122,32 @@ export function FieldInput({
       />
     );
   }
+  if (field.kind === "date") {
+    const type = field.admin?.date?.pickerAppearance === "dayAndTime" ? "datetime-local" : "date";
+    return (
+      <Controller
+        control={control}
+        name={field.name}
+        rules={rules}
+        render={({ field: input }) => (
+          <div className="relative">
+            <Input
+              id={`field-${field.name}`}
+              type={type}
+              className="pr-14"
+              value={typeof input.value === "string" ? input.value : ""}
+              onChange={input.onChange}
+              onBlur={input.onBlur}
+              ref={input.ref}
+            />
+            {!field.required && !field.admin?.readOnly && input.value && (
+              <ClearSelectionButton label={field.label} onClear={() => { input.onChange(""); input.onBlur(); }} />
+            )}
+          </div>
+        )}
+      />
+    );
+  }
   const registration = register(field.name, rules);
   if (field.kind === "json") {
     return <Textarea id={`field-${field.name}`} rows={7} className="font-mono text-xs" placeholder="{}" {...registration} />;
@@ -129,7 +155,7 @@ export function FieldInput({
   if (field.kind === "text" && field.admin?.input === "textarea") {
     return <Textarea id={`field-${field.name}`} rows={7} {...registration} />;
   }
-  const type = field.kind === "date" ? field.admin?.date?.pickerAppearance === "dayAndTime" ? "datetime-local" : "date" : field.kind === "number" || field.kind === "integer" ? "number" : "text";
+  const type = field.kind === "number" || field.kind === "integer" ? "number" : "text";
   return <Input id={`field-${field.name}`} type={type} step={field.kind === "integer" ? 1 : field.kind === "number" ? "any" : undefined} {...registration} />;
 }
 

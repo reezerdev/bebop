@@ -5,10 +5,22 @@ import type {
   SessionContext,
 } from "jazz-tools/permissions";
 
-export type FieldOptions = {
+export type BebopJSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly BebopJSONValue[]
+  | { readonly [key: string]: BebopJSONValue };
+
+export type BebopJSONDefault = Exclude<BebopJSONValue, null>;
+
+export type FieldOptions<TDefault = never> = {
   name: string;
   label?: string;
   required?: boolean;
+  /** Value used when a create operation omits this field. */
+  default?: TDefault;
   /** Better Auth custom-user-field behavior. Additional fields are read-only on public auth APIs by default. */
   auth?: { input?: boolean };
   admin?: {
@@ -31,24 +43,24 @@ type FieldValidator<TValue> = BivariantCallback<
   true | string | Promise<true | string>
 >;
 
-export type TextField = FieldOptions & {
+export type TextField = FieldOptions<string> & {
   type: "text";
   minLength?: number;
   maxLength?: number;
   validate?: FieldValidator<string>;
 };
-export type NumberField = FieldOptions & {
+export type NumberField = FieldOptions<number> & {
   type: "number";
   integer?: boolean;
   min?: number;
   max?: number;
   validate?: FieldValidator<number>;
 };
-export type CheckboxField = FieldOptions & { type: "checkbox" };
-export type DateField = FieldOptions & { type: "date" };
-export type JsonField = FieldOptions & { type: "json" };
+export type CheckboxField = FieldOptions<boolean> & { type: "checkbox" };
+export type DateField = FieldOptions<Date | number> & { type: "date" };
+export type JsonField = FieldOptions<BebopJSONDefault> & { type: "json" };
 export type SelectOption = string | { label: string; value: string };
-export type SelectField = FieldOptions & {
+export type SelectField = FieldOptions<string> & {
   type: "select";
   options: readonly [SelectOption, ...SelectOption[]];
 };
@@ -262,6 +274,13 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   /** Payload-style collection names. Unspecified names are derived from the slug. */
   labels?: { singular?: string; plural?: string };
   fields: TFields;
+  /** Opt-in Jazz index configuration. Field names refer to configured fields; relationship names map to their stored `...Id` columns. */
+  indexes?: {
+    /** Keep indexes only for these columns. Omitted columns can still be queried, but may require table scans. */
+    only?: readonly string[];
+    /** Add composite indexes for common multi-column filters and sorts. */
+    composite?: readonly (readonly string[])[];
+  };
   /** Enable file storage for this collection. */
   upload?: true | { mimeTypes?: readonly string[] };
   /** Payload-compatible setting; Jazz records timestamps as built-in metadata. */

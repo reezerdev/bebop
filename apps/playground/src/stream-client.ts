@@ -60,6 +60,7 @@ export function withStreamCollections(client: Client, db: Db, userId: string): S
           authorId: userId,
         }, { id: input.streamId });
         const membershipWrite = db.insert(app.streamMemberships, {
+          workspaceId: input.workspaceId,
           streamId: streamWrite.value.id,
           userId,
           role: "admin",

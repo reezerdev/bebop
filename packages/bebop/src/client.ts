@@ -8,7 +8,7 @@ import type {
   StoredFields,
 } from "./bebop.ts";
 import { runMaybeLoggedHook, type HookLogEvent } from "./hook-logging.ts";
-import { validateCollectionData } from "./validation.ts";
+import { applyFieldDefaults, validateCollectionData } from "./validation.ts";
 
 function logClientHookEvent(event: HookLogEvent): void {
   const { err, ...fields } = event;
@@ -17,9 +17,18 @@ function logClientHookEvent(event: HookLogEvent): void {
   else console.info("[bebop] Hook completed", fields);
 }
 
-type RequiredStoredKeys<TFields extends Fields> = {
-  [TName in keyof StoredFields<TFields>]-?: {} extends Pick<StoredFields<TFields>, TName> ? never : TName;
-}[keyof StoredFields<TFields>];
+type RequiredCreateKey<TField> = TField extends { required: true }
+  ? TField extends { default: unknown }
+    ? never
+    : TField extends { type: "join" }
+      ? never
+      : TField extends { type: "relationship" | "upload"; name: infer TName extends string }
+        ? `${TName}Id`
+        : TField extends { name: infer TName extends string }
+          ? TName
+          : never
+  : never;
+type RequiredStoredKeys<TFields extends Fields> = RequiredCreateKey<TFields[number]>;
 
 export type CollectionCreateData<TFields extends Fields> = Pick<StoredFields<TFields>, RequiredStoredKeys<TFields>> &
   Partial<Omit<StoredFields<TFields>, RequiredStoredKeys<TFields>>>;
@@ -352,7 +361,8 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
       find: (options) => db.all(query(options)),
       findById: (id) => readLocalDocument(id) as Promise<CollectionDocument<Fields> | null>,
       async create(data) {
-        const { file, ...input } = data as Record<string, unknown>;
+        const { file, ...rawInput } = data as Record<string, unknown>;
+        const input = applyFieldDefaults(definition, rawInput);
         validateWriteData(input);
         if (!definition.upload && file !== undefined) throw new Error(`Unknown ${collectionName} write field "file".`);
         const mediaFile = definition.upload ? validateFile(file) : undefined;

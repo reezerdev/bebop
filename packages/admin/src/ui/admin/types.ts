@@ -10,6 +10,24 @@ export type BebopAdminUser = {
   email?: string;
 };
 
+export type BebopRelationOption = { id: string; name: string };
+
+export type BebopRelationOptionQuery = {
+  /** Search text entered in the relationship picker. */
+  search: string;
+  /** Resolve labels for IDs already stored in relationship fields or visible rows. */
+  ids?: readonly string[];
+  limit: number;
+  offset: number;
+};
+
+export type BebopRelationOptionPage = {
+  options: readonly BebopRelationOption[];
+  hasMore: boolean;
+};
+
+export type BebopRelationOptionsLoader = (query: BebopRelationOptionQuery) => Promise<BebopRelationOptionPage>;
+
 export type BebopAuthAdminClient = {
   admin: {
     getUser: (input: { query: { id: string } }) => Promise<{
@@ -72,7 +90,10 @@ export type BebopAdminProps = {
   preflightCreate?: (collectionSlug: string, data: Record<string, unknown>) => PermissionAdvice | undefined | Promise<PermissionAdvice | undefined>;
   /** Related-record updates can use the same server-authoritative preflight. */
   preflightUpdate?: (collectionSlug: string, data: Record<string, unknown>) => PermissionAdvice | undefined | Promise<PermissionAdvice | undefined>;
-  relationOptions?: Readonly<Record<string, readonly { id: string; name: string }[]>>;
+  /** Small, already available option sets for relationship labels and fields. */
+  relationOptions?: Readonly<Record<string, readonly BebopRelationOption[]>>;
+  /** On-demand option sources for large or protected relationship collections. */
+  relationOptionLoaders?: Readonly<Record<string, BebopRelationOptionsLoader>>;
   onLogout?: () => void | Promise<void>;
 };
 

@@ -41,7 +41,7 @@ export type EditorModalOptions = {
   onComplete: (id: string) => void;
 };
 
-export function DocumentEditor({ app, client, manifest, collection, id, createDefaults, preflightCreate, preflightUpdate, joinContext, relationOptions, modal }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; preflightCreate?: BebopAdminProps["preflightCreate"]; preflightUpdate?: BebopAdminProps["preflightUpdate"]; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"]; modal?: EditorModalOptions }) {
+export function DocumentEditor({ app, client, manifest, collection, id, createDefaults, preflightCreate, preflightUpdate, joinContext, relationOptions, relationOptionLoaders, modal }: { app: object; client: BebopAdminClient; manifest: BebopAdminManifest; collection: BebopAdminCollection; id?: string; createDefaults?: Readonly<Record<string, unknown>>; preflightCreate?: BebopAdminProps["preflightCreate"]; preflightUpdate?: BebopAdminProps["preflightUpdate"]; joinContext?: JoinNavigationContext; relationOptions?: BebopAdminProps["relationOptions"]; relationOptionLoaders?: BebopAdminProps["relationOptionLoaders"]; modal?: EditorModalOptions }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const { setDocumentBreadcrumb } = useOutletContext<AdminOutletContext>();
@@ -313,6 +313,7 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
               register={register}
               control={form.control}
               relationOptions={relationOptions}
+              relationOptionLoaders={relationOptionLoaders}
               onCreateMedia={(file) => setMediaDialog({ mode: "create", fieldName: field.name, collectionSlug: field.relationTo ?? "", initialFile: file, returnToChoose: false })}
               onChooseMedia={() => setMediaDialog({ mode: "choose", fieldName: field.name, collectionSlug: field.relationTo ?? "" })}
               onEditMedia={(mediaId) => setMediaDialog({ mode: "edit", fieldName: field.name, collectionSlug: field.relationTo ?? "", id: mediaId })}
@@ -334,6 +335,7 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
           collection={relatedCollection}
           ids={[...ids].sort()}
           relationOptions={relationOptions}
+          relationOptionLoaders={relationOptionLoaders}
           onChange={onTitleRelatedOptions}
         /> : null;
       })}
@@ -378,7 +380,7 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
         </fieldset>
       </form>
       {!modal && joinFields.map((field) => id && existing
-        ? <JoinFieldPanel key={field.name} app={app} client={client} manifest={manifest} source={collection} field={field} parentId={id} parentLabel={parentLabel} relationOptions={relationOptions} />
+        ? <JoinFieldPanel key={field.name} app={app} client={client} manifest={manifest} source={collection} field={field} parentId={id} parentLabel={parentLabel} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} />
         : <section key={field.name} className="mt-8 border-t pt-6">
             <h2 className="font-heading text-base font-semibold uppercase tracking-wide">{field.label}</h2>
             <p className="mt-2 text-sm text-muted-foreground">Save this {collection.labels.singular.toLocaleLowerCase()} before managing {manifest.collections[field.collection]?.labels.plural.toLocaleLowerCase() ?? field.label.toLocaleLowerCase()}.</p>
@@ -424,6 +426,7 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
                       collection={mediaCollection}
                       manifest={manifest}
                       relationOptions={relationOptions}
+                      relationOptionLoaders={relationOptionLoaders}
                       selectMode
                       onSelect={(row) => selectMedia(row.id)}
                       onCreate={() => setMediaDialog({ mode: "create", fieldName: mediaDialog.fieldName, collectionSlug: mediaDialog.collectionSlug, returnToChoose: true })}
@@ -436,6 +439,7 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
                     collection={mediaCollection}
                     id={mediaDialog.mode === "edit" ? mediaDialog.id : undefined}
                     relationOptions={relationOptions}
+                    relationOptionLoaders={relationOptionLoaders}
                     modal={{
                       initialFile: mediaDialog.mode === "create" ? mediaDialog.initialFile : undefined,
                       onClose: closeMediaDialog,

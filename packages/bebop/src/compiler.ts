@@ -17,10 +17,138 @@ function selectOptionValue(option: string | { label: string; value: string }): s
   return typeof option === "string" ? option : option.value;
 }
 
+function isBebopJSONValue(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((entry) => isBebopJSONValue(entry, seen))
+    : (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) &&
+      Object.values(value).every((entry) => isBebopJSONValue(entry, seen));
+  seen.delete(value);
+  return valid;
+}
+
+function validateFieldDefault(field: FieldDefinition, collectionName: string, isAuthCollection: boolean): void {
+  if (!Object.hasOwn(field, "default")) return;
+  if (field.type === "join") throw new Error(`Field "${collectionName}.${field.name}" default is not supported on virtual join fields.`);
+  const value = (field as { default?: unknown }).default;
+  const fieldLabel = `Field "${collectionName}.${field.name}" default`;
+  if (value === undefined) throw new Error(`${fieldLabel} must be a concrete value; omit the default property to leave it unset.`);
+  if (value === null) throw new Error(`${fieldLabel} cannot be null; use an optional field without a default for nullable values.`);
+  if (isAuthCollection) throw new Error(`${fieldLabel} is not supported on Better Auth collections.`);
+
+  switch (field.type) {
+    case "text": {
+      if (typeof value !== "string") throw new Error(`${fieldLabel} must be a string.`);
+      if (field.required && !value.trim()) throw new Error(`${fieldLabel} cannot be blank on a required field.`);
+      if (field.minLength !== undefined && value.length < field.minLength) throw new Error(`${fieldLabel} is shorter than minLength.`);
+      if (field.maxLength !== undefined && value.length > field.maxLength) throw new Error(`${fieldLabel} is longer than maxLength.`);
+      const options = field.admin?.input === "select" ? field.admin.options?.map(selectOptionValue) : undefined;
+      if (options && !options.includes(value)) throw new Error(`${fieldLabel} must match one of the admin select options.`);
+      return;
+    }
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${fieldLabel} must be a finite number.`);
+      if (field.integer && !Number.isInteger(value)) throw new Error(`${fieldLabel} must be an integer.`);
+      if (field.min !== undefined && value < field.min) throw new Error(`${fieldLabel} must be at least ${field.min}.`);
+      if (field.max !== undefined && value > field.max) throw new Error(`${fieldLabel} must be at most ${field.max}.`);
+      return;
+    case "checkbox":
+      if (typeof value !== "boolean") throw new Error(`${fieldLabel} must be a boolean.`);
+      return;
+    case "date":
+      if (!(value instanceof Date) && (typeof value !== "number" || !Number.isFinite(value))) {
+        throw new Error(`${fieldLabel} must be a Date or a finite timestamp.`);
+      }
+      if (value instanceof Date && !Number.isFinite(value.getTime())) throw new Error(`${fieldLabel} must be a valid Date.`);
+      return;
+    case "json":
+      if (!isBebopJSONValue(value)) throw new Error(`${fieldLabel} must be a finite, acyclic JSON value.`);
+      return;
+    case "select":
+      if (typeof value !== "string" || !field.options.map(selectOptionValue).includes(value)) {
+        throw new Error(`${fieldLabel} must match one of the select options.`);
+      }
+      return;
+    case "relationship":
+    case "upload":
+      throw new Error(`${fieldLabel} is not supported on relationship or upload fields.`);
+  }
+}
+
+function validateIndexes(definition: BebopConfig["collections"][number]): void {
+  const indexes = definition.indexes;
+  if (indexes === undefined) return;
+  const collectionName = definition.slug;
+  if (definition.auth) throw new Error(`Collection "${collectionName}" cannot configure indexes because Better Auth owns its schema.`);
+  if (typeof indexes !== "object" || indexes === null || Array.isArray(indexes)) {
+    throw new Error(`Collection "${collectionName}" indexes must be an object.`);
+  }
+
+  const columnsByName = new Map<string, string>();
+  for (const field of definition.fields) {
+    if (field.type === "join") continue;
+    const storageName = field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name;
+    columnsByName.set(field.name, storageName);
+    columnsByName.set(storageName, storageName);
+  }
+  if (definition.upload) {
+    for (const name of ["filename", "mimeType", "filesize", "data"]) columnsByName.set(name, name);
+  }
+
+  const resolve = (name: unknown, indexLabel: string): string => {
+    if (typeof name !== "string" || !columnsByName.has(name)) {
+      throw new Error(`Collection "${collectionName}" ${indexLabel} references unknown stored field "${String(name)}".`);
+    }
+    return columnsByName.get(name)!;
+  };
+
+  if (indexes.only !== undefined) {
+    if (!Array.isArray(indexes.only) || indexes.only.length === 0) {
+      throw new Error(`Collection "${collectionName}" indexes.only must contain at least one stored field.`);
+    }
+    const columns = indexes.only.map((name) => resolve(name, "indexes.only"));
+    if (new Set(columns).size !== columns.length) {
+      throw new Error(`Collection "${collectionName}" indexes.only cannot list the same stored field more than once.`);
+    }
+  }
+
+  if (indexes.composite !== undefined) {
+    if (!Array.isArray(indexes.composite)) {
+      throw new Error(`Collection "${collectionName}" indexes.composite must be an array of field lists.`);
+    }
+    const declared = new Set<string>();
+    for (const composite of indexes.composite) {
+      if (!Array.isArray(composite) || composite.length < 2) {
+        throw new Error(`Collection "${collectionName}" composite indexes must contain at least two stored fields.`);
+      }
+      const columns = composite.map((name) => resolve(name, "indexes.composite"));
+      if (new Set(columns).size !== columns.length) {
+        throw new Error(`Collection "${collectionName}" composite indexes cannot repeat a stored field.`);
+      }
+      const key = JSON.stringify(columns);
+      if (declared.has(key)) throw new Error(`Collection "${collectionName}" declares the same composite index more than once.`);
+      declared.add(key);
+    }
+  }
+}
+
 function fieldAdminOptions(admin: FieldOptions["admin"] | undefined): Omit<NonNullable<FieldOptions["admin"]>, "options"> | undefined {
   if (!admin) return undefined;
   const { options: _options, ...displayOptions } = admin;
   return displayOptions;
+}
+
+function indexColumnName(definition: BebopConfig["collections"][number], name: string): string {
+  const field = definition.fields.find((candidate) =>
+    candidate.type !== "join" &&
+    (candidate.name === name || ((candidate.type === "relationship" || candidate.type === "upload") && `${candidate.name}Id` === name)),
+  );
+  if (!field) return name;
+  return field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name;
 }
 
 export function normalizeConfig(config: BebopConfig) {
@@ -53,6 +181,7 @@ export function normalizeConfig(config: BebopConfig) {
           kind: fieldKind(field),
           required: Boolean(field.required),
           definition: field,
+          ...(Object.hasOwn(field, "default") ? { defaultValue: field.default } : {}),
           ...(field.admin ? { admin: fieldAdminOptions(field.admin) } : {}),
           ...(selectOptions ? { options: selectOptions.map(selectOptionValue) } : {}),
           ...(selectOptions?.some((option) => typeof option !== "string")
@@ -90,6 +219,14 @@ export function normalizeConfig(config: BebopConfig) {
         name,
         ...(definition.auth ? { auth: true as const } : {}),
         fields,
+        ...(definition.indexes ? {
+          indexes: {
+            ...(definition.indexes.only ? { only: definition.indexes.only.map((fieldName) => indexColumnName(definition, fieldName)) } : {}),
+            ...(definition.indexes.composite ? {
+              composite: definition.indexes.composite.map((columns) => columns.map((fieldName) => indexColumnName(definition, fieldName))),
+            } : {}),
+          },
+        } : {}),
         access: definition.access,
         permissions: definition.permissions,
         writeMode: definition.writeMode ?? "direct",
@@ -139,9 +276,11 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
         continue;
       }
 
-      columns.push(
-        `${JSON.stringify(field.name)}: ${compileFieldType(field.definition as Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>)}${field.required ? "" : ".optional()"}`,
-      );
+      const definition = field.definition as Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>;
+      let columnType = compileFieldType(definition);
+      if (!field.required) columnType += ".optional()";
+      if (Object.hasOwn(definition, "default")) columnType += `.default(${compileDefaultValue(definition)})`;
+      columns.push(`${JSON.stringify(field.name)}: ${columnType}`);
     }
     if (collection.upload) {
       // Keep upload bytes on the collection row so the collection's Jazz access
@@ -154,7 +293,11 @@ function compileSchemaFromModel(model: NormalizedConfig): string {
       : "{}";
 
     const mainTable = `  ${JSON.stringify(collection.name)}: s.table(\n    {\n      ${columns.join(",\n      ")}\n    },\n    ${relationObject},\n  )`;
-    return mainTable;
+    const indexModifiers = [
+      ...(collection.indexes?.only ? [`\n    .indexOnly(${JSON.stringify(collection.indexes.only)})`] : []),
+      ...(collection.indexes?.composite ?? []).map((index: readonly string[]) => `\n    .compositeIndex(${JSON.stringify(index)})`),
+    ];
+    return `${mainTable}${indexModifiers.join("")}`;
   });
 
   const authImport = model.auth
@@ -184,6 +327,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
           label: field.label,
           kind: field.kind,
           required: field.required,
+          ...(Object.hasOwn(field, "defaultValue") ? { defaultValue: field.defaultValue } : {}),
           ...(field.admin ? { admin: field.admin } : {}),
           ...("options" in field && field.options ? { options: field.options } : {}),
           ...("optionLabels" in field && field.optionLabels ? { optionLabels: field.optionLabels } : {}),
@@ -485,6 +629,21 @@ function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship"
   }
 }
 
+function compileDefaultValue(field: Exclude<FieldDefinition, { type: "relationship" | "upload" | "join" }>): string {
+  const value = field.default;
+  if (field.type === "date" && value instanceof Date) {
+    return `new Date(${JSON.stringify(value.toISOString())})`;
+  }
+  if (field.type === "json") {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new Error(`JSON field "${field.name}" has a default that cannot be serialized.`);
+    return `JSON.parse(${JSON.stringify(serialized)})`;
+  }
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error(`Field "${field.name}" has a default that cannot be serialized.`);
+  return serialized;
+}
+
 function validateConfig(config: BebopConfig): void {
   if (config.logging !== undefined && (typeof config.logging !== "object" || config.logging === null || Array.isArray(config.logging))) {
     throw new Error("logging must be an object.");
@@ -775,7 +934,10 @@ function validateConfig(config: BebopConfig): void {
           throw new Error(`Field "${collectionName}.${fieldName}" admin.date must configure a date field.`);
         }
       }
+      validateFieldDefault(field, collectionName, Boolean(definition.auth));
     }
+
+    validateIndexes(definition);
 
     const adminOptions = definition.admin;
     const titleFieldNames = adminOptions?.useAsTitle === undefined

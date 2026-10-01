@@ -17,6 +17,7 @@ const streamsFields = [
   { name: "channels", type: "join", collection: "channels", on: "stream" },
 ] as const;
 const streamMembershipsFields = [
+  { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
   { name: "stream", type: "relationship", relationTo: "streams", required: true },
   { name: "user", type: "relationship", relationTo: "users", required: true },
   { name: "role", type: "select", required: true, options: ["admin", "member"] },
@@ -298,14 +299,31 @@ export default defineConfig({
         },
         insert: ({ rule, collections, session, allOf, anyOf }) => {
           const userId = session.claims.sub;
+          const streamMatchesWorkspace = (membership: { streamId: unknown; workspaceId: unknown }) => collections.streams.exists.where({
+            id: membership.streamId,
+            workspaceId: membership.workspaceId,
+          });
+          const canJoinReadableChannel = (membership: { streamId: unknown; workspaceId: unknown }) => allOf([
+            { userId, role: "member" },
+            streamMatchesWorkspace(membership),
+            collections.workspaceMemberships.exists.where({ workspaceId: membership.workspaceId, userId, status: "active" }),
+            collections.channels.exists.where({ streamId: membership.streamId, workspaceId: membership.workspaceId }),
+            anyOf([
+              collections.channels.exists.where({ streamId: membership.streamId, workspaceId: membership.workspaceId, visibility: "public" }),
+              collections.workspaceMemberships.exists.where({ workspaceId: membership.workspaceId, userId, status: "active", role: "admin" }),
+              collections.workspaceMemberships.exists.where({ workspaceId: membership.workspaceId, userId, status: "active", role: "manager" }),
+            ]),
+          ]);
           rule.where((membership) => anyOf([
             allOf([
               { userId, role: "admin" },
-              collections.streams.exists.where({ id: membership.streamId, authorId: userId }),
+              collections.streams.exists.where({ id: membership.streamId, workspaceId: membership.workspaceId, authorId: userId }),
             ]),
             allOf([
+              streamMatchesWorkspace(membership),
               collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
             ]),
+            canJoinReadableChannel(membership),
           ]));
         },
         update: ({ rule, collections, session, allOf, anyOf }) => {
@@ -316,7 +334,7 @@ export default defineConfig({
           const canEdit = (membership: { id: unknown; streamId: unknown }) => admin(membership.streamId);
           rule.whereOld(canEdit).whereNew((membership) => allOf([
             canEdit(membership),
-            collections.streamMemberships.exists.where({ id: membership.id, streamId: membership.streamId }),
+            collections.streamMemberships.exists.where({ id: membership.id, streamId: membership.streamId, workspaceId: membership.workspaceId }),
           ]));
         },
         delete: ({ rule, collections, session, anyOf }) => {
@@ -326,7 +344,7 @@ export default defineConfig({
           ]));
         },
       },
-      admin: { useAsTitle: "user", defaultColumns: ["user", "stream", "role"] },
+      admin: { useAsTitle: "user", defaultColumns: ["user", "stream", "workspace", "role"] },
       fields: streamMembershipsFields,
     } satisfies CollectionDefinition<typeof streamMembershipsFields>,
     {

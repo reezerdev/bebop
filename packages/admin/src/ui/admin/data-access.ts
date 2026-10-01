@@ -1,6 +1,6 @@
 import type { QueryBuilder } from "jazz-tools";
 import type { PermissionAdvice } from "jazz-tools";
-import type { BebopAdminClient } from "./types.js";
+import type { BebopAdminClient, BebopRelationOption } from "./types.js";
 
 export type AdminRecord = Record<string, unknown> & { id: string; $createdAt?: Date; $updatedAt?: Date };
 export type AdminTable = QueryBuilder<AdminRecord> & {
@@ -23,7 +23,7 @@ export type CollectionMutations = {
   delete: (id: string) => Promise<unknown>;
 };
 
-export type RelationOption = { id: string; name: string };
+export type RelationOption = BebopRelationOption;
 
 export function getTable(app: object, collectionSlug: string): AdminTable | undefined {
   const table = (app as Record<string, unknown>)[collectionSlug];

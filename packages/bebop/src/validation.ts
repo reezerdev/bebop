@@ -14,6 +14,31 @@ function storedName(field: Fields[number]): string | undefined {
   return field.type === "relationship" || field.type === "upload" ? `${field.name}Id` : field.name;
 }
 
+function cloneDefaultValue(value: unknown): unknown {
+  if (value instanceof Date) return new Date(value.getTime());
+  if (Array.isArray(value)) return value.map(cloneDefaultValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneDefaultValue(entry)]));
+  }
+  return value;
+}
+
+/** Apply configured defaults to omitted fields before create validation and hooks run. */
+export function applyFieldDefaults(
+  collection: CollectionDefinition,
+  data: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const result = { ...data };
+  for (const field of collection.fields) {
+    if (field.type === "join" || !Object.hasOwn(field, "default")) continue;
+    const name = storedName(field);
+    if (!name || result[name] !== undefined) continue;
+    const value = (field as { default?: unknown }).default;
+    if (value !== undefined) result[name] = cloneDefaultValue(value);
+  }
+  return result;
+}
+
 function isMissing(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string" && value.trim() === "";
 }

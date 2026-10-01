@@ -22,6 +22,7 @@ export type BebopAdminStoredField = BebopAdminFieldBase & BebopAdminFieldOptions
   kind: BebopAdminStoredFieldKind;
   storageName: string;
   required: boolean;
+  defaultValue?: unknown;
   min?: number;
   max?: number;
   minLength?: number;

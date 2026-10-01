@@ -1,9 +1,11 @@
 import { useRowReadPermissions } from "../hooks/use-row-permissions.js";
 
 import { useAll, useDb } from "jazz-tools/react";
+import { Combobox } from "@base-ui/react/combobox";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { Controller, Control, FieldValues, RegisterOptions, UseFormRegister } from "react-hook-form";
-import { X } from "lucide-react";
+import { Check, ChevronDown, LoaderCircle, Search, X } from "lucide-react";
 
 import type { BebopAdminManifest, BebopAdminStoredField } from "../../../types.js";
 
@@ -15,11 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "../../../components/ui/textarea.js";
 
 import { UploadFieldInput } from "../../upload.js";
-import type { BebopAdminClient, BebopAdminProps } from "../types.js";
+import type { BebopAdminClient, BebopAdminProps, BebopRelationOption, BebopRelationOptionsLoader } from "../types.js";
 import type { AdminRecord, AdminDatabase } from "../data-access.js";
 import { getTable, getMutations } from "../data-access.js";
 
 import { selectLabel, recordTitle } from "../record-values.js";
+import { AdminPortalContainer } from "../../../lib/admin-portal.js";
 
 export function FieldInput({
   field,
@@ -29,6 +32,7 @@ export function FieldInput({
   register,
   control,
   relationOptions,
+  relationOptionLoaders,
   onCreateMedia,
   onChooseMedia,
   onEditMedia,
@@ -40,6 +44,7 @@ export function FieldInput({
   register: UseFormRegister<FieldValues>;
   control: Control<FieldValues>;
   relationOptions?: BebopAdminProps["relationOptions"];
+  relationOptionLoaders?: BebopAdminProps["relationOptionLoaders"];
   onCreateMedia?: (file?: File) => void;
   onChooseMedia?: () => void;
   onEditMedia?: (id: string) => void;
@@ -58,7 +63,7 @@ export function FieldInput({
         if (field.min !== undefined && number < field.min) return `${field.label} must be at least ${field.min}.`;
         if (field.max !== undefined && number > field.max) return `${field.label} must be at most ${field.max}.`;
       }
-      if (field.kind === "relation" && value && relationOptions?.[field.relationTo ?? ""] && !relationOptions[field.relationTo ?? ""].some((option) => option.id === value)) return `Select a valid ${field.label.toLocaleLowerCase()}.`;
+      if (field.kind === "relation" && value && relationOptions?.[field.relationTo ?? ""] && !relationOptionLoaders?.[field.relationTo ?? ""] && !relationOptions[field.relationTo ?? ""].some((option) => option.id === value)) return `Select a valid ${field.label.toLocaleLowerCase()}.`;
       if (field.kind === "json" && value) {
         try { JSON.parse(String(value)); } catch { return "Enter valid JSON."; }
       }
@@ -83,6 +88,7 @@ export function FieldInput({
             onBlur={input.onBlur}
             inputRef={input.ref}
             options={relationOptions?.[field.relationTo ?? ""]}
+            loadOptions={relationOptionLoaders?.[field.relationTo ?? ""]}
             disabled={field.admin?.readOnly}
           />
         )}
@@ -159,6 +165,14 @@ export function FieldInput({
   return <Input id={`field-${field.name}`} type={type} step={field.kind === "integer" ? 1 : field.kind === "number" ? "any" : undefined} {...registration} />;
 }
 
+const relationPageSize = 25;
+
+function mergeRelationOptions(...groups: readonly (readonly BebopRelationOption[] | undefined)[]): BebopRelationOption[] {
+  const unique = new Map<string, BebopRelationOption>();
+  for (const group of groups) for (const option of group ?? []) unique.set(option.id, option);
+  return [...unique.values()];
+}
+
 export function RelationInput({
   field,
   app,
@@ -169,6 +183,7 @@ export function RelationInput({
   onBlur,
   inputRef,
   options,
+  loadOptions,
   disabled = false,
 }: {
   field: BebopAdminStoredField;
@@ -178,38 +193,230 @@ export function RelationInput({
   value: string | null;
   onChange: (value: string | null) => void;
   onBlur: () => void;
-  inputRef: (instance: HTMLButtonElement | null) => void;
-  options?: readonly { id: string; name: string }[];
+  inputRef: (instance: HTMLInputElement | null) => void;
+  options?: readonly BebopRelationOption[];
+  loadOptions?: BebopRelationOptionsLoader;
   disabled?: boolean;
 }) {
   const relatedSlug = field.relationTo ?? "";
-  const relatedTable = options ? undefined : getTable(app, relatedSlug);
-  const query = options ? undefined : getMutations(client, relatedSlug)?.query();
-  const { data, isLoading } = useAll<AdminRecord>(query);
   const db = useDb() as AdminDatabase;
-  const readPermissions = useRowReadPermissions(db, relatedTable, data ?? []);
-  const readableRelatedRows = (data ?? []).filter((row) => readPermissions[row.id] !== "denied");
+  const table = getTable(app, relatedSlug);
+  const operations = getMutations(client, relatedSlug);
   const targetCollection = manifest.collections[relatedSlug];
-  const availableOptions = options ?? readableRelatedRows.map((row) => ({
-    id: row.id,
-    name: targetCollection ? recordTitle(targetCollection, row) ?? row.id : row.id,
-  }));
+  const [open, setOpen] = useState(false);
+  const [inputSearch, setInputSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [loadedOptions, setLoadedOptions] = useState<readonly BebopRelationOption[]>([]);
+  const [knownOptions, setKnownOptions] = useState<readonly BebopRelationOption[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [externalLoading, setExternalLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
+  const requestId = useRef(0);
+  const portalContainer = useContext(AdminPortalContainer);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(inputSearch.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [inputSearch]);
+
+  const rememberOptions = useCallback((nextOptions: readonly BebopRelationOption[]) => {
+    setKnownOptions((current) => mergeRelationOptions(current, nextOptions));
+  }, []);
+
+  useEffect(() => {
+    if (!loadOptions || !value || options?.some((option) => option.id === value) || knownOptions.some((option) => option.id === value)) return;
+    let active = true;
+    void loadOptions({ search: "", ids: [value], limit: 1, offset: 0 })
+      .then((result) => { if (active) rememberOptions(result.options); })
+      .catch((error: unknown) => console.error(`Could not load the selected ${field.label.toLocaleLowerCase()}:`, error));
+    return () => { active = false; };
+  }, [field.label, knownOptions, loadOptions, options, rememberOptions, value]);
+
+  useEffect(() => {
+    if (!loadOptions || !open) return;
+    const currentRequestId = ++requestId.current;
+    setLoadedOptions([]);
+    setHasMore(false);
+    setExternalLoading(true);
+    setLoadError(undefined);
+    void loadOptions({ search: debouncedSearch, limit: relationPageSize, offset: 0 })
+      .then((result) => {
+        if (currentRequestId !== requestId.current) return;
+        setLoadedOptions(result.options);
+        setHasMore(result.hasMore);
+        rememberOptions(result.options);
+      })
+      .catch((error: unknown) => {
+        if (currentRequestId !== requestId.current) return;
+        setLoadError(error instanceof Error ? error.message : "Could not load related records.");
+      })
+      .finally(() => {
+        if (currentRequestId === requestId.current) setExternalLoading(false);
+      });
+    return () => { requestId.current += 1; };
+  }, [debouncedSearch, loadOptions, open, rememberOptions]);
+
+  const sortField = useMemo(() => {
+    if (!targetCollection) return "id";
+    const preferredName = targetCollection.defaultColumns.find((name) => targetCollection.fields.some((field) => field.kind !== "join" && field.name === name));
+    const preferredField = targetCollection.fields.find((candidate): candidate is BebopAdminStoredField => candidate.kind !== "join" && candidate.name === preferredName);
+    const textField = targetCollection.fields.find((candidate): candidate is BebopAdminStoredField => candidate.kind === "text");
+    return preferredField?.storageName ?? textField?.storageName ?? "id";
+  }, [targetCollection]);
+  const searchFields = useMemo(() => {
+    if (!targetCollection) return [];
+    if (targetCollection.listSearchableFields.length) return targetCollection.listSearchableFields;
+    return targetCollection.fields.filter((candidate): candidate is BebopAdminStoredField => candidate.kind === "text").map((candidate) => candidate.storageName);
+  }, [targetCollection]);
+  const localQuery = useMemo(() => {
+    if (options || loadOptions || !open || !operations) return undefined;
+    const visibleLimit = (page + 1) * relationPageSize;
+    const queryOptions = {
+      orderBy: { field: sortField, direction: "asc" as const },
+      limit: visibleLimit + 1,
+      offset: 0,
+    };
+    if (debouncedSearch && searchFields.length) {
+      return operations.search({ search: debouncedSearch, fields: searchFields, ...queryOptions });
+    }
+    if (debouncedSearch && searchFields[0]) {
+      return operations.query({ where: { [searchFields[0]]: { contains: debouncedSearch } }, ...queryOptions });
+    }
+    return operations.query(queryOptions);
+  }, [debouncedSearch, loadOptions, open, operations, options, page, searchFields, sortField]);
+  const { data: localRows, isLoading: localLoading, error: localError } = useAll<AdminRecord>(localQuery);
+  const localReadPermissions = useRowReadPermissions(db, table, localRows ?? []);
+  const localOptions = useMemo(() => (localRows ?? [])
+    .filter((row) => localReadPermissions[row.id] !== "denied")
+    .slice(0, (page + 1) * relationPageSize)
+    .map((row) => ({ id: row.id, name: targetCollection ? recordTitle(targetCollection, row) ?? row.id : row.id })),
+  [localReadPermissions, localRows, page, targetCollection]);
+  const localHasMore = !loadOptions && !options && (localRows?.length ?? 0) > (page + 1) * relationPageSize;
+
+  const selectedLocalQuery = useMemo(() => {
+    if (!value || options || loadOptions || localOptions.some((option) => option.id === value)) return undefined;
+    return operations?.query({ where: { id: value }, limit: 1 });
+  }, [loadOptions, localOptions, operations, options, value]);
+  const { data: selectedLocalRows } = useAll<AdminRecord>(selectedLocalQuery);
+  const selectedReadPermissions = useRowReadPermissions(db, table, selectedLocalRows ?? []);
+  const selectedLocalOption = useMemo(() => {
+    const row = (selectedLocalRows ?? []).find((candidate) => selectedReadPermissions[candidate.id] !== "denied");
+    return row ? { id: row.id, name: targetCollection ? recordTitle(targetCollection, row) ?? row.id : row.id } : undefined;
+  }, [selectedLocalRows, selectedReadPermissions, targetCollection]);
+  const selectedOption = useMemo(() => mergeRelationOptions(options, knownOptions, loadedOptions, localOptions, selectedLocalOption ? [selectedLocalOption] : []).find((option) => option.id === value), [knownOptions, loadedOptions, localOptions, options, selectedLocalOption, value]);
+  const currentPageOptions = loadOptions
+    ? (inputSearch.trim() === debouncedSearch ? loadedOptions : [])
+    : options ?? localOptions;
+  const availableOptions = useMemo(() => mergeRelationOptions(currentPageOptions, selectedOption ? [selectedOption] : []), [currentPageOptions, selectedOption]);
+  const optionLabels = useMemo(() => new Map(availableOptions.map((option) => [option.id, option.name])), [availableOptions]);
+  const isSearching = open && inputSearch.trim() !== debouncedSearch;
+  const isLoading = isSearching || (loadOptions ? externalLoading : !options && localLoading);
+  const error = loadOptions ? loadError : localError ? "Could not load related records." : undefined;
+
+  const loadMore = useCallback(() => {
+    if (loadOptions) {
+      if (!hasMore || externalLoading) return;
+      const currentRequestId = ++requestId.current;
+      const offset = loadedOptions.length;
+      setExternalLoading(true);
+      setLoadError(undefined);
+      void loadOptions({ search: debouncedSearch, limit: relationPageSize, offset })
+        .then((result) => {
+          if (currentRequestId !== requestId.current) return;
+          setLoadedOptions((current) => mergeRelationOptions(current, result.options));
+          setHasMore(result.hasMore);
+          rememberOptions(result.options);
+        })
+        .catch((caught: unknown) => {
+          if (currentRequestId !== requestId.current) return;
+          setLoadError(caught instanceof Error ? caught.message : "Could not load related records.");
+        })
+        .finally(() => {
+          if (currentRequestId === requestId.current) setExternalLoading(false);
+        });
+      return;
+    }
+    if (localHasMore) setPage((current) => current + 1);
+  }, [debouncedSearch, externalLoading, hasMore, loadOptions, loadedOptions.length, localHasMore, rememberOptions]);
+
+  const placeholder = disabled
+    ? "Assigned automatically when saved"
+    : open ? `Search ${field.label.toLocaleLowerCase()}`
+      : value ? selectedOption?.name ?? value
+        : isLoading ? "Loading related records…"
+          : `Select ${field.label.toLocaleLowerCase()}`;
+  const inputValue = open ? inputSearch : value ? selectedOption?.name ?? value : "";
+
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <Combobox.Root
+      items={availableOptions.map((option) => option.id)}
+      value={value}
+      inputValue={inputValue}
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          setInputSearch("");
+          setDebouncedSearch("");
+          setPage(0);
+        } else {
+          setInputSearch("");
+        }
+      }}
+      onInputValueChange={(nextValue) => {
+        if (!open) return;
+        setInputSearch(nextValue);
+        setPage(0);
+      }}
+      onValueChange={(nextValue) => {
+        onChange(typeof nextValue === "string" && nextValue ? nextValue : null);
+        onBlur();
+        setOpen(false);
+        setInputSearch("");
+      }}
+      itemToStringLabel={(id) => optionLabels.get(String(id)) ?? String(id)}
+      disabled={disabled}
+      openOnInputClick
+      autoHighlight
+    >
       <div className="relative">
-        <SelectTrigger id={`field-${field.name}`} ref={inputRef} onBlur={onBlur} className="w-full pr-14">
-          <SelectValue placeholder={disabled ? "Assigned automatically when saved" : isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}>
-            {(selectedValue: string | null) => selectedValue
-              ? availableOptions.find((option) => option.id === selectedValue)?.name ?? selectedValue
-              : disabled ? "Assigned automatically when saved" : isLoading ? "Loading related records…" : `Select ${field.label.toLocaleLowerCase()}`}
-          </SelectValue>
-        </SelectTrigger>
+        <div className="relative">
+          <Combobox.Input
+            id={`field-${field.name}`}
+            ref={inputRef}
+            aria-label={field.label}
+            aria-required={field.required || undefined}
+            onBlur={onBlur}
+            placeholder={placeholder}
+            className="h-10 w-full min-w-0 border border-transparent border-b-input bg-transparent px-0 py-1 pr-14 text-sm outline-none transition-[color,border-color] placeholder:text-muted-foreground focus-visible:border-b-ring disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          {!disabled && <ChevronDown aria-hidden="true" size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />}
+        </div>
         {!disabled && !field.required && value && <ClearSelectionButton label={field.label} onClear={() => { onChange(null); onBlur(); }} />}
       </div>
-      <SelectContent>
-        {availableOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}
-      </SelectContent>
-    </Select>
+      <Combobox.Portal container={portalContainer}>
+        <Combobox.Positioner side="bottom" sideOffset={4} align="center" className="isolate z-50">
+          <Combobox.Popup className="relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 overflow-x-hidden overflow-y-auto rounded-none bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-muted-foreground">
+              <Search aria-hidden="true" size={14} />
+              <span className="sr-only">Search</span>
+              <p className="text-xs">Search {field.label.toLocaleLowerCase()}</p>
+            </div>
+            <Combobox.List className="max-h-64 overflow-y-auto p-1.5">
+              {availableOptions.map((option, index) => <Combobox.Item key={option.id} value={option.id} index={index} className="relative flex w-full cursor-default items-center gap-2.5 rounded-none py-2 pr-8 pl-3 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground">
+                <span className="flex-1">{option.name}</span>
+                {option.id === value && <Check aria-hidden="true" size={14} className="absolute right-2" />}
+              </Combobox.Item>)}
+            </Combobox.List>
+            {isLoading && <div role="status" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><LoaderCircle aria-hidden="true" size={14} className="animate-spin" /> Loading…</div>}
+            {!isLoading && error && <div role="alert" className="px-3 py-2 text-sm text-destructive">{error}</div>}
+            {!isLoading && !error && availableOptions.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">{debouncedSearch ? "No matching records." : "No related records."}</div>}
+            {!isLoading && !error && (loadOptions ? hasMore : localHasMore) && <button type="button" className="w-full cursor-pointer rounded-none px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" onMouseDown={(event) => event.preventDefault()} onClick={loadMore}>Load more</button>}
+          </Combobox.Popup>
+        </Combobox.Positioner>
+      </Combobox.Portal>
+    </Combobox.Root>
   );
 }
 

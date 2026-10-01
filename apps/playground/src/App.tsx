@@ -33,7 +33,6 @@ export function App() {
   }), db, currentUserId), [db, currentUserId]);
   const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
   const [canManageUsers, setCanManageUsers] = useState(false);
-  const [users, setUsers] = useState<readonly { id: string; name: string }[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -79,29 +78,45 @@ export function App() {
     return () => { active = false; };
   }, [canAccessAdmin, currentUserId, isAdminRoute]);
 
-  useEffect(() => {
-    setUsers([]);
-    if (!isAdminRoute || !currentUserId || canAccessAdmin !== true) {
-      return;
-    }
-    const controller = new AbortController();
-    void fetch("/api/bebop/users", { credentials: "same-origin", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Author lookup failed (${response.status}).`);
-        return response.json() as Promise<{ id: string; name: string }[]>;
-      })
-      .then(setUsers)
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) console.error("Could not load authors:", error);
-      });
-    return () => controller.abort();
-  }, [canAccessAdmin, currentUserId, isAdminRoute]);
-
   const authorOptions = useMemo(() => {
     const current = currentUserId ? [{ id: currentUserId, name: currentUserName || "Current user" }] : [];
-    return isAdminRoute && canAccessAdmin ? [...current, ...users.filter((user) => user.id !== currentUserId)] : current;
-  }, [canAccessAdmin, currentUserId, currentUserName, isAdminRoute, users]);
-  const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
+    return current;
+  }, [currentUserId, currentUserName]);
+  const loadUserRelationOptions = useCallback(async ({ ids, search, limit, offset }: { ids?: readonly string[]; search: string; limit: number; offset: number }) => {
+    if (ids?.length) {
+      const query = new URLSearchParams();
+      ids.forEach((id) => query.append("id", id));
+      const response = await fetch(`/api/bebop/users?${query.toString()}`, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(`User lookup failed (${response.status}).`);
+      const options = await response.json() as { id: string; name: string }[];
+      const knownIds = new Set(options.map((option) => option.id));
+      const missingUsers = await Promise.all(ids.filter((id) => !knownIds.has(id)).map(async (id) => {
+        const result = await authClient.admin.getUser({ query: { id } });
+        const user = result.data;
+        return result.error || !user ? undefined : { id: user.id, name: String(user.name ?? user.email ?? user.id) };
+      }));
+      return {
+        options: [...options, ...missingUsers.filter((option): option is { id: string; name: string } => option !== undefined)],
+        hasMore: false,
+      };
+    }
+    const response = await authClient.admin.listUsers({
+      query: {
+        limit,
+        offset,
+        sortBy: "name",
+        sortDirection: "asc",
+        ...(search ? { searchValue: search, searchField: "name" as const, searchOperator: "contains" as const } : {}),
+      },
+    });
+    if (response.error) throw new Error(response.error.message || "Better Auth could not search users.");
+    const users = response.data?.users ?? [];
+    return {
+      options: users.map((user) => ({ id: user.id, name: String(user.name ?? user.email ?? user.id) })),
+      hasMore: offset + users.length < (response.data?.total ?? 0),
+    };
+  }, []);
+  const relationOptionLoaders = useMemo(() => ({ users: loadUserRelationOptions }), [loadUserRelationOptions]);
   const preflightRelatedWrite = useCallback((collectionSlug: string) =>
     collectionSlug === "channels" ? "unknown" : undefined,
   []);
@@ -123,7 +138,7 @@ export function App() {
       path="/admin/*"
       element={canAccessAdmin === null
         ? <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 text-foreground"><p role="status">Checking admin access…</p></main>
-        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} preflightCreate={preflightRelatedWrite} preflightUpdate={preflightRelatedWrite} relationOptions={relationOptions} onLogout={signOut} />}
+        : <BebopAdmin app={app} client={bebop} manifest={bebopAdminManifest} canAccessAdmin={canAccessAdmin} canManageUsers={canManageUsers} authClient={authClient} user={{ name: authSession?.user.name, email: authSession?.user.email }} createDefaults={createDefaults} preflightCreate={preflightRelatedWrite} preflightUpdate={preflightRelatedWrite} relationOptionLoaders={relationOptionLoaders} onLogout={signOut} />}
     />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;

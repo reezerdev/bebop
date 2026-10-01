@@ -523,6 +523,14 @@ export const bebopAdminManifest = {
       },
       "fields": [
         {
+          "name": "workspace",
+          "storageName": "workspaceId",
+          "label": "Workspace",
+          "kind": "relation",
+          "required": true,
+          "relationTo": "workspaces"
+        },
+        {
           "name": "stream",
           "storageName": "streamId",
           "label": "Stream",
@@ -555,6 +563,7 @@ export const bebopAdminManifest = {
       "defaultColumns": [
         "user",
         "stream",
+        "workspace",
         "role"
       ],
       "listSearchableFields": [],
@@ -605,6 +614,13 @@ export const bebopAdminManifest = {
           "kind": "relation",
           "required": true,
           "relationTo": "users"
+        },
+        {
+          "name": "authorName",
+          "storageName": "authorName",
+          "label": "Author Name",
+          "kind": "text",
+          "required": true
         },
         {
           "name": "parentEntry",

@@ -3,7 +3,7 @@ import pino from "pino";
 import type { BebopConfig, CollectionChangeContext, CollectionDocument, CollectionHooks, Fields } from "./bebop.ts";
 import type { BebopCommandRequest } from "./client.ts";
 import { runMaybeLoggedHook, type HookLogEvent } from "./hook-logging.ts";
-import { BebopValidationError, validateCollectionData } from "./validation.ts";
+import { applyFieldDefaults, BebopValidationError, validateCollectionData } from "./validation.ts";
 
 export { createBebopBetterAuth } from "./auth.ts";
 export type { BebopBetterAuth, CreateBebopBetterAuthOptions } from "./auth.ts";
@@ -216,7 +216,8 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
       return json({ message: error instanceof Error ? error.message : "Invalid command data." }, 400);
     }
 
-    const input = rawData as Record<string, unknown>;
+    const receivedInput = rawData as Record<string, unknown>;
+    const input = route.operation === "create" ? applyFieldDefaults(definition, receivedInput) : receivedInput;
     const changeContext: CollectionChangeContext<Fields> = {
       operation: route.operation,
       ...(route.id ? { id: route.id } : {}),

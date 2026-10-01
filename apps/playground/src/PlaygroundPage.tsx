@@ -145,6 +145,17 @@ function MessageComposer({
   </form>;
 }
 
+function JoinChannelPrompt({ channelName, onJoin, isJoining = false }: {
+  channelName: string;
+  onJoin: () => void;
+  isJoining?: boolean;
+}) {
+  return <div className="mx-4 mb-4 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="min-w-0"><p className="text-xs font-semibold text-slate-800">You’re viewing #{channelName}</p><p className="mt-1 text-xs text-slate-500">Join this channel to send messages and participate.</p></div>
+    <Button size="sm" className="shrink-0 rounded-md bg-[#b45d7e] normal-case tracking-normal text-white hover:bg-[#9e4b6b]" type="button" onClick={onJoin} disabled={isJoining}>{isJoining ? "Joining…" : "Join channel"}</Button>
+  </div>;
+}
+
 function PlaygroundSearch({ workspaceName, value, onChange }: {
   workspaceName: string;
   value: string;
@@ -177,6 +188,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
   const [showRenameForm, setShowRenameForm] = useState(false);
   const [showChannelForm, setShowChannelForm] = useState(false);
+  const [joiningChannelId, setJoiningChannelId] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [message, setMessage] = useState("");
@@ -233,6 +245,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
     return names;
   }, [currentUserId, currentUserName, props, workspaceMembers]);
   const currentStreamRole = (streamMemberships ?? []).find((membership) => membership.userId === currentUserId)?.role;
+  const isCurrentChannelMember = (streamMemberships ?? []).some((membership) => membership.userId === currentUserId);
   const canManageChannel = currentStreamRole === "admin";
   const currentChannelMemberIds = new Set((streamMemberships ?? []).map((membership) => membership.userId));
   const channelMembers = useMemo(() => (streamMemberships ?? []).map((membership) => ({
@@ -395,11 +408,30 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
     }
   }
 
+  async function joinChannel() {
+    if (!client || !currentUserId || !activeChannel?.streamId || joiningChannelId) return;
+    setJoiningChannelId(activeChannel.id);
+    try {
+      const membership = await client.streamMemberships.create({
+        workspaceId: activeChannel.workspaceId,
+        streamId: activeChannel.streamId,
+        userId: currentUserId,
+        role: "member",
+      });
+      await membership.waitForGlobal();
+    } catch (error) {
+      notifyError("Could not join channel", error, "Could not join channel.");
+    } finally {
+      setJoiningChannelId("");
+    }
+  }
+
   async function addChannelMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!client || !activeChannel?.streamId || !inviteUserId) return;
     try {
       const membership = await client.streamMemberships.create({
+        workspaceId: activeChannel.workspaceId,
         streamId: activeChannel.streamId,
         userId: inviteUserId,
         role: "member",
@@ -504,12 +536,12 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                     <ChannelTabs value={activeChannelView} onChange={setActiveChannelView} idPrefix="live-channel" memberCount={channelMembers.length} />
                     {activeChannelView === "messages" ? <>
                     <div className="max-h-[440px] min-h-[250px] flex-1 overflow-y-auto px-6 py-5" id="live-channel-messages-panel" role="tabpanel" aria-labelledby="live-channel-messages-tab" aria-live="polite">
-                      {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 py-10 text-center"><Sparkles className="size-6 text-[#b45d7e]" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">Start the conversation</h3><p className="mt-1 max-w-xs text-sm text-slate-500">Send the first message in #{activeChannel.name}.</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
+                      {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 py-10 text-center"><Sparkles className="size-6 text-[#b45d7e]" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{isCurrentChannelMember ? "Start the conversation" : "No messages yet"}</h3><p className="mt-1 max-w-xs text-sm text-slate-500">{isCurrentChannelMember ? `Send the first message in #${activeChannel.name}.` : `There are no messages in #${activeChannel.name} yet.`}</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
                         <div className="size-10 rounded-[14px] bg-[#d9d9d9]" aria-hidden="true" />
                         <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-slate-400">{entry.$createdAt ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{entry.content}</p></div>
                       </article>)}
                     </div>
-                    <MessageComposer value={message} onChange={setMessage} onSubmit={sendMessage} placeholder={`Message #${activeChannel.name}`} ariaLabel={`Message #${activeChannel.name}`} submitLabel="Send message" />
+                    {streamMemberships === undefined ? <div className="mx-4 mb-4 mt-auto rounded-xl border border-slate-200 px-4 py-4 text-xs text-slate-500" role="status">Checking channel membership…</div> : isCurrentChannelMember ? <MessageComposer value={message} onChange={setMessage} onSubmit={sendMessage} placeholder={`Message #${activeChannel.name}`} ariaLabel={`Message #${activeChannel.name}`} submitLabel="Send message" /> : <JoinChannelPrompt channelName={activeChannel.name} onJoin={() => void joinChannel()} isJoining={joiningChannelId === activeChannel.id} />}
                     </> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" id="live-channel-members-panel" role="tabpanel" aria-labelledby="live-channel-members-tab">
                       <div className="mx-auto max-w-3xl">
                         <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><div><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-slate-500">People who belong to #{activeChannel.name}.</p></div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-500">{channelMembers.length}</span></div>
@@ -558,7 +590,6 @@ function PreviewWidget({ notice }: { notice?: string }) {
   const [activeTab, setActiveTab] = useState<"messages" | "settings">("messages");
   const [activeChannelView, setActiveChannelView] = useState<ChannelView>("messages");
   const [activeChannelId, setActiveChannelId] = useState<string>(demoChannels[0].id);
-  const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const searchText = searchQuery.trim().toLocaleLowerCase();
   const searchedDemoChannels = demoChannels.filter((item) => !searchText || item.name.toLocaleLowerCase().includes(searchText));
@@ -578,11 +609,6 @@ function PreviewWidget({ notice }: { notice?: string }) {
     document.addEventListener("pointerdown", closeMenusOutside);
     return () => document.removeEventListener("pointerdown", closeMenusOutside);
   }, []);
-
-  function sendPreviewMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (message.trim()) requestAuth("sign-up");
-  }
 
   return (
     <>
@@ -629,7 +655,7 @@ function PreviewWidget({ notice }: { notice?: string }) {
                 <ChannelTabs value={activeChannelView} onChange={setActiveChannelView} idPrefix="preview-channel" memberCount={demoChannelMembers.length} />
                 {activeChannelView === "messages" ? <>
                   <div className="flex-1 overflow-y-auto px-6 py-5" id="preview-channel-messages-panel" role="tabpanel" aria-labelledby="preview-channel-messages-tab">{demoMessages[channel.id].map((entry, index) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={`${channel.id}-${index}`}><div className="size-10 rounded-[14px] bg-[#d9d9d9]" aria-hidden="true" /><div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author}</strong><time className="text-xs text-slate-400">{entry.time}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{entry.content}</p></div></article>)}</div>
-                  <MessageComposer value={message} onChange={setMessage} onSubmit={sendPreviewMessage} placeholder={`Message #${channel.name}`} ariaLabel={`Preview message to #${channel.name}`} submitLabel="Sign in to send" />
+                  <JoinChannelPrompt channelName={channel.name} onJoin={() => requestAuth("sign-up")} />
                 </> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" id="preview-channel-members-panel" role="tabpanel" aria-labelledby="preview-channel-members-tab"><div className="mx-auto max-w-3xl"><div className="border-b border-slate-100 pb-4"><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-slate-500">People who belong to #{channel.name}.</p></div><MemberRoster members={demoChannelMembers} rolePrefix="Channel" /><Button variant="outline" size="sm" className="mt-4 gap-1 rounded-md normal-case tracking-normal" type="button" onClick={() => requestAuth("sign-up")}>Invite a member<ArrowUpRight className="size-3.5" aria-hidden="true" /></Button></div></div>}
               </> : <div className="min-h-0 flex-1 overflow-y-auto p-6">
                 <div className="mx-auto max-w-4xl"><header className="border-b border-slate-200 pb-5"><p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Acme Studio / Settings</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Workspace settings</h2></header><section className="mt-6 max-w-2xl overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-3"><div><h3 className="text-sm font-semibold">Members</h3><p className="mt-1 text-xs text-slate-500">People who belong to Acme Studio.</p></div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-500">{demoWorkspaceMembers.length}</span></header><div className="px-4"><MemberRoster members={demoWorkspaceMembers} rolePrefix="Workspace" /></div></section></div>

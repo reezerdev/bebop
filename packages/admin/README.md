@@ -35,6 +35,23 @@ import "@bebopdev/admin/styles.css";
 
 `app`, `bebopAdminManifest`, and the typed client are generated from `bebop.config.ts` by `@bebopdev/cli`. The host can pass the current user's name, email, and logout action through the admin props.
 
+Relationship fields use a searchable picker and load Jazz-backed options in pages of 25. For protected or external collections, provide a loader keyed by collection slug. It receives `{ search, limit, offset }` while the picker is open, or `{ ids, limit, offset }` to resolve labels for selected values and visible relation cells:
+
+```tsx
+<BebopAdmin
+  {...props}
+  relationOptionLoaders={{
+    users: async ({ search, ids, limit, offset }) => {
+      if (ids?.length) return { options: await lookupUserLabels(ids), hasMore: false };
+      const result = await searchUsers({ search, limit, offset });
+      return { options: result.users, hasMore: result.hasMore };
+    },
+  }}
+/>
+```
+
+The loader should enforce the host's access rules and return only the requested page. The admin keeps selected labels cached while the user searches and pages through results.
+
 ## Admin sign-in screen
 
 The host still owns authentication and routing. For an admin-specific sign-in screen, render `BebopAdminLogin` from the host's signed-out branch for `/admin`; it uses the admin theme and delegates credential handling to the host. This keeps each app's own sign-in page independent. If the host supports first-user setup, pass `firstUserSetup`: the package checks availability and owns the first-admin prompt and form, while the host supplies the server status check and account creation handler.

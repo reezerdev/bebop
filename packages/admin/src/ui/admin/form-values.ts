@@ -5,9 +5,16 @@ import { storedFields, valueFor } from "./record-values.js";
 
 export function initialValues(collection: BebopAdminCollection, row?: AdminRecord, defaults?: Readonly<Record<string, unknown>>): FieldValues {
   return Object.fromEntries(storedFields(collection).filter((field) => !field.generated).map((field) => {
-    const value = row ? valueFor(field, row) : defaults?.[field.name];
+    const value = row
+      ? valueFor(field, row)
+      : defaults && Object.hasOwn(defaults, field.name)
+        ? defaults[field.name]
+        : field.defaultValue;
     if (field.kind === "boolean") return [field.name, Boolean(value)];
-    if (field.kind === "date") return [field.name, value instanceof Date ? localDateInput(value, field.admin?.date?.pickerAppearance === "dayAndTime") : ""];
+    if (field.kind === "date") {
+      const date = value instanceof Date ? value : typeof value === "number" || typeof value === "string" ? new Date(value) : undefined;
+      return [field.name, date && Number.isFinite(date.getTime()) ? localDateInput(date, field.admin?.date?.pickerAppearance === "dayAndTime") : ""];
+    }
     if (field.kind === "json") return [field.name, value === undefined || value === null ? "" : JSON.stringify(value, null, 2)];
     return [field.name, value === undefined || value === null ? "" : String(value)];
   }));

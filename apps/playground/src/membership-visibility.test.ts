@@ -202,6 +202,7 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
     });
     await replacementStreamWrite.waitForGlobal();
     const replacementAdminMembership = await memberClient.streamMemberships.create({
+      workspaceId,
       streamId: replacementStreamWrite.doc.id,
       userId: memberId,
       role: "admin",
@@ -232,8 +233,15 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
       authorId: memberId,
     });
     await publicEntryWrite.waitForGlobal();
-    const peerEntryIdsBeforeJoin = new Set((await peer.all(app.entries.select("id"), { tier: "remote" })).map((entry) => entry.id));
-    assert.ok(peerEntryIdsBeforeJoin.has(publicEntryWrite.doc.id));
+    const publicChannelMembership = await peerClient.streamMemberships.create({
+      workspaceId,
+      streamId: publicChannelStreamId,
+      userId: peerId,
+      role: "member",
+    });
+    await publicChannelMembership.waitForGlobal();
+    const peerEntryIdsAfterPublicJoin = new Set((await peer.all(app.entries.select("id"), { tier: "remote" })).map((entry) => entry.id));
+    assert.ok(peerEntryIdsAfterPublicJoin.has(publicEntryWrite.doc.id));
 
     const privateChannelEntryWrite = await memberClient.entries.create({
       streamId: privateChannelStreamId,
@@ -242,7 +250,30 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
       authorId: memberId,
     });
     await privateChannelEntryWrite.waitForGlobal();
+    await authority.insert(app.workspaceMemberships, {
+      workspaceId,
+      userId: workspaceAdminId,
+      role: "manager",
+      status: "active",
+    }).wait({ tier: "global" });
+    const workspaceManagerJoin = await createBebopClient(workspaceAdmin).streamMemberships.create({
+      workspaceId,
+      streamId: privateChannelStreamId,
+      userId: workspaceAdminId,
+      role: "member",
+    });
+    await workspaceManagerJoin.waitForGlobal();
+    await assert.rejects(async () => {
+      const write = await peerClient.streamMemberships.create({
+        workspaceId,
+        streamId: privateChannelStreamId,
+        userId: peerId,
+        role: "member",
+      });
+      await write.waitForGlobal();
+    });
     const privateChannelMembership = await memberClient.streamMemberships.create({
+      workspaceId,
       streamId: privateChannelStreamId,
       userId: peerId,
       role: "member",
@@ -255,6 +286,7 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
     assert.ok(joinedPeerEntryIds.has(privateChannelEntryWrite.doc.id));
     await assert.rejects(async () => {
       const write = await peerClient.streamMemberships.create({
+        workspaceId,
         streamId: privateChannelStreamId,
         userId: memberId,
         role: "admin",

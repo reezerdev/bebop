@@ -16,9 +16,13 @@ export type {
   BebopAdminProps,
   BebopAdminUser,
   BebopAuthAdminClient,
+  BebopRelationOption,
+  BebopRelationOptionPage,
+  BebopRelationOptionQuery,
+  BebopRelationOptionsLoader,
 } from "./admin/types.js";
 
-export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUsers = false, authClient, user, createDefaults, preflightCreate, preflightUpdate, relationOptions, onLogout }: BebopAdminProps) {
+export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUsers = false, authClient, user, createDefaults, preflightCreate, preflightUpdate, relationOptions, relationOptionLoaders, onLogout }: BebopAdminProps) {
   const [mutationError, setMutationError] = useState<string>();
 
   useEffect(() => {
@@ -35,9 +39,9 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUse
       element: <AdminLayout manifest={manifest} canManageUsers={canManageUsers} user={user} onLogout={onLogout} mutationError={mutationError} />,
       children: [
         { index: true, element: <DashboardPage manifest={manifest} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
-        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug", element: <CollectionRoute app={app} client={client} manifest={manifest} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug/create", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} authClient={authClient} canManageUsers={canManageUsers} /> },
+        { path: "collections/:collectionSlug/:id", element: <EditorRoute app={app} client={client} manifest={manifest} createDefaults={createDefaults} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} authClient={authClient} canManageUsers={canManageUsers} /> },
         { path: "*", element: <NotFoundPage /> },
       ],
     },
@@ -46,15 +50,15 @@ export function BebopAdmin({ app, client, manifest, canAccessAdmin, canManageUse
   return canAccessAdmin ? route : <main className="bebop-admin grid min-h-svh place-items-center bg-background px-6 font-sans text-foreground"><p role="alert">You do not have access to the Bebop admin.</p></main>;
 }
 
-function CollectionRoute({ app, client, manifest, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "relationOptions" | "authClient" | "canManageUsers">) {
+function CollectionRoute({ app, client, manifest, relationOptions, relationOptionLoaders, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "relationOptions" | "relationOptionLoaders" | "authClient" | "canManageUsers">) {
   const { collectionSlug = "" } = useParams();
   const collection = manifest.collections[collectionSlug];
   if (!collection) return <NotFoundPage />;
   if (collection.auth) return <AuthUsersList collection={collection} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
-  return <CollectionList key={collection.slug} app={app} client={client} collection={collection} manifest={manifest} relationOptions={relationOptions} />;
+  return <CollectionList key={collection.slug} app={app} client={client} collection={collection} manifest={manifest} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} />;
 }
 
-function EditorRoute({ app, client, manifest, createDefaults, preflightCreate, preflightUpdate, relationOptions, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "preflightCreate" | "preflightUpdate" | "relationOptions" | "authClient" | "canManageUsers">) {
+function EditorRoute({ app, client, manifest, createDefaults, preflightCreate, preflightUpdate, relationOptions, relationOptionLoaders, authClient, canManageUsers }: Pick<BebopAdminProps, "app" | "client" | "manifest" | "createDefaults" | "preflightCreate" | "preflightUpdate" | "relationOptions" | "relationOptionLoaders" | "authClient" | "canManageUsers">) {
   const { collectionSlug = "", id } = useParams();
   const [searchParams] = useSearchParams();
   const collection = manifest.collections[collectionSlug];
@@ -65,5 +69,5 @@ function EditorRoute({ app, client, manifest, createDefaults, preflightCreate, p
       : <AuthUserCreate collection={collection} client={client} manifest={manifest} authClient={authClient} canManageUsers={Boolean(canManageUsers)} />;
   }
   const joinContext = resolveJoinContext(manifest, collectionSlug, searchParams);
-  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} joinContext={joinContext} relationOptions={relationOptions} />;
+  return <DocumentEditor key={`${collectionSlug}:${id ?? "new"}:${searchParams.toString()}`} app={app} client={client} manifest={manifest} collection={collection} id={id} createDefaults={createDefaults?.[collectionSlug]} preflightCreate={preflightCreate} preflightUpdate={preflightUpdate} joinContext={joinContext} relationOptions={relationOptions} relationOptionLoaders={relationOptionLoaders} />;
 }

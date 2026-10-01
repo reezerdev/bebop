@@ -266,7 +266,16 @@ export async function createAuthServer(config: AuthServerConfig) {
         return;
       }
 
-      const users = await snapshot.client!.db.all(app.better_auth_user.select("id", "name"), { tier: "global" });
+      const userIds = new URL(request.url ?? "/", "http://localhost").searchParams.getAll("id").filter(Boolean).slice(0, 100);
+      if (userIds.length === 0) {
+        response.statusCode = 400;
+        response.end(JSON.stringify({ message: "Specify one or more user IDs to resolve." }));
+        return;
+      }
+      const users = await snapshot.client!.db.all(
+        app.better_auth_user.select("id", "name").where({ id: { in: userIds } }),
+        { tier: "global" },
+      );
       response.end(JSON.stringify(users.map(({ id, name }) => ({ id, name }))));
     },
     async listWorkspaceMembers(request: IncomingMessage, response: ServerResponse, workspaceId: string) {

@@ -25,7 +25,7 @@ import { getTable, getMutations } from "../data-access.js";
 import { defaultPageSize, filterAllValue } from "../constants.js";
 import { formatDate, humanize, selectLabel, valueFor, collectionTitleFields, recordTitle, fieldByName, storedFields } from "../record-values.js";
 
-export function CollectionList({ app, client, collection, manifest, relationOptions, selectMode = false, onSelect, onCreate }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; manifest: BebopAdminManifest; relationOptions?: BebopAdminProps["relationOptions"]; selectMode?: boolean; onSelect?: (row: AdminRecord) => void; onCreate?: () => void }) {
+export function CollectionList({ app, client, collection, manifest, relationOptions, relationOptionLoaders, selectMode = false, onSelect, onCreate }: { app: object; client: BebopAdminClient; collection: BebopAdminCollection; manifest: BebopAdminManifest; relationOptions?: BebopAdminProps["relationOptions"]; relationOptionLoaders?: BebopAdminProps["relationOptionLoaders"]; selectMode?: boolean; onSelect?: (row: AdminRecord) => void; onCreate?: () => void }) {
   const navigate = useNavigate();
   const toast = useToastManager();
   const db = useDb() as AdminDatabase;
@@ -171,6 +171,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
           collection={manifest.collections[slug]}
           ids={[...ids].sort()}
           relationOptions={displayRelationOptions}
+          relationOptionLoaders={relationOptionLoaders}
           onChange={onRelatedOptions}
         />
       ))}

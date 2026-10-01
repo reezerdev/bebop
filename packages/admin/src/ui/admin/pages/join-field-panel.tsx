@@ -1,8 +1,9 @@
 import { useAdminRows } from "../hooks/use-admin-rows.js";
 import { usePageRowPermissions, useRowReadPermissions } from "../hooks/use-row-permissions.js";
+import { RelatedCollectionLabels } from "../components/related-labels.js";
 import { formatCell } from "../components/cell.js";
 import { SelectionCheckbox } from "../components/common.js";
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useDb } from "jazz-tools/react";
 
 import type { PermissionAdvice } from "jazz-tools";
@@ -21,7 +22,7 @@ import { getTable } from "../data-access.js";
 
 import { formatDate, humanize, valueFor, recordTitle, fieldByName, storedFields } from "../record-values.js";
 
-export function JoinFieldPanel({ app, client, manifest, source, field, parentId, parentLabel, relationOptions }: {
+export function JoinFieldPanel({ app, client, manifest, source, field, parentId, parentLabel, relationOptions, relationOptionLoaders }: {
   app: object;
   client: BebopAdminClient;
   manifest: BebopAdminManifest;
@@ -30,6 +31,7 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
   parentId: string;
   parentLabel: string;
   relationOptions?: BebopAdminProps["relationOptions"];
+  relationOptionLoaders?: BebopAdminProps["relationOptionLoaders"];
 }) {
   const navigate = useNavigate();
   const db = useDb() as AdminDatabase;
@@ -46,6 +48,14 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
     return valid?.length ? valid : columns.slice(0, 4).map((candidate) => candidate.name);
   }, [field.admin?.defaultColumns, target]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultColumns);
+  const [loadedRelationOptions, setLoadedRelationOptions] = useState<Record<string, readonly { id: string; name: string }[]>>({});
+  const onRelatedOptions = useCallback((slug: string, options: readonly { id: string; name: string }[]) => {
+    setLoadedRelationOptions((current) => {
+      const previous = current[slug];
+      if (previous?.length === options.length && previous.every((option, index) => option.id === options[index].id && option.name === options[index].name)) return current;
+      return { ...current, [slug]: options };
+    });
+  }, []);
   const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>({ field: defaultColumns[0] ?? "id", direction: "asc" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [page, setPage] = useState(1);
@@ -74,6 +84,19 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
   const someRowsSelected = selectableRows.some((row) => selectedIds.has(row.id));
   const allColumns = columnsAvailable.map((candidate) => candidate.name);
   const visible = allColumns.filter((name) => visibleColumns.includes(name));
+  const displayRelationOptions = useMemo(() => ({ ...loadedRelationOptions, ...relationOptions }), [loadedRelationOptions, relationOptions]);
+  const titleRelationNames = typeof target?.useAsTitle === "string" ? [target.useAsTitle] : target?.useAsTitle ?? [];
+  const relationIdsByCollection = new Map<string, Set<string>>();
+  for (const column of new Set([...visible, ...titleRelationNames])) {
+    const candidate = fieldByName(target ?? source, column);
+    if ((candidate?.kind !== "relation" && candidate?.kind !== "upload") || !candidate.relationTo || relationOptions?.[candidate.relationTo]) continue;
+    const ids = relationIdsByCollection.get(candidate.relationTo) ?? new Set<string>();
+    for (const row of readableRows) {
+      const id = valueFor(candidate, row);
+      if (typeof id === "string" && id) ids.add(id);
+    }
+    relationIdsByCollection.set(candidate.relationTo, ids);
+  }
   const linkedColumn = visible[0];
   const readDenied = target?.writeMode !== "command" && rows.some((row) => readPermissions[row.id] === "denied");
   const createAllowed = field.admin?.allowCreate !== false;
@@ -124,6 +147,19 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
 
   return (
     <section className="mt-8 border-t pt-6">
+      {[...relationIdsByCollection].map(([slug, ids]) => {
+        const relatedCollection = manifest.collections[slug];
+        return relatedCollection ? <RelatedCollectionLabels
+          key={slug}
+          app={app}
+          client={client}
+          collection={relatedCollection}
+          ids={[...ids].sort()}
+          relationOptions={displayRelationOptions}
+          relationOptionLoaders={relationOptionLoaders}
+          onChange={onRelatedOptions}
+        /> : null;
+      })}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-medium">{field.label}</h2>
         <div className="flex items-center gap-2">
@@ -188,13 +224,13 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
               <TableBody>{readableRows.length === 0
                 ? <TableRow><TableCell colSpan={visible.length + (targetCollection.timestamps ? 1 : 0) + 1} className="py-8 text-center text-sm text-muted-foreground">{readDenied ? "No readable documents." : "No documents to display."}</TableCell></TableRow>
                 : readableRows.map((row) => <TableRow key={row.id} className={selectedIds.has(row.id) ? "bg-accent" : "hover:bg-muted"}>
-                    <TableCell className="w-12"><SelectionCheckbox aria-label={`Select ${recordTitle(targetCollection, row, relationOptions) ?? row.id}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
+                    <TableCell className="w-12"><SelectionCheckbox aria-label={`Select ${recordTitle(targetCollection, row, displayRelationOptions) ?? row.id}`} checked={selectedIds.has(row.id)} disabled={rowPermissions[row.id]?.update === "denied" && rowPermissions[row.id]?.delete === "denied"} onChange={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })} /></TableCell>
                     {visible.map((column) => {
                       const candidate = fieldByName(targetCollection, column);
                       const value = candidate ? valueFor(candidate, row) : row[column];
                       const displayValue = candidate?.kind === "relation" && candidate.name === field.on && value === parentId
                         ? parentLabel
-                        : formatCell(candidate, value, relationOptions);
+                        : formatCell(candidate, value, displayRelationOptions);
                       return <TableCell key={column} className="whitespace-normal py-4 align-top">
                         {column === linkedColumn
                           ? <Link to={`/admin/collections/${field.collection}/${encodeURIComponent(row.id)}?${contextualQuery}`} className="underline underline-offset-2 hover:text-primary">{displayValue}</Link>

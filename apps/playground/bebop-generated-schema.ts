@@ -66,11 +66,13 @@ const schema = {
   ),
   "streamMemberships": s.table(
     {
+      "workspaceId": s.uuid(),
       "streamId": s.uuid(),
       "userId": s.uuid(),
       "role": s.enum("admin", "member")
     },
     {
+      "workspace": s.rel("workspaces", "workspaceId"),
       "stream": s.rel("streams", "streamId"),
       "user": s.rel("better_auth_user", "userId")
     },
@@ -81,6 +83,7 @@ const schema = {
       "type": s.enum("message", "comment", "update", "system"),
       "content": s.string(),
       "authorId": s.uuid(),
+      "authorName": s.string(),
       "parentEntryId": s.uuid().optional()
     },
     {

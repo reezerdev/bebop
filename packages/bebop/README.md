@@ -27,6 +27,43 @@ export default defineConfig({
 
 `@bebopdev/cli` reads this config to generate the Jazz schema, admin manifest, typed client, and permission files. The exported `createBebopClient` factory provides typed queries and lifecycle-aware create, update, and delete methods. See the [Local API guide](../../docs/local-api.md) for filters, search, pagination, and durability, and the [access control guide](../../docs/access-control.md) for direct and command writes. Lifecycle hooks in direct mode run in the client; command mode uses the `./server` handler with host-supplied authorization and an attributed writer.
 
+## Defaults and indexes
+
+Set a field's `default` to apply a value when a create omits that field. Defaults are applied before validation and `beforeChange` hooks, and the generated Jazz column also carries the default. A defaulted, required field remains non-nullable in stored documents, while callers may omit it from create data:
+
+```ts
+{
+  slug: "tasks",
+  fields: [
+    { name: "title", type: "text", required: true },
+    { name: "completed", type: "checkbox", required: true, default: false },
+    { name: "status", type: "select", options: ["open", "done"], required: true, default: "open" },
+  ],
+}
+```
+
+The admin create form uses schema defaults too; the host's `createDefaults` can override them. Defaults support text, number, checkbox, date, select, and JSON fields. Null defaults, Better Auth fields, relationships, and uploads are not supported.
+
+Jazz indexes every column by default. Most collections should keep that behavior. Use `indexes.only` when you have a measured reason to reduce index storage or write work; it removes indexes from every column not listed, so queries on omitted fields may scan the table. Include fields used for permissions, relations, filters, sorting, and search. Relationship names map to their stored `...Id` columns.
+
+```ts
+{
+  slug: "tasks",
+  fields: [
+    { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
+    { name: "title", type: "text", required: true },
+    { name: "status", type: "select", options: ["open", "done"], required: true },
+    { name: "description", type: "text" },
+  ],
+  indexes: {
+    only: ["workspace", "title", "status"],
+    composite: [["workspace", "status"]],
+  },
+}
+```
+
+`indexes.composite` adds a composite index for a common multi-column query. It does not change the default single-column indexes unless `indexes.only` is also set.
+
 ## Hook logging
 
 Hook logging is disabled by default. Set `logging.hooks` to `true` to emit one compact event for each lifecycle stage reached by a write, even when that stage has no callback configured:

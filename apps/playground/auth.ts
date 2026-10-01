@@ -6,6 +6,7 @@ import { app } from "./bebop-generated-schema.js";
 import permissions from "./permissions.js";
 import bebopConfig from "./bebop.config.ts";
 import { getBetterAuthURL } from "./auth-config.ts";
+import { authorizeWorkspaceCommand } from "./command-authorization.js";
 
 type AuthServerConfig = {
   appId?: string;
@@ -64,8 +65,33 @@ export async function createAuthServer(config: AuthServerConfig) {
     app,
     config: bebopConfig,
     // The command endpoint has already verified Better Auth and Jazz identity.
-    // This demo grants authenticated members the configured membership writes.
-    authorize: ({ collection, userId }) => collection === "workspaceMemberships" && Boolean(userId),
+    // Workspace creation is handled by the atomic endpoint below.
+    async authorize({ request, collection, operation, userId, data, originalDoc, db }) {
+      return authorizeWorkspaceCommand({
+        userId,
+        collection,
+        operation,
+        data,
+        originalDoc: originalDoc as Record<string, unknown> | undefined,
+        async isGlobalAdmin() {
+          const permission = await auth.api.userHasPermission({
+            headers: request.headers,
+            body: { permissions: { user: ["list"] } },
+          }).catch(() => null);
+          const adminIds = (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+          return adminIds.includes(userId ?? "") || permission?.success === true;
+        },
+        async isActiveWorkspaceAdmin(workspaceId) {
+          const membership = await db.one(app.workspaceMemberships.where({
+            workspaceId,
+            userId,
+            role: "admin",
+            status: "active",
+          }));
+          return Boolean(membership);
+        },
+      });
+    },
     async resolveSession(request) {
       const origin = request.headers.get("origin");
       if (!origin || origin !== new URL(request.url).origin) return null;
@@ -91,6 +117,42 @@ export async function createAuthServer(config: AuthServerConfig) {
       };
     },
   });
+
+  async function createWorkspaceHandler(request: Request): Promise<Response> {
+    const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
+    if (request.method !== "POST") return json({ message: "Method not allowed." }, 405);
+    if (request.headers.get("origin") !== new URL(request.url).origin) return json({ message: "Invalid request origin." }, 403);
+    const session = await auth.api.getSession({ headers: request.headers, query: { disableCookieCache: true } });
+    if (!session) return json({ message: "Sign in before creating a workspace." }, 401);
+    let data: { name?: unknown; slug?: unknown };
+    try { data = await request.json() as typeof data; }
+    catch { return json({ message: "Workspace data must be valid JSON." }, 400); }
+    const name = typeof data?.name === "string" ? data.name.trim() : "";
+    const slug = typeof data?.slug === "string" ? data.slug.trim() : "";
+    if (!name || !slug || name.length > 120 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return json({ message: "Enter a workspace name and a valid slug." }, 400);
+    }
+    try {
+      const { token } = await auth.api.getToken({ headers: request.headers });
+      const jazzRequest = new Request(request.url, { headers: { authorization: `Bearer ${token}` } });
+      const writeDb = await snapshot.client!.withAttributionForRequest(jazzRequest);
+      const transaction = await writeDb.exclusiveTransaction(async (tx) => {
+        if (await tx.one(app.workspaces.where({ slug }))) throw new Error("That workspace slug is already in use.");
+        const workspace = tx.insert(app.workspaces, { name, slug });
+        tx.insert(app.workspaceMemberships, {
+          workspaceId: workspace.id,
+          userId: session.user.id,
+          role: "admin",
+          status: "active",
+        });
+        return workspace;
+      });
+      await transaction.wait();
+      return json({ doc: transaction.value, durability: "global" });
+    } catch (error) {
+      return json({ message: error instanceof Error ? error.message : "Could not create workspace." }, 409);
+    }
+  }
 
   const adminAccessHandler = createBebopAdminAccessHandler({
     config: bebopConfig,
@@ -137,6 +199,7 @@ export async function createAuthServer(config: AuthServerConfig) {
   return {
     handler: toNodeHandler(auth.handler),
     commandHandler,
+    createWorkspaceHandler,
     adminAccessHandler,
     async adminSetupStatus(request: IncomingMessage, response: ServerResponse) {
       response.setHeader("content-type", "application/json");
@@ -169,6 +232,16 @@ export async function createAuthServer(config: AuthServerConfig) {
       if (!session) {
         response.statusCode = 401;
         response.end(JSON.stringify({ message: "Sign in to view authors." }));
+        return;
+      }
+      const adminResult = await auth.api.userHasPermission({
+        headers: fromNodeHeaders(request.headers),
+        body: { permissions: { user: ["list"] } },
+      });
+      const adminIds = (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+      if (!adminResult.success && !adminIds.includes(session.user.id)) {
+        response.statusCode = 403;
+        response.end(JSON.stringify({ message: "Administrator access is required to list users." }));
         return;
       }
 

@@ -250,11 +250,11 @@ test("permission generation compiles configured Jazz rules and defaults omitted 
   assert.match(permissions, /policy\.posts\.allowInsert\.where/);
   assert.match(permissions, /policy\.posts\.allowUpdate\.where\(authenticatedSession\)/);
   assert.match(permissions, /policy\.posts\.allowDelete\.where\(authenticatedSession\)/);
-  assert.doesNotMatch(permissions, /\.always\(\)/);
+  assert.doesNotMatch(permissions, /policy\.posts\.allow\w+\.always\(\)/);
   assert.equal(permissions, compilePermissions(config, "./config.js"));
 });
 
-test("admin role bypasses configured and omitted collection read rules only", () => {
+test("role and trusted-claim admins bypass configured and omitted CRUD rules", () => {
   const config = defineConfig({ collections: [
     {
       slug: "tasks",
@@ -277,12 +277,14 @@ test("admin role bypasses configured and omitted collection read rules only", ()
   ] });
 
   const permissions = compilePermissions(config);
-  assert.match(permissions, /const adminRead = session\.where\(\{ "claims\.role": "admin" \}\)/);
+  assert.match(permissions, /const bebopAdmin = anyOf\(\[session\.where\(\{ "claims\.role": "admin" \}\), session\.where\(\{ "claims\.bebopAdmin": true \}\)\]\)/);
   assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowRead, true\)/);
-  assert.match(permissions, /const adminAwareRule = typeof input === "function"/);
-  assert.match(permissions, /policy\.privateNotes\.allowRead\.where\(session\.where\(\{ "claims\.role": "admin" \}\)\)/);
-  assert.match(permissions, /return anyOf\(\[session\.where\(\{ "claims\.role": "admin" \}\), configuredRule\]\)/);
-  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowInsert, false\)/);
+  assert.match(permissions, /const adminAwareInput = \(input: unknown\) => typeof input === "function"/);
+  assert.match(permissions, /policy\.privateNotes\.allowRead\.where\(bebopAdmin\)/);
+  assert.match(permissions, /return anyOf\(\[bebopAdmin, configuredRule\]\)/);
+  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowInsert, true\)/);
+  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowUpdate, true\)/);
+  assert.match(permissions, /rule: bebopRule\(policy\.tasks\.allowDelete, true\)/);
   assert.match(permissions, /legacyRecordsAccess\.read!\(\{ row, session, allOf, anyOf, exists, isCreator \}\)/);
 });
 
@@ -314,7 +316,7 @@ test("omitted and empty access rules default every operation to authenticated se
       assert.match(permissions, new RegExp(`policy\\.${collection}\\.allow${operation}\\.where\\(authenticatedSession\\)`));
     }
   }
-  assert.doesNotMatch(permissions, /\.always\(\)/);
+  assert.doesNotMatch(permissions, /policy\.(?:posts|privateNotes)\.allow\w+\.always\(\)/);
   assert.match(permissions, /Unspecified access defaults to authenticated sessions/);
 });
 
@@ -396,7 +398,7 @@ test("command collection read callbacks can return booleans", () => {
   }] }));
 
   assert.match(artifacts.permissions, /const configuredRule = typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
-  assert.match(artifacts.permissions, /return anyOf\(\[session\.where\(\{ "claims\.role": "admin" \}\), configuredRule\]\)/);
+  assert.match(artifacts.permissions, /return anyOf\(\[bebopAdmin, configuredRule\]\)/);
   assert.match(artifacts.authorizationPermissions, /const configuredRule = typeof result === "boolean" \? \(result \? allOf\(\[\]\) : anyOf\(\[\]\)\)/);
 });
 

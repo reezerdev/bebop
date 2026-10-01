@@ -1,6 +1,6 @@
 # Schema evolution with local data
 
-This walkthrough uses `examples/basic` and the pinned `jazz-tools@2.0.0-alpha.57`. It demonstrates an additive optional field while keeping the same application ID and browser profile, so existing browser-local Jazz records remain available.
+This walkthrough uses `examples/basic` and the pinned `jazz-tools@2.0.0-alpha.58`. It demonstrates an additive optional field while keeping the same application ID and browser profile, so existing browser-local Jazz records remain available.
 
 The example commits an initial Jazz schema snapshot at `examples/basic/migrations/snapshots/20260928T173729-1f10b274c23c.json`. That snapshot gives Jazz a version to compare against when the schema changes. Keep snapshots and any reviewed migration files in source control.
 
@@ -36,7 +36,7 @@ pnpm --filter @bebopdev/example-basic check
 pnpm --filter @bebopdev/example-basic exec jazz-tools migrations create --name add-todo-priority
 ```
 
-Review the new diff in `bebop-generated-schema.ts`, the generated migration stub, and the new snapshot. For this optional enum column, alpha.57 infers `s.add.enum("low", "normal", "high", { default: null })`, so rows written with the old schema receive an unset value when read through the new schema. Confirm that default is right for the app, then keep the reviewed migration and snapshot in source control. The command records a schema transition; it does not inspect or reset local data. Other changes may need a custom migration, and some compatible transitions may not need a reviewed row transform.
+Review the new diff in `bebop-generated-schema.ts`, the generated migration stub, and the new snapshot. For this optional enum column, alpha.58 infers `s.add.enum("low", "normal", "high", { default: null })`, so rows written with the old schema receive an unset value when read through the new schema. Confirm that default is right for the app, then keep the reviewed migration and snapshot in source control. The command records a schema transition; it does not inspect or reset local data. Other changes may need a custom migration, and some compatible transitions may not need a reviewed row transform.
 
 Restart the example with the same `appId` and browser profile, open `/admin`, and confirm that the Todos created before the change still appear. The new `priority` field should be unset on old rows. Set it on one row, refresh, and verify both old and edited records remain.
 

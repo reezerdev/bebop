@@ -7,7 +7,7 @@ import { useDb } from "jazz-tools/react";
 
 import type { PermissionAdvice } from "jazz-tools";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import type { BebopAdminCollection, BebopAdminJoinField, BebopAdminManifest, BebopAdminStoredField } from "../../../types.js";
 
@@ -48,14 +48,17 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultColumns);
   const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>({ field: defaultColumns[0] ?? "id", direction: "asc" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [page, setPage] = useState(1);
   const selectAllCheckbox = useRef<HTMLInputElement>(null);
   const [createAdvice, setCreateAdvice] = useState<PermissionAdvice>("unknown");
   const where = useMemo(() => relation ? { [relation.storageName]: parentId } : {}, [parentId, relation]);
   const sortField = target ? fieldByName(target, sort.field) : undefined;
   const storedSortField = sortField && sortField.kind !== "join" ? sortField.storageName : "id";
-  const { rows: rowResult, ids: idResult } = useAdminRows(client, field.collection, {
+  const { rows: rowResult, hasNextPage } = useAdminRows(client, field.collection, {
     where,
     sort: { field: storedSortField, direction: sort.direction },
+    page,
+    pageSize: 25,
     searchActive: false,
     enabled: Boolean(target && relation && targetTable),
     writeMode: target?.writeMode,
@@ -72,7 +75,6 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
   const allColumns = columnsAvailable.map((candidate) => candidate.name);
   const visible = allColumns.filter((name) => visibleColumns.includes(name));
   const linkedColumn = visible[0];
-  const totalRows = idResult.data?.length ?? 0;
   const readDenied = target?.writeMode !== "command" && rows.some((row) => readPermissions[row.id] === "denied");
   const createAllowed = field.admin?.allowCreate !== false;
 
@@ -80,7 +82,11 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
     setVisibleColumns(defaultColumns);
     setSort({ field: defaultColumns[0] ?? "id", direction: "asc" });
     setSelectedIds(new Set());
+    setPage(1);
   }, [defaultColumns]);
+
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [parentId, sort]);
+  useEffect(() => { if (!rowsLoading && rows.length === 0 && page > 1) setPage((current) => current - 1); }, [page, rows.length, rowsLoading]);
 
   useEffect(() => {
     if (selectAllCheckbox.current) selectAllCheckbox.current.indeterminate = someRowsSelected && !allRowsSelected;
@@ -156,11 +162,11 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
       {createAllowed && createAdvice === "denied" && <p className="mb-3 text-sm text-muted-foreground" role="status">Your current session cannot add records to this list.</p>}
       {rowsError ? (
         <div className="py-10 text-center text-sm text-destructive">Could not load related documents: {rowsError.message}</div>
-      ) : rowsLoading || idResult.isLoading ? (
+      ) : rowsLoading ? (
         <div className="py-10 text-center text-sm text-muted-foreground">Loading {targetCollection?.labels.plural.toLocaleLowerCase() ?? "records"}…</div>
       ) : !targetCollection || !relation ? (
         <div className="py-10 text-center text-sm text-destructive">The generated join relation is missing or invalid.</div>
-      ) : totalRows === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="py-10 text-center">
           <p className="text-sm font-medium">{rows.length ? "No matching documents" : `No ${targetCollection.labels.plural.toLocaleLowerCase()} yet`}</p>
           <p className="mt-1 text-sm text-muted-foreground">{rows.length ? "Try another search." : `Records related to this ${source.labels.singular.toLocaleLowerCase()} will appear here.`}</p>
@@ -199,6 +205,13 @@ export function JoinFieldPanel({ app, client, manifest, source, field, parentId,
                   </TableRow>)}
               </TableBody>
             </Table>
+            <div className="flex items-center justify-between px-3 py-3 text-xs text-muted-foreground">
+              <span>{rows.length ? `${(page - 1) * 25 + 1}–${(page - 1) * 25 + rows.length}${hasNextPage ? "+" : ""}` : "0"}</span>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" aria-label="Previous related records page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={16} /></Button>
+                <Button variant="ghost" size="icon" aria-label="Next related records page" disabled={!hasNextPage} onClick={() => setPage((current) => current + 1)}><ChevronRight size={16} /></Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -41,7 +41,7 @@ V1 is not a complete content publishing platform. It does not include drafts, re
 - Search configured text fields with Jazz `contains` queries and query unions instead of scanning full document rows in the browser.
 - Deduplicate multi-field search matches, sort and paginate results, and bound document rows to the requested page. Exact counts use ID-only queries because the pinned Jazz API does not expose a count aggregate.
 - Support interactive lists and search for collections up to 10,000 documents as a target, not as a performance guarantee. Measure larger or unusually large records before adopting.
-- Verify each query and permission behavior against `jazz-tools@2.0.0-alpha.57`.
+- Verify each query and permission behavior against `jazz-tools@2.0.0-alpha.58`.
 
 ### 5. Schema evolution and release workflow
 

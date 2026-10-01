@@ -188,9 +188,19 @@ export function createBebopBetterAuth<const Plugins extends readonly BetterAuthP
       ...plugins,
       jwt({
         jwks: { keyPairConfig: { alg: "ES256" } },
-        jwt: { issuer: baseURL, audience: baseURL },
+        jwt: {
+          issuer: baseURL,
+          audience: baseURL,
+          definePayload: ({ user }) => ({
+            ...user,
+            // Better Auth adminUserIds grants plugin access without changing
+            // the persisted role. Carry the verified result into Jazz so its
+            // row policies can apply the same administrator privileges.
+            bebopAdmin: isAdmin(user),
+          }),
+        },
       }),
       admin(adminOptions as Parameters<typeof admin>[0]),
     ],
-  }) as BebopBetterAuth<Plugins>;
+  }) as unknown as BebopBetterAuth<Plugins>;
 }

@@ -22,20 +22,22 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
     "better_auth_verification": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.better_auth_verification.exists.where(input as never) } },
     "better_auth_jwks": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.better_auth_jwks.exists.where(input as never) } }
   };
-  const adminRead = session.where({ "claims.role": "admin" });
-  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }, includeAdminRead = false) => ({
+  const bebopAdmin = anyOf([session.where({ "claims.role": "admin" }), session.where({ "claims.bebopAdmin": true })]);
+  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }, includeAdminOverride = false) => {
+    const adminAwareInput = (input: unknown) => typeof input === "function"
+      ? (row: never) => anyOf([bebopAdmin, (input as (row: never) => never)(row)])
+      : anyOf([bebopAdmin, input as never]);
+    return {
     where: (input: unknown) => {
-      if (!includeAdminRead) return builder.where(input as never);
-      const adminAwareRule = typeof input === "function"
-        ? (row: never) => anyOf([adminRead, (input as (row: never) => never)(row)])
-        : anyOf([adminRead, input as never]);
-      return builder.where(adminAwareRule as never);
+      if (!includeAdminOverride) return builder.where(input as never);
+      return builder.where(adminAwareInput(input) as never);
     },
     always: () => builder.always(),
-    never: () => includeAdminRead ? builder.where(adminRead as never) : builder.never(),
-    whereOld(input: unknown) { builder.whereOld?.(input as never); return this; },
-    whereNew(input: unknown) { builder.whereNew?.(input as never); return this; },
-  });
+    never: () => includeAdminOverride ? builder.where(bebopAdmin as never) : builder.never(),
+    whereOld(input: unknown) { builder.whereOld?.(includeAdminOverride ? adminAwareInput(input) as never : input as never); return this; },
+    whereNew(input: unknown) { builder.whereNew?.(includeAdminOverride ? adminAwareInput(input) as never : input as never); return this; },
+    };
+  };
 
   const mediaReadPermissions = bebopConfig.collections[1].permissions;
   if (mediaReadPermissions?.read) {
@@ -45,37 +47,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.media.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.media.allowRead.where(bebopAdmin);
   }
   const mediaInsertPermissions = bebopConfig.collections[1].permissions;
   if (mediaInsertPermissions?.insert) {
     mediaInsertPermissions?.insert({
-      rule: bebopRule(policy.media.allowInsert, false),
+      rule: bebopRule(policy.media.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.media.allowInsert.never();
+    policy.media.allowInsert.where(bebopAdmin);
   }
   const mediaUpdatePermissions = bebopConfig.collections[1].permissions;
   if (mediaUpdatePermissions?.update) {
     mediaUpdatePermissions?.update({
-      rule: bebopRule(policy.media.allowUpdate, false),
+      rule: bebopRule(policy.media.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.media.allowUpdate.never();
+    policy.media.allowUpdate.where(bebopAdmin);
   }
   const mediaDeletePermissions = bebopConfig.collections[1].permissions;
   if (mediaDeletePermissions?.delete) {
     mediaDeletePermissions?.delete({
-      rule: bebopRule(policy.media.allowDelete, false),
+      rule: bebopRule(policy.media.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.media.allowDelete.never();
+    policy.media.allowDelete.where(bebopAdmin);
   }
   const workspacesReadPermissions = bebopConfig.collections[2].permissions;
   if (workspacesReadPermissions?.read) {
@@ -85,37 +87,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaces.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.workspaces.allowRead.where(bebopAdmin);
   }
   const workspacesInsertPermissions = bebopConfig.collections[2].permissions;
   if (workspacesInsertPermissions?.insert) {
     workspacesInsertPermissions?.insert({
-      rule: bebopRule(policy.workspaces.allowInsert, false),
+      rule: bebopRule(policy.workspaces.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaces.allowInsert.never();
+    policy.workspaces.allowInsert.where(bebopAdmin);
   }
   const workspacesUpdatePermissions = bebopConfig.collections[2].permissions;
   if (workspacesUpdatePermissions?.update) {
     workspacesUpdatePermissions?.update({
-      rule: bebopRule(policy.workspaces.allowUpdate, false),
+      rule: bebopRule(policy.workspaces.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaces.allowUpdate.never();
+    policy.workspaces.allowUpdate.where(bebopAdmin);
   }
   const workspacesDeletePermissions = bebopConfig.collections[2].permissions;
   if (workspacesDeletePermissions?.delete) {
     workspacesDeletePermissions?.delete({
-      rule: bebopRule(policy.workspaces.allowDelete, false),
+      rule: bebopRule(policy.workspaces.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaces.allowDelete.never();
+    policy.workspaces.allowDelete.where(bebopAdmin);
   }
   const workspaceMembershipsReadPermissions = bebopConfig.collections[3].permissions;
   if (workspaceMembershipsReadPermissions?.read) {
@@ -125,37 +127,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaceMemberships.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.workspaceMemberships.allowRead.where(bebopAdmin);
   }
   const workspaceMembershipsInsertPermissions = bebopConfig.collections[3].permissions;
   if (workspaceMembershipsInsertPermissions?.insert) {
     workspaceMembershipsInsertPermissions?.insert({
-      rule: bebopRule(policy.workspaceMemberships.allowInsert, false),
+      rule: bebopRule(policy.workspaceMemberships.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaceMemberships.allowInsert.never();
+    policy.workspaceMemberships.allowInsert.where(bebopAdmin);
   }
   const workspaceMembershipsUpdatePermissions = bebopConfig.collections[3].permissions;
   if (workspaceMembershipsUpdatePermissions?.update) {
     workspaceMembershipsUpdatePermissions?.update({
-      rule: bebopRule(policy.workspaceMemberships.allowUpdate, false),
+      rule: bebopRule(policy.workspaceMemberships.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaceMemberships.allowUpdate.never();
+    policy.workspaceMemberships.allowUpdate.where(bebopAdmin);
   }
   const workspaceMembershipsDeletePermissions = bebopConfig.collections[3].permissions;
   if (workspaceMembershipsDeletePermissions?.delete) {
     workspaceMembershipsDeletePermissions?.delete({
-      rule: bebopRule(policy.workspaceMemberships.allowDelete, false),
+      rule: bebopRule(policy.workspaceMemberships.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.workspaceMemberships.allowDelete.never();
+    policy.workspaceMemberships.allowDelete.where(bebopAdmin);
   }
   const tasksReadPermissions = bebopConfig.collections[4].permissions;
   if (tasksReadPermissions?.read) {
@@ -165,37 +167,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.tasks.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.tasks.allowRead.where(bebopAdmin);
   }
   const tasksInsertPermissions = bebopConfig.collections[4].permissions;
   if (tasksInsertPermissions?.insert) {
     tasksInsertPermissions?.insert({
-      rule: bebopRule(policy.tasks.allowInsert, false),
+      rule: bebopRule(policy.tasks.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.tasks.allowInsert.never();
+    policy.tasks.allowInsert.where(bebopAdmin);
   }
   const tasksUpdatePermissions = bebopConfig.collections[4].permissions;
   if (tasksUpdatePermissions?.update) {
     tasksUpdatePermissions?.update({
-      rule: bebopRule(policy.tasks.allowUpdate, false),
+      rule: bebopRule(policy.tasks.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.tasks.allowUpdate.never();
+    policy.tasks.allowUpdate.where(bebopAdmin);
   }
   const tasksDeletePermissions = bebopConfig.collections[4].permissions;
   if (tasksDeletePermissions?.delete) {
     tasksDeletePermissions?.delete({
-      rule: bebopRule(policy.tasks.allowDelete, false),
+      rule: bebopRule(policy.tasks.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.tasks.allowDelete.never();
+    policy.tasks.allowDelete.where(bebopAdmin);
   }
   const channelsReadPermissions = bebopConfig.collections[5].permissions;
   if (channelsReadPermissions?.read) {
@@ -205,37 +207,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.channels.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.channels.allowRead.where(bebopAdmin);
   }
   const channelsInsertPermissions = bebopConfig.collections[5].permissions;
   if (channelsInsertPermissions?.insert) {
     channelsInsertPermissions?.insert({
-      rule: bebopRule(policy.channels.allowInsert, false),
+      rule: bebopRule(policy.channels.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.channels.allowInsert.never();
+    policy.channels.allowInsert.where(bebopAdmin);
   }
   const channelsUpdatePermissions = bebopConfig.collections[5].permissions;
   if (channelsUpdatePermissions?.update) {
     channelsUpdatePermissions?.update({
-      rule: bebopRule(policy.channels.allowUpdate, false),
+      rule: bebopRule(policy.channels.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.channels.allowUpdate.never();
+    policy.channels.allowUpdate.where(bebopAdmin);
   }
   const channelsDeletePermissions = bebopConfig.collections[5].permissions;
   if (channelsDeletePermissions?.delete) {
     channelsDeletePermissions?.delete({
-      rule: bebopRule(policy.channels.allowDelete, false),
+      rule: bebopRule(policy.channels.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.channels.allowDelete.never();
+    policy.channels.allowDelete.where(bebopAdmin);
   }
   const streamsReadPermissions = bebopConfig.collections[6].permissions;
   if (streamsReadPermissions?.read) {
@@ -245,37 +247,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streams.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.streams.allowRead.where(bebopAdmin);
   }
   const streamsInsertPermissions = bebopConfig.collections[6].permissions;
   if (streamsInsertPermissions?.insert) {
     streamsInsertPermissions?.insert({
-      rule: bebopRule(policy.streams.allowInsert, false),
+      rule: bebopRule(policy.streams.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streams.allowInsert.never();
+    policy.streams.allowInsert.where(bebopAdmin);
   }
   const streamsUpdatePermissions = bebopConfig.collections[6].permissions;
   if (streamsUpdatePermissions?.update) {
     streamsUpdatePermissions?.update({
-      rule: bebopRule(policy.streams.allowUpdate, false),
+      rule: bebopRule(policy.streams.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streams.allowUpdate.never();
+    policy.streams.allowUpdate.where(bebopAdmin);
   }
   const streamsDeletePermissions = bebopConfig.collections[6].permissions;
   if (streamsDeletePermissions?.delete) {
     streamsDeletePermissions?.delete({
-      rule: bebopRule(policy.streams.allowDelete, false),
+      rule: bebopRule(policy.streams.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streams.allowDelete.never();
+    policy.streams.allowDelete.where(bebopAdmin);
   }
   const streamMembershipsReadPermissions = bebopConfig.collections[7].permissions;
   if (streamMembershipsReadPermissions?.read) {
@@ -285,37 +287,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streamMemberships.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.streamMemberships.allowRead.where(bebopAdmin);
   }
   const streamMembershipsInsertPermissions = bebopConfig.collections[7].permissions;
   if (streamMembershipsInsertPermissions?.insert) {
     streamMembershipsInsertPermissions?.insert({
-      rule: bebopRule(policy.streamMemberships.allowInsert, false),
+      rule: bebopRule(policy.streamMemberships.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streamMemberships.allowInsert.never();
+    policy.streamMemberships.allowInsert.where(bebopAdmin);
   }
   const streamMembershipsUpdatePermissions = bebopConfig.collections[7].permissions;
   if (streamMembershipsUpdatePermissions?.update) {
     streamMembershipsUpdatePermissions?.update({
-      rule: bebopRule(policy.streamMemberships.allowUpdate, false),
+      rule: bebopRule(policy.streamMemberships.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streamMemberships.allowUpdate.never();
+    policy.streamMemberships.allowUpdate.where(bebopAdmin);
   }
   const streamMembershipsDeletePermissions = bebopConfig.collections[7].permissions;
   if (streamMembershipsDeletePermissions?.delete) {
     streamMembershipsDeletePermissions?.delete({
-      rule: bebopRule(policy.streamMemberships.allowDelete, false),
+      rule: bebopRule(policy.streamMemberships.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.streamMemberships.allowDelete.never();
+    policy.streamMemberships.allowDelete.where(bebopAdmin);
   }
   const entriesReadPermissions = bebopConfig.collections[8].permissions;
   if (entriesReadPermissions?.read) {
@@ -325,37 +327,37 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.entries.allowRead.where(session.where({ "claims.role": "admin" }));
+    policy.entries.allowRead.where(bebopAdmin);
   }
   const entriesInsertPermissions = bebopConfig.collections[8].permissions;
   if (entriesInsertPermissions?.insert) {
     entriesInsertPermissions?.insert({
-      rule: bebopRule(policy.entries.allowInsert, false),
+      rule: bebopRule(policy.entries.allowInsert, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.entries.allowInsert.never();
+    policy.entries.allowInsert.where(bebopAdmin);
   }
   const entriesUpdatePermissions = bebopConfig.collections[8].permissions;
   if (entriesUpdatePermissions?.update) {
     entriesUpdatePermissions?.update({
-      rule: bebopRule(policy.entries.allowUpdate, false),
+      rule: bebopRule(policy.entries.allowUpdate, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.entries.allowUpdate.never();
+    policy.entries.allowUpdate.where(bebopAdmin);
   }
   const entriesDeletePermissions = bebopConfig.collections[8].permissions;
   if (entriesDeletePermissions?.delete) {
     entriesDeletePermissions?.delete({
-      rule: bebopRule(policy.entries.allowDelete, false),
+      rule: bebopRule(policy.entries.allowDelete, true),
       collections: bebopCollections,
       session, allOf, anyOf, allowedTo, isCreator,
     });
   } else {
-    policy.entries.allowDelete.never();
+    policy.entries.allowDelete.where(bebopAdmin);
   }
 });
 export default { ...betterAuthPermissions, ...appPermissions };

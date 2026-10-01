@@ -8,7 +8,7 @@ The first-party React admin UI for Bebop collections stored in Jazz. The host ap
 pnpm add @bebopdev/admin @bebopdev/core jazz-tools react react-dom react-router-dom
 ```
 
-The current release targets React 19 and `jazz-tools@2.0.0-alpha.57`.
+The current release targets React 19 and `jazz-tools@2.0.0-alpha.58`.
 
 ## Mount the admin
 

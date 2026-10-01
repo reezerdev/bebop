@@ -9,7 +9,7 @@ pnpm add -D @bebopdev/cli
 pnpm add @bebopdev/core jazz-tools
 ```
 
-The CLI currently requires Node.js 22.12 or newer and targets `jazz-tools@2.0.0-alpha.57`.
+The CLI currently requires Node.js 22.12 or newer and targets `jazz-tools@2.0.0-alpha.58`.
 
 ## Commands
 

@@ -2,7 +2,7 @@
 
 `bebop-generated-client.ts` exports a typed `createBebopClient(db, options?)` factory. This is Bebop's v1 Local API: an app-level interface over the current Jazz replica, with generated collection names, stored fields, select values, required create fields, filters, sorting, pagination, relationships, and mutation durability represented in TypeScript.
 
-The API follows the pinned `jazz-tools@2.0.0-alpha.57` query and write behavior. Keep Jazz-specific upgrades behind the Bebop compiler/client boundary and verify the contract again when changing the pin.
+The API follows the pinned `jazz-tools@2.0.0-alpha.58` query and write behavior. Keep Jazz-specific upgrades behind the Bebop compiler/client boundary and verify the contract again when changing the pin.
 
 ## Reading documents
 

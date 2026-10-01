@@ -232,10 +232,10 @@ function compileAccessCallbackRule(
   accessOperation: string,
   jazzOperation: string,
   indent: string,
-  includeAdminRead = false,
+  includeAdminOverride = false,
 ): string {
-  const compiledRule = includeAdminRead
-    ? `${indent}  return anyOf([session.where({ "claims.role": "admin" }), configuredRule]) as never;`
+  const compiledRule = includeAdminOverride
+    ? `${indent}  return anyOf([bebopAdmin, configuredRule]) as never;`
     : `${indent}  return configuredRule;`;
   return [
     `${indent}policy.${collectionName}.allow${jazzOperation}.where((row) => {`,
@@ -260,14 +260,12 @@ function compileCollectionPermissionCallback(
     `  const ${permissionsName} = bebopConfig.collections[${collectionIndex}].permissions;`,
     `  if (${callbackName}) {`,
     `    ${callbackName}({`,
-    `      rule: bebopRule(${jazzRule}, ${operation === "read"}),`,
+    `      rule: bebopRule(${jazzRule}, true),`,
     `      collections: bebopCollections,`,
     `      session, allOf, anyOf, allowedTo, isCreator,`,
     `    });`,
     `  } else {`,
-    operation === "read"
-      ? `    ${jazzRule}.where(session.where({ "claims.role": "admin" }));`
-      : `    ${jazzRule}.never();`,
+    `    ${jazzRule}.where(bebopAdmin);`,
     `  }`,
   ].join("\n");
 }
@@ -283,20 +281,22 @@ function compileCollectionPermissionHelpers(model: NormalizedConfig): string {
     `    ${JSON.stringify(name)}: { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.${policyName}.exists.where(input as never) } }`,
   ).join(",\n");
   return `\n  const bebopCollections = {\n${collections}\n  };\n` +
-    `  const adminRead = session.where({ "claims.role": "admin" });\n` +
-    `  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }, includeAdminRead = false) => ({\n` +
+    `  const bebopAdmin = anyOf([session.where({ "claims.role": "admin" }), session.where({ "claims.bebopAdmin": true })]);\n` +
+    `  const bebopRule = (builder: { where(input: never): unknown; always(): unknown; never(): unknown; whereOld?(input: never): unknown; whereNew?(input: never): unknown }, includeAdminOverride = false) => {\n` +
+    `    const adminAwareInput = (input: unknown) => typeof input === "function"\n` +
+    `      ? (row: never) => anyOf([bebopAdmin, (input as (row: never) => never)(row)])\n` +
+    `      : anyOf([bebopAdmin, input as never]);\n` +
+    `    return {\n` +
     `    where: (input: unknown) => {\n` +
-    `      if (!includeAdminRead) return builder.where(input as never);\n` +
-    `      const adminAwareRule = typeof input === "function"\n` +
-    `        ? (row: never) => anyOf([adminRead, (input as (row: never) => never)(row)])\n` +
-    `        : anyOf([adminRead, input as never]);\n` +
-    `      return builder.where(adminAwareRule as never);\n` +
+    `      if (!includeAdminOverride) return builder.where(input as never);\n` +
+    `      return builder.where(adminAwareInput(input) as never);\n` +
     `    },\n` +
     `    always: () => builder.always(),\n` +
-    `    never: () => includeAdminRead ? builder.where(adminRead as never) : builder.never(),\n` +
-    `    whereOld(input: unknown) { builder.whereOld?.(input as never); return this; },\n` +
-    `    whereNew(input: unknown) { builder.whereNew?.(input as never); return this; },\n` +
-    `  });\n`;
+    `    never: () => includeAdminOverride ? builder.where(bebopAdmin as never) : builder.never(),\n` +
+    `    whereOld(input: unknown) { builder.whereOld?.(includeAdminOverride ? adminAwareInput(input) as never : input as never); return this; },\n` +
+    `    whereNew(input: unknown) { builder.whereNew?.(includeAdminOverride ? adminAwareInput(input) as never : input as never); return this; },\n` +
+    `    };\n` +
+    `  };\n`;
 }
 
 function compilePermissionsFromModel(
@@ -375,7 +375,7 @@ function compilePermissionsFromModel(
         if (access[accessOperation]) {
           rules.push(
             `  if (${collectionName}Access?.${accessOperation}) {\n` +
-              `${compileAccessCallbackRule(collectionName, accessOperation, jazzOperation, "    ", accessOperation === "read")}\n` +
+              `${compileAccessCallbackRule(collectionName, accessOperation, jazzOperation, "    ", true)}\n` +
               `  }`,
           );
         } else {
@@ -409,7 +409,7 @@ function compilePermissionsFromModel(
   const authenticatedHelper = hasAuthenticatedAccess
     ? `\n  const authenticatedSession = session.where({ authMode: { in: ["external", "local-first"] } });\n`
     : "";
-  const collectionPermissionHelpers = hasCollectionPermissions ? compileCollectionPermissionHelpers(model) : "";
+  const collectionPermissionHelpers = hasCollectionPermissions || hasAccessCallbacks ? compileCollectionPermissionHelpers(model) : "";
   const appPermissions = `const appPermissions = s.definePermissions(app, ({ ${permissionContext} }) => {${existsHelper}${authenticatedHelper}${collectionPermissionHelpers}\n${grants}\n});`;
 
   return `// Generated from bebop.config.ts. Unspecified access defaults to authenticated sessions; omitted Jazz permission operations are denied.\nimport { schema as s } from "jazz-tools";\nimport { app } from "./bebop-generated-schema.js";\n${authImport}${configImport}\n${appPermissions}\n${model.auth ? "export default { ...betterAuthPermissions, ...appPermissions };" : "export default appPermissions;"}\n`;

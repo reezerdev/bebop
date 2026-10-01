@@ -60,6 +60,7 @@ function betterAuthPlugin(): Plugin {
         const isUsersRoute = requestPath === "/api/bebop/users";
         const isAdminSetupRoute = requestPath === "/api/bebop/admin-setup";
         const isAdminAccessRoute = requestPath === "/api/bebop/admin-access";
+        const isWorkspaceCreateRoute = requestPath === "/api/bebop/collections/workspaces" && request.method === "POST";
         const isCommandRoute = requestPath.startsWith("/api/bebop/collections/");
         if (!isAuthRoute && !isUsersRoute && !isAdminSetupRoute && !isAdminAccessRoute && !isCommandRoute) {
           next();
@@ -75,10 +76,11 @@ function betterAuthPlugin(): Plugin {
         ));
 
         void authServerPromise
-          .then(async ({ handler, listUsers, adminSetupStatus, adminAccessHandler, commandHandler }) => {
+          .then(async ({ handler, listUsers, adminSetupStatus, adminAccessHandler, commandHandler, createWorkspaceHandler }) => {
             if (isUsersRoute) return listUsers(request, response);
             if (isAdminSetupRoute) return adminSetupStatus(request, response);
             if (isAdminAccessRoute) return sendWebResponse(await adminAccessHandler(await toWebRequest(request)), response);
+            if (isWorkspaceCreateRoute) return sendWebResponse(await createWorkspaceHandler(await toWebRequest(request)), response);
             if (isCommandRoute) return sendWebResponse(await commandHandler(await toWebRequest(request)), response);
             return handler(request, response);
           })
@@ -113,20 +115,21 @@ function betterAuthPlugin(): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, projectDirectory, "");
-  const baseURL = getBetterAuthURL(env.BETTER_AUTH_URL);
+  const port = Number(process.env.BEBOP_DEV_PORT ?? 5173);
+  const baseURL = getBetterAuthURL(process.env.BETTER_AUTH_URL ?? env.BETTER_AUTH_URL);
 
   // Keep secrets on the Node side. Vite only exposes variables with its VITE_ prefix.
   process.env.BETTER_AUTH_URL = baseURL;
   if (env.BETTER_AUTH_SECRET) process.env.BETTER_AUTH_SECRET ??= env.BETTER_AUTH_SECRET;
 
   return {
-    server: { host: "127.0.0.1", port: 5173, strictPort: true },
+    server: { host: "127.0.0.1", port, strictPort: true },
     plugins: [
       react(),
       jazzPlugin({
         appId: "bebop-first-admin-playground-20260929",
         server: {
-          dataDir: path.join(projectDirectory, "node_modules", ".cache", "bebop-first-admin-20260929-jazz-dev-server"),
+          dataDir: process.env.BEBOP_JAZZ_DATA_DIR ?? path.join(projectDirectory, "node_modules", ".cache", "bebop-first-admin-20260929-jazz-dev-server"),
           jwksUrl: `${baseURL}/api/auth/jwks`,
           jwtIssuer: baseURL,
           jwtAudience: baseURL,

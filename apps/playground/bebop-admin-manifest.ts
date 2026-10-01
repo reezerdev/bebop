@@ -289,7 +289,7 @@ export const bebopAdminManifest = {
         "name",
         "slug"
       ],
-      "writeMode": "direct"
+      "writeMode": "command"
     },
     "workspaceMemberships": {
       "slug": "workspaceMemberships",

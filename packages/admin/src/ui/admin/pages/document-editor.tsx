@@ -26,6 +26,7 @@ import { getTable, getMutations } from "../data-access.js";
 
 import { formatDate, valueFor, collectionTitleFields, composeCollectionTitle, recordTitle, storedFields } from "../record-values.js";
 import { initialValues, serializeValues } from "../form-values.js";
+import { remoteChangeAction } from "../editor-conflict.js";
 
 import { JoinNavigationContext } from "../join-context.js";
 
@@ -49,12 +50,15 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
   const table = getTable(app, collection.slug);
   const documentQuery = id ? getMutations(client, collection.slug)?.query({ where: { id }, includeTimestamps: true }) : undefined;
   const { data: existing, isLoading, error } = useOne<AdminRecord>(documentQuery, collection.writeMode === "command" ? { tier: "remote" } : undefined);
+  const existingVersion = existing ? JSON.stringify(existing) : undefined;
   const createFieldDefaults = useMemo(() => ({
     ...createDefaults,
     ...(joinContext && !id ? { [joinContext.relationship.name]: joinContext.parentId } : {}),
   }), [createDefaults, id, joinContext]);
   const form = useForm<FieldValues>({ defaultValues: id ? {} : initialValues(collection, undefined, createFieldDefaults) });
   const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting, isDirty, dirtyFields } } = form;
+  const baselineVersion = useRef<string | null>(null);
+  const [remoteChanged, setRemoteChanged] = useState(false);
   const [permissionAdvice, setPermissionAdvice] = useState<PermissionAdvice>("unknown");
   const [readAdvice, setReadAdvice] = useState<PermissionAdvice>("unknown");
   const [saveError, setSaveError] = useState<string>();
@@ -101,8 +105,34 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
   useEffect(() => { if (!modal) setDocumentBreadcrumb(id ? title : undefined); }, [id, modal, setDocumentBreadcrumb, title]);
 
   useEffect(() => {
-    if (existing) reset(initialValues(collection, existing));
-  }, [collection, existing, reset]);
+    if (!existing || existingVersion === undefined) return;
+    if (baselineVersion.current === null) {
+      baselineVersion.current = existingVersion;
+      reset(initialValues(collection, existing));
+      return;
+    }
+    const action = remoteChangeAction({
+      baseline: baselineVersion.current,
+      latest: existingVersion,
+      dirty: isDirty,
+      conflict: remoteChanged,
+    });
+    if (action === "unchanged") return;
+    if (action === "preserve-draft") {
+      setRemoteChanged(true);
+      return;
+    }
+    baselineVersion.current = existingVersion;
+    reset(initialValues(collection, existing));
+  }, [collection, existing, existingVersion, isDirty, remoteChanged, reset]);
+
+  function reloadRemoteVersion() {
+    if (!existing || existingVersion === undefined) return;
+    baselineVersion.current = existingVersion;
+    reset(initialValues(collection, existing));
+    setRemoteChanged(false);
+    setSaveError(undefined);
+  }
 
   useEffect(() => {
     if (id || !createFieldDefaults) return;
@@ -171,6 +201,10 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
   if (id && collection.writeMode !== "command" && readAdvice === "denied") return <div className="py-16 text-center text-sm text-destructive" role="alert">Your current session cannot read this document.</div>;
 
   async function save(values: FieldValues) {
+    if (remoteChanged) {
+      setSaveError("This document changed elsewhere. Reload the latest version before saving.");
+      return;
+    }
     const document = serializeValues(collection, values);
     setSaveError(undefined);
     try {
@@ -313,12 +347,16 @@ export function DocumentEditor({ app, client, manifest, collection, id, createDe
           </> : <span className="text-muted-foreground">{modal ? `${id ? "Editing" : "Creating new"} ${collection.labels.singular}` : "New document"}</span>}
           actions={
             <>
-              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : modal || id ? "Save" : "Create"}</Button>
+              <Button variant="secondary" size="sm" type="submit" className="normal-case tracking-normal" disabled={isSubmitting || saveApplied || remoteChanged || permissionAdvice === "denied" || Boolean(id && !isDirty && !selectedFile)}>{saveApplied ? "Local write applied" : modal || id ? "Save" : "Create"}</Button>
               <Button variant="outline" size="sm" type="button" className="normal-case tracking-normal" onClick={() => modal ? modal.onClose() : navigate(joinReturnPath ?? `/admin/collections/${collection.slug}`)}>Cancel</Button>
             </>
           }
         />
         {permissionAdvice === "denied" && <p className="border-b border-border py-3 text-[13px] text-destructive" role="status">{id ? "Your current session cannot update this document." : "Your current session cannot create this document."}</p>}
+        {remoteChanged && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 py-3 text-[13px]" role="alert">
+          <span>This document changed elsewhere. Your draft is preserved, and saving is paused until you reload the latest version.</span>
+          <Button type="button" variant="outline" size="sm" onClick={reloadRemoteVersion}>Reload latest</Button>
+        </div>}
         {saveError && <p className="border-b border-border py-3 text-[13px] text-destructive" role="alert">{saveError}</p>}
         {saveApplied && !saveError && <p className="border-b border-border py-3 text-[13px] text-muted-foreground" role="status">The local change was applied. Jazz may still be syncing it.</p>}
         <fieldset disabled={Boolean(saveApplied || (id && permissionAdvice === "denied"))} className={`m-0 grid min-w-0 grid-cols-1 border-0 p-0 ${sidebarFields.length ? "lg:grid-cols-[minmax(0,1fr)_minmax(260px,31%)]" : ""}`}>

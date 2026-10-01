@@ -9,7 +9,6 @@ type UserOption = { id: string; name: string };
 type WorkspaceForm = { name: string; slug: string };
 type TaskForm = {
   name: string;
-  workspaceId: string;
   content: string;
   priority: "" | "low" | "medium" | "high" | "urgent";
   parentTaskId: string;
@@ -20,7 +19,7 @@ type TaskForm = {
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const taskDefaults: TaskForm = {
-  name: "", workspaceId: "", content: "", priority: "", parentTaskId: "", assigneeId: "", status: "todo", dueAt: "",
+  name: "", content: "", priority: "", parentTaskId: "", assigneeId: "", status: "todo", dueAt: "",
 };
 
 function slugify(value: string): string {
@@ -36,26 +35,41 @@ export function PlaygroundPage({
   currentUserName: string;
   authors: readonly UserOption[];
 }) {
-  const { data: workspaces } = useAll(client.workspaces.query());
-  const { data: tasks } = useAll(client.tasks.query({ includeTimestamps: true }));
-  const { data: memberships } = useAll(client.workspaceMemberships.query());
+  const { data: memberships } = useAll(client.workspaceMemberships.query({ where: { userId: currentUserId, status: "active" } }));
+  const membershipIds = (memberships ?? []).map((membership) => membership.workspaceId).filter((id): id is string => typeof id === "string");
+  const { data: workspaces } = useAll(membershipIds.length ? client.workspaces.query({ where: { id: { in: membershipIds } } }) : undefined);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+  const { data: tasks } = useAll(selectedWorkspaceId ? client.tasks.query({ where: { workspaceId: selectedWorkspaceId }, includeTimestamps: true }) : undefined);
   const [mutationError, setMutationError] = useState<string>();
+  const [workspaceName, setWorkspaceName] = useState("");
   const workspaceForm = useForm<WorkspaceForm>({ defaultValues: { name: "", slug: "" } });
   const taskForm = useForm<TaskForm>({ defaultValues: { ...taskDefaults, assigneeId: currentUserId } });
   const { setValue, formState: { dirtyFields } } = taskForm;
-  const selectedWorkspaceId = taskForm.watch("workspaceId");
   const workspaceNames = useMemo(() => new Map((workspaces ?? []).map((workspace) => [workspace.id, workspace.name])), [workspaces]);
+  const canRenameSelectedWorkspace = (memberships ?? []).some((membership) =>
+    membership.workspaceId === selectedWorkspaceId && membership.role === "admin",
+  );
   const authorNames = useMemo(() => {
     const names = new Map(authors.map((author) => [author.id, author.name]));
     if (currentUserId) names.set(currentUserId, currentUserName || "You");
     return names;
   }, [authors, currentUserId, currentUserName]);
-  const activeTasks = (tasks ?? []).filter((task) => !task.archivedAt && (!selectedWorkspaceId || task.workspaceId === selectedWorkspaceId));
-  const parentOptions = (tasks ?? []).filter((task) => !task.archivedAt && task.workspaceId === selectedWorkspaceId);
+  const activeTasks = (tasks ?? []).filter((task) => !task.archivedAt);
+  const parentOptions = activeTasks;
 
   useEffect(() => {
-    if (workspaces?.length && !selectedWorkspaceId) setValue("workspaceId", workspaces[0].id);
-  }, [selectedWorkspaceId, setValue, workspaces]);
+    if (workspaces?.length && !selectedWorkspaceId) {
+      setSelectedWorkspaceId(workspaces[0].id);
+      setWorkspaceName(workspaces[0].name);
+    } else if (selectedWorkspaceId) {
+      const selected = workspaces?.find((workspace) => workspace.id === selectedWorkspaceId);
+      if (selected) setWorkspaceName(selected.name);
+    }
+  }, [selectedWorkspaceId, workspaces]);
+
+  useEffect(() => {
+    setValue("parentTaskId", "", { shouldDirty: false });
+  }, [selectedWorkspaceId, setValue]);
 
   useEffect(() => {
     if (currentUserId && !dirtyFields.assigneeId) setValue("assigneeId", currentUserId);
@@ -81,20 +95,23 @@ export function PlaygroundPage({
     }
     try {
       const workspace = await client.workspaces.create({ name, slug });
-      taskForm.setValue("workspaceId", workspace.doc.id);
+      await workspace.waitForGlobal();
+      setSelectedWorkspaceId(workspace.doc.id);
+      setWorkspaceName(workspace.doc.name);
       workspaceForm.reset({ name: "", slug: "" });
-      if (currentUserId) {
-        try {
-          // Memberships are confirmed by the server, which must see the new
-          // workspace before it can create a relationship to it.
-          await workspace.waitForGlobal();
-          await client.workspaceMemberships.create({ workspaceId: workspace.doc.id, userId: currentUserId, role: "admin", status: "active" });
-        } catch (error) {
-          setMutationError(error instanceof Error ? `Workspace created, but membership creation failed: ${error.message}` : "Workspace created, but membership creation failed.");
-        }
-      }
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Could not create workspace.");
+    }
+  }
+
+  async function renameWorkspace() {
+    if (!selectedWorkspaceId || !workspaceName.trim()) return;
+    setMutationError(undefined);
+    try {
+      const result = await client.workspaces.update(selectedWorkspaceId, { name: workspaceName.trim() });
+      await result.waitForGlobal();
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : "Could not rename workspace.");
     }
   }
 
@@ -104,10 +121,14 @@ export function PlaygroundPage({
       setMutationError("Sign in before creating a task.");
       return;
     }
+    if (!selectedWorkspaceId) {
+      setMutationError("Create or select a workspace before creating a task.");
+      return;
+    }
     try {
       await client.tasks.create({
         name: values.name.trim(),
-        workspaceId: values.workspaceId,
+        workspaceId: selectedWorkspaceId,
         authorId: currentUserId,
         status: values.status,
         ...(values.content.trim() ? { content: values.content.trim() } : {}),
@@ -116,7 +137,7 @@ export function PlaygroundPage({
         ...(values.assigneeId ? { assigneeId: values.assigneeId } : {}),
         ...(values.dueAt ? { dueAt: new Date(values.dueAt) } : {}),
       });
-      taskForm.reset({ ...taskDefaults, workspaceId: values.workspaceId, assigneeId: currentUserId });
+      taskForm.reset({ ...taskDefaults, assigneeId: currentUserId });
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Could not create task.");
     }
@@ -154,6 +175,17 @@ export function PlaygroundPage({
       <section className="playground-workspace" aria-label="Tasks playground">
         <div className="playground-composer">
           {mutationError && <p className="playground-field-error" role="alert">{mutationError}</p>}
+          <div className="playground-section-label"><span>00</span> CURRENT WORKSPACE</div>
+          <label htmlFor="selected-workspace">Workspace</label>
+          <select id="selected-workspace" value={selectedWorkspaceId} onChange={(event) => { setSelectedWorkspaceId(event.target.value); setWorkspaceName(workspaces?.find((workspace) => workspace.id === event.target.value)?.name ?? ""); }}>
+            <option value="">Select a workspace</option>
+            {(workspaces ?? []).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+          </select>
+          {selectedWorkspaceId && canRenameSelectedWorkspace && <div className="playground-workspace-rename">
+            <label htmlFor="workspace-rename">Rename workspace</label>
+            <input id="workspace-rename" value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} />
+            <button type="button" className="playground-create-button" onClick={() => void renameWorkspace()}>Save name</button>
+          </div>}
           <form onSubmit={workspaceForm.handleSubmit(createWorkspace)}>
             <div className="playground-section-label"><span>01</span> NEW WORKSPACE</div>
             <label htmlFor="workspace-name">Name</label>
@@ -167,12 +199,6 @@ export function PlaygroundPage({
 
           <form className="playground-task-form" onSubmit={taskForm.handleSubmit(createTask)}>
             <div className="playground-section-label"><span>02</span> NEW TASK</div>
-            <label htmlFor="task-workspace">Workspace</label>
-            <select id="task-workspace" {...taskForm.register("workspaceId", { required: "Create or choose a workspace." })}>
-              <option value="">Select a workspace</option>
-              {(workspaces ?? []).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
-            </select>
-            {taskForm.formState.errors.workspaceId && <p className="playground-field-error" role="alert">{taskForm.formState.errors.workspaceId.message}</p>}
             <label htmlFor="task-name">Name</label>
             <input id="task-name" {...taskForm.register("name", { validate: (value) => !!value.trim() || "Enter a task name." })} placeholder="Plan the next release" />
             {taskForm.formState.errors.name && <p className="playground-field-error" role="alert">{taskForm.formState.errors.name.message}</p>}
@@ -198,7 +224,7 @@ export function PlaygroundPage({
             </select>
             <label htmlFor="task-due-at">Due at <span className="playground-optional">OPTIONAL</span></label>
             <input id="task-due-at" type="datetime-local" {...taskForm.register("dueAt")} />
-            <button className="playground-create-button" type="submit" disabled={taskForm.formState.isSubmitting || !workspaces?.length}>Create task <span>↗</span></button>
+            <button className="playground-create-button" type="submit" disabled={taskForm.formState.isSubmitting || !selectedWorkspaceId}>Create task <span>↗</span></button>
             <p className="playground-form-note">Author: {currentUserName || "current user"}. Writes save locally first.</p>
           </form>
         </div>
@@ -208,7 +234,7 @@ export function PlaygroundPage({
             <div><div className="playground-section-label"><span>03</span> YOUR TASKS</div><h2>Tasks <span className="playground-count">{activeTasks.length}</span></h2></div>
             <span className="playground-storage-label">LOCAL DATA</span>
           </div>
-          <p className="playground-form-note">{(memberships ?? []).filter((membership) => membership.userId === currentUserId && membership.status === "active").length} active workspace memberships</p>
+          <p className="playground-form-note">{selectedWorkspaceId ? `Showing tasks in ${workspaceNames.get(selectedWorkspaceId) ?? "your workspace"}.` : "Select a workspace to view tasks."}</p>
           {!activeTasks.length ? (
             <div className="playground-empty-state"><span className="playground-empty-icon">✳</span><p>No tasks yet.</p><span>Create a workspace and your first task.</span></div>
           ) : (

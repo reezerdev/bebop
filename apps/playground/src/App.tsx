@@ -73,7 +73,7 @@ export function App() {
 
   useEffect(() => {
     setUsers([]);
-    if (!currentUserId) {
+    if (!currentUserId || canAccessAdmin !== true) {
       return;
     }
     const controller = new AbortController();
@@ -87,12 +87,12 @@ export function App() {
         if (!controller.signal.aborted) console.error("Could not load authors:", error);
       });
     return () => controller.abort();
-  }, [currentUserId]);
+  }, [canAccessAdmin, currentUserId]);
 
   const authorOptions = useMemo(() => {
     const current = currentUserId ? [{ id: currentUserId, name: currentUserName || "Current user" }] : [];
-    return [...current, ...users.filter((user) => user.id !== currentUserId)];
-  }, [currentUserId, currentUserName, users]);
+    return canAccessAdmin ? [...current, ...users.filter((user) => user.id !== currentUserId)] : current;
+  }, [canAccessAdmin, currentUserId, currentUserName, users]);
   const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
   const preflightRelatedWrite = useCallback((collectionSlug: string) =>
     collectionSlug === "tasks" || collectionSlug === "channels" ? "unknown" : undefined,

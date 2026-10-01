@@ -89,6 +89,6 @@ For CLI commands, run `pnpm --filter @bebopdev/playground exec bebop generate` a
 
 ## Schema changes
 
-Jazz is pinned to `2.0.0-alpha.57`. Additive optional fields are the compatible example; renames, removals, type changes, and newly required fields need a reviewed migration or backfill. Generation and validation do not reset application data. Follow the [schema evolution walkthrough](./docs/schema-evolution.md) and pinned [Jazz migration docs](https://jazz.tools/docs/schemas/migrations).
+Jazz is pinned to `2.0.0-alpha.58`. Additive optional fields are the compatible example; renames, removals, type changes, and newly required fields need a reviewed migration or backfill. Generation and validation do not reset application data. Follow the [schema evolution walkthrough](./docs/schema-evolution.md) and pinned [Jazz migration docs](https://jazz.tools/docs/schemas/migrations).
 
 See [architecture](./docs/architecture.md) for package boundaries and [v1 implementation scope](./docs/implementation-plan.md) for release acceptance criteria.

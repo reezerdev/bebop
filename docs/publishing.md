@@ -2,6 +2,8 @@
 
 The public packages are `@bebopdev/core`, `@bebopdev/admin`, and `@bebopdev/cli`. Their first release is `0.1.0-beta.0`, published on npm's `beta` tag. This lets early users install `@bebopdev/core@beta` while the stable `latest` tag remains reserved for a later release.
 
+For the planned stable release, use the [v1.0.0 release checklist](./v1.0.0-release-checklist.md). Version changes are gated on all listed checks, including the admin performance benchmark; publishing remains a separate step.
+
 ## Before publishing
 
 Run the package checks from the repository root:
@@ -32,7 +34,7 @@ Review the dry-run contents and version for each package, then repeat the comman
 Users can install the beta with:
 
 ```sh
-pnpm add @bebopdev/core@beta jazz-tools@2.0.0-alpha.57
+pnpm add @bebopdev/core@beta jazz-tools@2.0.0-alpha.58
 pnpm add @bebopdev/admin@beta react react-dom react-router-dom
 pnpm add -D @bebopdev/cli@beta
 ```

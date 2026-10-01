@@ -27,6 +27,8 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
     const adminId = crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const peerId = crypto.randomUUID();
+    const workspaceAdminId = crypto.randomUUID();
+    const configuredAdminId = crypto.randomUUID();
     const now = new Date();
     await authority.insert(app.better_auth_user, {
       name: "Admin User",
@@ -52,6 +54,22 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       updatedAt: now,
       role: "user",
     }, { id: peerId }).wait({ tier: "global" });
+    await authority.insert(app.better_auth_user, {
+      name: "Workspace Admin User",
+      email: `${workspaceAdminId}@test.local`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+      role: "user",
+    }, { id: workspaceAdminId }).wait({ tier: "global" });
+    await authority.insert(app.better_auth_user, {
+      name: "Configured Admin User",
+      email: `${configuredAdminId}@test.local`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+      role: "user",
+    }, { id: configuredAdminId }).wait({ tier: "global" });
     await authority.insert(app.workspaces, {
       name: "Shared Workspace",
       slug: `shared-${workspaceId}`,
@@ -60,6 +78,11 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       name: "Private Workspace",
       slug: `private-${privateWorkspaceId}`,
     }, { id: privateWorkspaceId }).wait({ tier: "global" });
+    const workspaceAdminWorkspaceId = crypto.randomUUID();
+    await authority.insert(app.workspaces, {
+      name: "Workspace Admin's Workspace",
+      slug: `workspace-admin-${workspaceAdminWorkspaceId}`,
+    }, { id: workspaceAdminWorkspaceId }).wait({ tier: "global" });
     const adminMembership = await authority.insert(app.workspaceMemberships, {
       workspaceId,
       userId: adminId,
@@ -70,6 +93,12 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       workspaceId,
       userId: memberId,
       role: "member",
+      status: "active",
+    }).wait({ tier: "global" });
+    const workspaceAdminMembership = await authority.insert(app.workspaceMemberships, {
+      workspaceId: workspaceAdminWorkspaceId,
+      userId: workspaceAdminId,
+      role: "admin",
       status: "active",
     }).wait({ tier: "global" });
     const sharedStreamId = crypto.randomUUID();
@@ -109,7 +138,7 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       visibility: "private",
     }).wait({ tier: "global" });
 
-    async function openViewer(userId: string, claims: Record<string, string>) {
+    async function openViewer(userId: string, claims: Record<string, unknown>) {
       let storedAccount: string | null = null;
       const accounts = await createAccountManager({
         appId: server.appId,
@@ -127,14 +156,26 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
 
     const admin = await openViewer(adminId, { role: "admin" });
     const member = await openViewer(memberId, { role: "member" });
+    const workspaceAdmin = await openViewer(workspaceAdminId, { role: "user" });
+    const configuredAdmin = await openViewer(configuredAdminId, { role: "user", bebopAdmin: true });
     assert.equal(admin.getAuthState().authMode, "external");
 
     const adminRows = await admin.all(app.workspaceMemberships.select("id"), { tier: "remote" });
     const memberRows = await member.all(app.workspaceMemberships.select("id"), { tier: "remote" });
-    assert.deepEqual(adminRows.map((row) => row.id).sort(), [adminMembership.id, memberMembership.id].sort());
-    assert.deepEqual(memberRows.map((row) => row.id), []);
+    assert.deepEqual(adminRows.map((row) => row.id).sort(), [adminMembership.id, memberMembership.id, workspaceAdminMembership.id].sort());
+    assert.deepEqual(memberRows.map((row) => row.id), [memberMembership.id]);
     assert.equal(await admin.canRead(app.workspaceMemberships, adminMembership.id), "allowed");
     assert.equal(await member.canRead(app.workspaceMemberships, adminMembership.id), "denied");
+    assert.equal(await member.canRead(app.workspaceMemberships, memberMembership.id), "allowed");
+    assert.equal((await admin.all(app.workspaces.select("id"), { tier: "remote" })).length, 3);
+    assert.deepEqual((await member.all(app.workspaces.select("id"), { tier: "remote" })).map((row) => row.id), [workspaceId]);
+    assert.deepEqual((await workspaceAdmin.all(app.workspaces.select("id"), { tier: "remote" })).map((row) => row.id), [workspaceAdminWorkspaceId]);
+    assert.equal(await member.canUpdate(app.workspaces, workspaceId, { name: "Not allowed" }), "denied");
+    assert.equal(await workspaceAdmin.canUpdate(app.workspaces, workspaceAdminWorkspaceId, { name: "Name allowed by server" }), "denied");
+    assert.equal(await admin.canUpdate(app.workspaces, privateWorkspaceId, { name: "Global admin direct writes stay blocked" }), "denied");
+    assert.equal(await member.canInsert(app.workspaceMemberships, { workspaceId, userId: peerId, role: "member", status: "active" }), "denied");
+    assert.equal(await admin.canInsert(app.workspaceMemberships, { workspaceId, userId: peerId, role: "member", status: "active" }), "denied");
+    assert.deepEqual((await configuredAdmin.all(app.workspaces.select("id"), { tier: "remote" })).map((row) => row.id).sort(), [workspaceAdminWorkspaceId, privateWorkspaceId, workspaceId].sort());
 
     const adminTasks = await admin.all(app.tasks.select("id"), { tier: "remote" });
     const memberTasks = await member.all(app.tasks.select("id"), { tier: "remote" });
@@ -142,6 +183,18 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
     assert.deepEqual(memberTasks.map((row) => row.id), [sharedTask.id]);
     assert.equal(await admin.canRead(app.tasks, privateTask.id), "allowed");
     assert.equal(await member.canRead(app.tasks, privateTask.id), "denied");
+    const adminTaskData = {
+      name: "Global admin task",
+      workspaceId: privateWorkspaceId,
+      authorId: adminId,
+      visibility: "public" as const,
+      streamId: outsideWorkspaceStreamId,
+    };
+    for (const globalAdmin of [admin, configuredAdmin]) {
+      assert.equal(await globalAdmin.canInsert(app.tasks, adminTaskData), "allowed");
+      assert.equal(await globalAdmin.canUpdate(app.tasks, privateTask.id, { content: "Global admin edit" }), "allowed");
+      assert.equal(await globalAdmin.canDelete(app.tasks, privateTask.id), "allowed");
+    }
     const existingTaskEdit = await createBebopClient(member).tasks.update(sharedTask.id, { content: "Task remains editable" });
     await existingTaskEdit.waitForGlobal();
 
@@ -152,9 +205,19 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       status: "active",
     }).wait({ tier: "global" });
     const peer = await openViewer(peerId, { role: "member" });
-    const workspaceAdmin = admin;
+    const globalAdmin = admin;
     const memberClient = withStreamCollections(createBebopClient(member), member, memberId);
     const peerClient = createBebopClient(peer);
+    const mediaData = { filename: "owner.png", mimeType: "image/png", filesize: 1, data: new Uint8Array([137]) };
+    assert.equal(await member.canInsert(app.media, mediaData), "allowed");
+    assert.equal(await configuredAdmin.canInsert(app.media, mediaData), "allowed");
+    const mediaWrite = await member.insert(app.media, mediaData).wait({ tier: "global" });
+    assert.equal((await peer.all(app.media.select("id"), { tier: "remote" })).some(({ id }) => id === mediaWrite.id), true);
+    assert.equal(await member.canUpdate(app.media, mediaWrite.id, { alt: "Updated by creator" }), "allowed");
+    assert.equal(await peer.canUpdate(app.media, mediaWrite.id, { alt: "Updated by another user" }), "denied");
+    assert.equal(await peer.canDelete(app.media, mediaWrite.id), "denied");
+    assert.equal(await configuredAdmin.canUpdate(app.media, mediaWrite.id, { alt: "Updated by configured admin" }), "allowed");
+    assert.equal(await configuredAdmin.canDelete(app.media, mediaWrite.id), "allowed");
     const alternateWorkspaceId = crypto.randomUUID();
     await authority.insert(app.workspaces, {
       name: "Alternate Workspace",
@@ -258,10 +321,10 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
     const peerChannelIds = new Set((await peer.all(app.channels.select("id"), { tier: "remote" })).map((channel) => channel.id));
     assert.ok(peerChannelIds.has(publicChannelWrite.doc.id));
     assert.equal(peerChannelIds.has(privateChannelWrite.doc.id), false);
-    const managerTaskIds = new Set((await workspaceAdmin.all(app.tasks.select("id"), { tier: "remote" })).map((task) => task.id));
+    const managerTaskIds = new Set((await globalAdmin.all(app.tasks.select("id"), { tier: "remote" })).map((task) => task.id));
     assert.ok(managerTaskIds.has(privateTaskWrite.doc.id));
     assert.ok(managerTaskIds.has(protectedTaskWrite.doc.id));
-    const managerChannelIds = new Set((await workspaceAdmin.all(app.channels.select("id"), { tier: "remote" })).map((channel) => channel.id));
+    const managerChannelIds = new Set((await globalAdmin.all(app.channels.select("id"), { tier: "remote" })).map((channel) => channel.id));
     assert.ok(managerChannelIds.has(privateChannelWrite.doc.id));
     const peerStreamIds = await peer.all(app.streams.select("id"), { tier: "remote" });
     assert.ok(peerStreamIds.some((stream) => stream.id === publicTask.streamId));
@@ -327,7 +390,7 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
       const write = await peerClient.tasks.update(protectedTaskWrite.doc.id, { content: "Peer edit" });
       await write.waitForGlobal();
     });
-    const managerEdit = await createBebopClient(workspaceAdmin).tasks.update(protectedTaskWrite.doc.id, { content: "Manager edit" });
+    const managerEdit = await createBebopClient(globalAdmin).tasks.update(protectedTaskWrite.doc.id, { content: "Manager edit" });
     await managerEdit.waitForGlobal();
     await assert.rejects(async () => {
       const write = await peerClient.streamMemberships.create({
@@ -357,7 +420,7 @@ test("streams enforce Task, Channel, Entry, and membership visibility", async ()
     assert.equal(await memberClient.streams.findById(privateStreamId), null);
     assert.equal(await memberClient.entries.findById(privateEntryWrite.doc.id), null);
     assert.equal(await memberClient.streamMemberships.findById(privateTaskMembership.doc.id), null);
-    assert.equal(await peer.canRead(app.workspaceMemberships, peerMembership.id), "denied");
+    assert.equal(await peer.canRead(app.workspaceMemberships, peerMembership.id), "allowed");
   } finally {
     await Promise.all(viewers.map((viewer) => viewer.shutdown()));
     await authoritySession?.close();

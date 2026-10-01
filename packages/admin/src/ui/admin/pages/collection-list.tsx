@@ -1,4 +1,4 @@
-import { useAdminRows, SearchIdsObserver } from "../hooks/use-admin-rows.js";
+import { useAdminRows } from "../hooks/use-admin-rows.js";
 import { usePageRowPermissions, useRowReadPermissions } from "../hooks/use-row-permissions.js";
 import { RelatedCollectionLabels } from "../components/related-labels.js";
 import { formatCell } from "../components/cell.js";
@@ -31,6 +31,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
   const db = useDb() as AdminDatabase;
   const table = getTable(app, collection.slug);
   const [search, setSearch] = useState("");
+  const [committedSearch, setCommittedSearch] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ field: string; direction: "asc" | "desc" }>({
     field: collection.defaultColumns[0] ?? "id",
@@ -46,7 +47,6 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
   const [pendingDelete, setPendingDelete] = useState<AdminRecord[] | null>(null);
   const [deleteError, setDeleteError] = useState<string>();
   const [operationError, setOperationError] = useState<string>();
-  const [searchIdsByField, setSearchIdsByField] = useState<Record<string, { scope: string; ids: readonly string[] }>>({});
   const [relatedOptions, setRelatedOptions] = useState<Record<string, readonly RelationOption[]>>({});
   const onRelatedOptions = useCallback((slug: string, options: readonly RelationOption[]) => {
     setRelatedOptions((current) => {
@@ -62,16 +62,16 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
     if (!value) return [];
     return [[field.storageName, field.kind === "boolean" ? value === "true" : value]];
   })), [collection, filters]);
-  const searchActive = Boolean(search.trim());
+  const searchActive = Boolean(committedSearch.trim());
   const sortField = fieldByName(collection, sort.field);
   const defaultSortField = fieldByName(collection, collection.defaultColumns[0] ?? "");
   const storedSortField = sortField && sortField.kind !== "join"
     ? sortField.storageName
     : sort.field === "id" ? "id" : defaultSortField?.kind !== "join" ? defaultSortField?.storageName ?? "id" : "id";
-  const { rows: rowResult, ids: idResult, searchIdQueries } = useAdminRows(client, collection.slug, {
+  const { rows: rowResult, hasNextPage } = useAdminRows(client, collection.slug, {
     where: filterWhere,
     sort: { field: storedSortField, direction: sort.direction },
-    page, pageSize, searchActive, search, searchFields: collection.listSearchableFields,
+    page, pageSize, searchActive, search: committedSearch, searchFields: collection.listSearchableFields,
     writeMode: collection.writeMode,
   });
   const { data, isLoading: rowsLoading, error: rowsError } = rowResult;
@@ -94,12 +94,6 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
     }
     relatedIdsByCollection.set(field.relationTo, ids);
   }
-  const searchScope = `${search.trim()}\u0000${JSON.stringify(filterWhere)}`;
-  const searchCountIds = searchActive
-    ? Object.values(searchIdsByField).filter((entry) => entry.scope === searchScope).flatMap((entry) => entry.ids)
-    : [];
-  const totalRows = searchActive ? new Set(searchCountIds).size : idResult.data?.length ?? 0;
-  const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
   const pageRows = readableRows;
   const rowPermissions = usePageRowPermissions(db, table, pageRows, collection.writeMode);
   const selectablePageRows = pageRows.filter((row) => rowPermissions[row.id]?.update !== "denied" || rowPermissions[row.id]?.delete !== "denied");
@@ -114,19 +108,14 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
   const linkedColumn = columns[0];
 
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [search, filters]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setCommittedSearch(search.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
   useEffect(() => { setSelectedIds(new Set()); }, [page, pageSize, sort]);
-  useEffect(() => { if (idResult.data || searchActive) setPage((current) => Math.min(current, pageCount)); }, [idResult.data, pageCount, searchActive]);
   useEffect(() => {
     if (selectAllCheckbox.current) selectAllCheckbox.current.indeterminate = somePageSelected && !allPageSelected;
   }, [allPageSelected, somePageSelected]);
-
-  const receiveSearchIds = useCallback((field: string, ids: readonly string[]) => {
-    setSearchIdsByField((current) => {
-      const previous = current[field];
-      if (previous?.scope === searchScope && previous.ids.length === ids.length && previous.ids.every((id, index) => id === ids[index])) return current;
-      return { ...current, [field]: { scope: searchScope, ids: [...ids] } };
-    });
-  }, [searchScope]);
 
   useEffect(() => {
     const defaults = collection.defaultColumns.length
@@ -167,17 +156,13 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
   const pendingTitle = pendingDelete?.length === 1
     ? recordTitle(collection, pendingDelete[0], displayRelationOptions) ?? pendingDelete[0].id
     : "";
-  const rangeStart = totalRows ? (Math.min(page, pageCount) - 1) * pageSize + 1 : 0;
-  const rangeEnd = Math.min(page * pageSize, totalRows);
-  const isLoading = rowsLoading || (!searchActive && idResult.isLoading);
-  const error = rowsError ?? (!searchActive ? idResult.error : undefined);
+  const rangeStart = rows.length ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = rows.length ? rangeStart + rows.length - 1 : 0;
+  const isLoading = rowsLoading || search !== committedSearch;
+  const error = rowsError;
 
   return (
     <div>
-      {searchActive && searchIdQueries.map((query, index) => {
-        const fieldName = collection.listSearchableFields[index] ?? `search-${index}`;
-        return <SearchIdsObserver key={`${searchScope}:${fieldName}`} query={query} writeMode={collection.writeMode} onIds={(ids) => receiveSearchIds(fieldName, ids)} />;
-      })}
       {[...relatedIdsByCollection].map(([slug, ids]) => (
         <RelatedCollectionLabels
           key={slug}
@@ -267,7 +252,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
           <div className="py-12 text-center text-sm text-destructive">Could not load this collection: {error.message}</div>
         ) : isLoading ? (
           <div className="py-12 text-center text-sm text-muted-foreground">Loading documents…</div>
-        ) : totalRows === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="py-16 text-center">
             <h2 className="text-sm font-medium">{readableRows.length ? "No matching documents" : rows.length ? "No readable documents" : "No documents yet"}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{readableRows.length ? "Try changing your search or filters." : rows.length ? "Jazz denied read access for the available documents." : `Create your first ${collection.labels.singular.toLocaleLowerCase()} to get started.`}</p>
@@ -335,7 +320,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
               </TableBody>
             </Table>
             <div className="flex flex-wrap items-center justify-between gap-4 pt-5 text-xs text-muted-foreground">
-              <span>{rangeStart}–{rangeEnd} of {totalRows}</span>
+              <span>{rangeStart}–{rangeEnd}{hasNextPage ? "+" : ""}</span>
               <div className="flex items-center justify-end gap-2">
                 <span className="mr-1">Per Page:</span>
                 <Select value={String(pageSize)} onValueChange={(value) => { if (value) { setPageSize(Number(value)); setPage(1); } }}>
@@ -345,7 +330,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
                   </SelectContent>
                 </Select>
                 <Button variant="ghost" size="icon" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={16} /></Button>
-                <Button variant="ghost" size="icon" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></Button>
+                <Button variant="ghost" size="icon" aria-label="Next page" disabled={!hasNextPage} onClick={() => setPage((current) => current + 1)}><ChevronRight size={16} /></Button>
               </div>
             </div>
           </div>

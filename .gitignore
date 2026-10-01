@@ -3,3 +3,5 @@ dist/
 .turbo/
 .env
 .DS_Store
+playwright-report/
+test-results/

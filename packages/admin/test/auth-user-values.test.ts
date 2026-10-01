@@ -11,7 +11,7 @@ const collection = makeCollection([
 ], { slug: "users", auth: true });
 
 test("auth profile fields omit unsupported fields and role normalization prefers admin", () => {
-  assert.deepEqual(authUserProfileFields(collection).map((field) => field.name), ["department", "active"]);
+  assert.deepEqual(authUserProfileFields(collection).map((field) => field.name), ["department", "active", "avatar"]);
   assert.equal(primaryAuthRole(["member", "admin"]), "admin");
   assert.equal(primaryAuthRole(" member, guest "), "member");
   assert.equal(primaryAuthRole(undefined), "user");

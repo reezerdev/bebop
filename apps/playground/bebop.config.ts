@@ -104,9 +104,9 @@ export default defineConfig({
       timestamps: true,
       permissions: {
         read: ({ rule }) => rule.always(),
-        insert: ({ rule }) => rule.always(),
-        update: ({ rule }) => rule.always(),
-        delete: ({ rule }) => rule.always(),
+        insert: ({ rule, session }) => rule.where(session.where({ authMode: { in: ["external", "local-first"] } })),
+        update: ({ rule, isCreator }) => rule.where(isCreator),
+        delete: ({ rule, isCreator }) => rule.where(isCreator),
       },
       admin: { useAsTitle: "filename", defaultColumns: ["filename", "mimeType", "filesize"] },
       fields: [{ name: "alt", type: "text" }],
@@ -115,11 +115,25 @@ export default defineConfig({
       slug: "workspaces" as const,
       labels: { singular: "Workspace", plural: "Workspaces" },
       timestamps: true,
+      writeMode: "command",
       permissions: {
-        read: ({ rule }) => rule.always(),
-        insert: ({ rule }) => rule.always(),
-        update: ({ rule }) => rule.always(),
-        delete: ({ rule }) => rule.always(),
+        read: ({ rule, collections, session }) => rule.where((workspace) => collections.workspaceMemberships.exists.where({
+          workspaceId: workspace.id,
+          userId: session.claims.sub,
+          status: "active",
+        })),
+        insert: ({ rule }) => rule.never(),
+        update: ({ rule, collections, session }) => {
+          const activeWorkspaceAdmin = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
+            workspaceId,
+            userId: session.claims.sub,
+            status: "active",
+            role: "admin",
+          });
+          rule.whereOld((workspace) => activeWorkspaceAdmin(workspace.id));
+          rule.whereNew((workspace) => activeWorkspaceAdmin(workspace.id));
+        },
+        delete: ({ rule }) => rule.never(),
       },
       admin: {
         useAsTitle: "name",
@@ -145,7 +159,11 @@ export default defineConfig({
       timestamps: true,
       writeMode: "command",
       permissions: {
-        read: ({ rule, session }) => rule.where(session.where({ "claims.role": "admin" })),
+        read: ({ rule, session, anyOf }) => rule.where(anyOf([
+          { userId: session.claims.sub },
+          session.where({ "claims.role": "admin" }),
+          session.where({ "claims.bebopAdmin": true }),
+        ])),
       },
       admin: {
         useAsTitle: ["workspace", "user"],

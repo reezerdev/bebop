@@ -9,37 +9,55 @@ import test from "node:test";
 const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cliPath = path.join(packageDirectory, "bin", "create-bebop-app.mjs");
 
-test("prints scoped npm create and npx usage", () => {
+test("prints scoped npm create and npx usage for the pnpm monorepo starter", () => {
   const output = execFileSync(process.execPath, [cliPath, "--help"], { encoding: "utf8" });
   assert.match(output, /npm create @bebopdev\/bebop-app@beta/);
   assert.match(output, /npx @bebopdev\/create-bebop-app@beta/);
-  assert.match(output, /--use-pnpm/);
+  assert.match(output, /pnpm workspaces and Turborepo/);
 });
 
-test("creates a basic app and uses the requested package manager in its README", async () => {
+test("creates the TanStack Start and Expo pnpm monorepo", async () => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "bebop-create-test-"));
   const destination = path.join(temporaryDirectory, "My Tasks App");
   try {
-    const result = spawnSync(process.execPath, [cliPath, destination, "--no-install", "--use-pnpm"], {
+    const result = spawnSync(process.execPath, [cliPath, destination, "--no-install"], {
       encoding: "utf8",
     });
     assert.equal(result.status, 0, result.stderr);
 
     const manifest = JSON.parse(await readFile(path.join(destination, "package.json"), "utf8"));
     assert.equal(manifest.name, "my-tasks-app");
-    assert.equal(manifest.dependencies["@bebopdev/core"], "0.1.0");
-    assert.equal(manifest.dependencies["@bebopdev/admin"], "0.1.0");
-    assert.equal(manifest.devDependencies["@bebopdev/cli"], "0.1.0");
-    assert.equal(manifest.scripts.dev, "bebop dev -- vite --host 127.0.0.1 --port 5174 --strictPort");
+    assert.equal(manifest.packageManager, "pnpm@12.6.0");
+    assert.equal(manifest.devDependencies.turbo, "2.11.4");
+    assert.equal(manifest.scripts.dev, "turbo run dev");
+    assert.equal(manifest.scripts["dev:web"], "turbo run dev --filter=web");
 
     const readme = await readFile(path.join(destination, "README.md"), "utf8");
     assert.match(readme, /^# My Tasks App/m);
-    assert.match(readme, /pnpm install\npnpm dev/);
+    assert.match(readme, /TanStack Start web app and an Expo React Native app/);
+    assert.match(readme, /pnpm install/);
 
     const files = await readdir(destination);
-    assert.ok(files.includes("bebop.config.ts"));
-    assert.ok(files.includes("bebop-generated-schema.ts"));
-    assert.ok(files.includes("src"));
+    assert.ok(files.includes("apps"));
+    assert.ok(files.includes("pnpm-workspace.yaml"));
+    assert.ok(files.includes("turbo.json"));
+    const webManifest = JSON.parse(await readFile(path.join(destination, "apps/web/package.json"), "utf8"));
+    const mobileManifest = JSON.parse(await readFile(path.join(destination, "apps/mobile/package.json"), "utf8"));
+    assert.equal(webManifest.dependencies["@tanstack/react-start"], "1.168.60");
+    assert.equal(webManifest.dependencies["@bebopdev/admin"], "0.1.0");
+    assert.equal(mobileManifest.dependencies.expo, "~57.0.26");
+    assert.equal(mobileManifest.dependencies["expo-secure-store"], "~57.0.4");
+    assert.equal(mobileManifest.dependencies["expo-dev-client"], "~57.0.19");
+    assert.equal(mobileManifest.dependencies["react-native"], "0.86.3");
+    assert.equal(mobileManifest.dependencies["jazz-rn"], "2.0.0-alpha.58");
+    assert.equal(mobileManifest.dependencies["@bebopdev/core"], "0.1.0");
+    assert.equal(mobileManifest.scripts.dev, "expo start --dev-client --port 8081");
+    assert.equal(mobileManifest.main, "index.js");
+    assert.ok((await readdir(path.join(destination, "apps/mobile"))).includes("index.js"));
+    assert.ok((await readdir(path.join(destination, "apps/mobile"))).includes("bebop-client.ts"));
+    assert.ok((await readdir(path.join(destination, "apps/web"))).includes("bebop.config.ts"));
+    assert.ok((await readdir(path.join(destination, "apps/web"))).includes("bebop-generated-schema.ts"));
+    assert.ok((await readdir(path.join(destination, "apps/web/src/routes/admin"))).includes("index.tsx"));
     assert.ok(!files.includes("package-lock.json"));
     assert.ok(!files.includes("node_modules"));
     assert.ok(!files.includes(".env"));

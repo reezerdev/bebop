@@ -1,0 +1,47 @@
+@import "@bebopdev/admin/styles.css";
+
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f5f5f5;
+  background: #090909;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+a { color: inherit; }
+.page-shell { width: min(960px, calc(100% - 48px)); margin: 0 auto; }
+.site-header { height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #262626; }
+.site-header a { text-decoration: none; }
+.brand { font-size: 20px; font-weight: 700; letter-spacing: -.06em; }
+.site-header a:last-child { color: #aaa; font-size: 14px; }
+.intro { padding: 72px 0 40px; max-width: 650px; }
+.eyebrow { color: #999; font-size: 11px; letter-spacing: .14em; }
+h1 { margin: 16px 0; font-size: clamp(42px, 7vw, 70px); line-height: 1.02; letter-spacing: -.07em; }
+h1 em { color: #aaa; font-style: normal; }
+.intro > p:last-child { color: #aaa; line-height: 1.7; max-width: 520px; }
+.todo-panel { border: 1px solid #303030; padding: 24px; }
+.todo-panel form > label { display: block; margin-bottom: 10px; font-size: 13px; }
+.create-row { display: flex; gap: 8px; }
+.create-row input { flex: 1; min-width: 0; padding: 12px 14px; border: 1px solid #404040; border-radius: 0; color: inherit; background: #131313; font: inherit; }
+button { border: 1px solid #eee; border-radius: 0; padding: 10px 16px; background: #eee; color: #090909; font: inherit; cursor: pointer; }
+.list-heading { display: flex; align-items: center; gap: 10px; margin-top: 32px; }
+.list-heading h2 { margin: 0; font-size: 16px; }
+.list-heading span { color: #999; font-size: 12px; }
+.empty, .error { color: #999; font-size: 14px; }
+.error { color: #ff8e8e; }
+.todo-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.todo-list li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #252525; }
+.todo { display: flex; align-items: center; gap: 12px; }
+.todo input { accent-color: white; }
+.todo-done span { color: #777; text-decoration: line-through; }
+.delete { padding: 5px 8px; border-color: #3d3d3d; background: transparent; color: #aaa; font-size: 12px; }
+.site-footer { display: flex; justify-content: space-between; gap: 16px; padding: 24px 0 50px; color: #777; font-size: 12px; }
+.loading-screen { display: grid; min-height: 100vh; place-items: center; color: #999; background: #090909; font-size: 14px; }
+@media (max-width: 640px) {
+  .page-shell { width: calc(100% - 32px); }
+  .intro { padding-top: 48px; }
+  .todo-panel { padding: 16px; }
+  .site-footer { flex-direction: column; }
+}

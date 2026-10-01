@@ -1,0 +1,10 @@
+node_modules
+.turbo
+.expo
+dist
+.output
+coverage
+.env
+.env.*
+!.env.example
+apps/web/node_modules/.cache

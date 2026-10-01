@@ -7,14 +7,14 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const templateDirectory = path.join(packageRoot, "templates", "basic");
+const templateDirectory = path.join(packageRoot, "templates", "monorepo");
 const usage = `Usage:
   npm create @bebopdev/bebop-app@beta [directory] [options]
   npx @bebopdev/create-bebop-app@beta [directory] [options]
 
 Options:
-  --use-npm       Install dependencies with npm (default)
-  --use-pnpm      Install dependencies with pnpm
+The starter uses pnpm workspaces and Turborepo. Install pnpm before creating the project.
+
   --no-install    Create the project without installing dependencies
   -h, --help      Show this help`;
 
@@ -24,8 +24,6 @@ function parseArguments(args) {
     const value = args[index];
     if (value === "--help" || value === "-h") options.help = true;
     else if (value === "--no-install") options.install = false;
-    else if (value === "--use-npm") options.packageManager = "npm";
-    else if (value === "--use-pnpm") options.packageManager = "pnpm";
     else if (value.startsWith("--")) throw new Error(`Unknown option: ${value}`);
     else if (options.directory) throw new Error("Only one project directory can be provided.");
     else options.directory = value;
@@ -34,7 +32,7 @@ function parseArguments(args) {
 }
 
 function inferPackageManager() {
-  return process.env.npm_config_user_agent?.startsWith("pnpm/") ? "pnpm" : "npm";
+  return "pnpm";
 }
 
 async function askForDirectory() {
@@ -75,6 +73,7 @@ async function setProjectDetails(directory, displayName, packageManager) {
   const readmePath = path.join(directory, "README.md");
   let readme = await readFile(readmePath, "utf8");
   const title = displayName.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  readme = readme.replace("# Bebop Starter", "# " + title);
   readme = readme.replace("# Bebop Basic Example", `# ${title}`);
   readme = readme.replace("Requirements: Node.js 22.12 or newer and npm.", "Requirements: Node.js 22.12 or newer.");
   if (packageManager === "pnpm") {
@@ -123,7 +122,7 @@ async function main() {
   }
 
   const relativeDirectory = path.relative(process.cwd(), destination) || ".";
-  console.log(`\nCreated ${path.basename(destination)} with the Bebop basic starter.`);
+  console.log(`\nCreated ${path.basename(destination)} with the Bebop pnpm monorepo starter.`);
   if (relativeDirectory !== ".") console.log(`  cd ${relativeDirectory}`);
   if (options.install) console.log(`  ${packageManager === "npm" ? "npm run dev" : `${packageManager} dev`}`);
   else console.log(`  ${packageManager} install\n  ${packageManager === "npm" ? "npm run dev" : `${packageManager} dev`}`);

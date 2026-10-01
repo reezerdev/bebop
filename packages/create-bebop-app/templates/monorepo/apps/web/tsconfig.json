@@ -11,7 +11,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "noEmit": true,
-    "strict": true
+    "strict": true,
+    "types": ["vite/client"]
   },
-  "include": ["src", "bebop.config.ts", "vite.config.ts", "schema.ts", "bebop-generated-schema.ts", "bebop-admin-manifest.ts", "bebop-generated-client.ts", "permissions.ts"]
+  "include": [
+    "src", "bebop.config.ts", "vite.config.ts", "schema.ts",
+    "bebop-generated-schema.ts", "bebop-admin-manifest.ts",
+    "bebop-generated-client.ts", "permissions.ts",
+    "bebop-generated-command-permissions.ts", "routeTree.gen.ts"
+  ]
 }

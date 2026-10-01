@@ -54,6 +54,18 @@ test("signup, workspace switching, inferred task workspace, and admin workspace 
   await taskForm.getByRole("button", { name: /Create task/ }).click();
   await expect(page.getByRole("heading", { name: "Beta task" })).toBeVisible();
 
+  await page.goto("/admin/collections/channels");
+  for (const channelName of ["general", "random"]) {
+    const channelRow = page.getByRole("row").filter({ hasText: channelName }).filter({ hasText: "Workspace Beta" });
+    await expect(channelRow).toBeVisible();
+  }
+  await page.goto("/admin/collections/streamMemberships");
+  for (const channelName of ["general", "random"]) {
+    const creatorMembership = page.getByRole("row").filter({ hasText: `${channelName} Channel stream` });
+    await expect(creatorMembership.getByText("Admin", { exact: true })).toBeVisible();
+  }
+
+  await page.goto("/");
   await page.locator("#selected-workspace").selectOption(alphaId);
   await expect(page.getByRole("heading", { name: "Alpha task" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Beta task" })).toHaveCount(0);

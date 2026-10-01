@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDb, useJazzAuth } from "jazz-tools/react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { BebopAdmin } from "@bebopdev/admin";
 import { createBebopFetchTransport } from "@bebopdev/core";
 import { authClient } from "../auth-client.ts";
 import { app } from "../bebop-generated-schema.js";
 import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";
-import { PlaygroundPage } from "./PlaygroundPage.tsx";
+import { Homepage } from "./Homepage.tsx";
+import { PlaygroundWidget } from "./PlaygroundPage.tsx";
 import { withStreamCollections } from "./stream-client.js";
 import { withAcyclicTaskParents } from "./task-parent.js";
 import { signOutWithLocalFallback } from "./logout.js";
 
 export function App() {
   const { logout } = useJazzAuth();
+  const { pathname } = useLocation();
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
   const db = useDb();
   const signOut = useCallback(async () => {
     const leftWritesLocal = await signOutWithLocalFallback(logout, db);
@@ -24,6 +27,8 @@ export function App() {
   const { data: authSession, isPending: isAuthPending } = authClient.useSession();
   const currentUserId = authSession?.user.id ?? "";
   const currentUserName = authSession?.user.name?.trim() ?? "";
+  const currentUserEmail = authSession?.user.email?.trim() ?? "";
+  const currentUserImage = authSession?.user.image ?? "";
   const bebop = useMemo(() => withAcyclicTaskParents(withStreamCollections(createBebopClient(db, {
     commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
   }), db, currentUserId)), [db, currentUserId]);
@@ -33,6 +38,10 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    if (!isAdminRoute) {
+      setCanAccessAdmin(false);
+      return () => { active = false; };
+    }
     if (isAuthPending) {
       setCanAccessAdmin(null);
       return () => { active = false; };
@@ -53,12 +62,12 @@ export function App() {
       });
 
     return () => { active = false; };
-  }, [currentUserId, isAuthPending]);
+  }, [currentUserId, isAdminRoute, isAuthPending]);
 
   useEffect(() => {
     let active = true;
     setCanManageUsers(false);
-    if (!currentUserId) return () => { active = false; };
+    if (!isAdminRoute || !currentUserId || canAccessAdmin !== true) return () => { active = false; };
 
     void authClient.admin.listUsers({ query: { limit: 1, offset: 0 } })
       .then((response) => {
@@ -69,11 +78,11 @@ export function App() {
       });
 
     return () => { active = false; };
-  }, [currentUserId]);
+  }, [canAccessAdmin, currentUserId, isAdminRoute]);
 
   useEffect(() => {
     setUsers([]);
-    if (!currentUserId || canAccessAdmin !== true) {
+    if (!isAdminRoute || !currentUserId || canAccessAdmin !== true) {
       return;
     }
     const controller = new AbortController();
@@ -87,12 +96,12 @@ export function App() {
         if (!controller.signal.aborted) console.error("Could not load authors:", error);
       });
     return () => controller.abort();
-  }, [canAccessAdmin, currentUserId]);
+  }, [canAccessAdmin, currentUserId, isAdminRoute]);
 
   const authorOptions = useMemo(() => {
     const current = currentUserId ? [{ id: currentUserId, name: currentUserName || "Current user" }] : [];
-    return canAccessAdmin ? [...current, ...users.filter((user) => user.id !== currentUserId)] : current;
-  }, [canAccessAdmin, currentUserId, currentUserName, users]);
+    return isAdminRoute && canAccessAdmin ? [...current, ...users.filter((user) => user.id !== currentUserId)] : current;
+  }, [canAccessAdmin, currentUserId, currentUserName, isAdminRoute, users]);
   const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
   const preflightRelatedWrite = useCallback((collectionSlug: string) =>
     collectionSlug === "tasks" || collectionSlug === "channels" ? "unknown" : undefined,
@@ -107,7 +116,11 @@ export function App() {
   }), [currentUserId]);
 
   return <Routes>
-    <Route path="/" element={<PlaygroundPage client={bebop} logout={signOut} currentUserId={currentUserId} currentUserName={currentUserName} authors={authorOptions} />} />
+    <Route path="/" element={
+      <Homepage>
+        <PlaygroundWidget mode="live" client={bebop} currentUserId={currentUserId} currentUserName={currentUserName} currentUserEmail={currentUserEmail} currentUserImage={currentUserImage} authors={authorOptions} onLogout={signOut} />
+      </Homepage>
+    } />
     <Route
       path="/admin/*"
       element={canAccessAdmin === null

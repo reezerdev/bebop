@@ -160,8 +160,16 @@ export default defineConfig({
       timestamps: true,
       writeMode: "command",
       permissions: {
-        read: ({ rule, session, anyOf }) => rule.where(anyOf([
+        read: ({ rule, collections, session, allOf, anyOf }) => rule.where((membership) => anyOf([
           { userId: session.claims.sub },
+          allOf([
+            { status: "active" },
+            collections.workspaceMemberships.exists.where({
+              workspaceId: membership.workspaceId,
+              userId: session.claims.sub,
+              status: "active",
+            }),
+          ]),
           session.where({ "claims.role": "admin" }),
           session.where({ "claims.bebopAdmin": true }),
         ])),
@@ -396,12 +404,13 @@ export default defineConfig({
       labels: { singular: "Stream Membership", plural: "Stream Memberships" },
       timestamps: true,
       permissions: {
-        read: ({ rule, collections, session, anyOf }) => {
+        read: ({ rule, collections, session, anyOf, allowedTo }) => {
           const userId = session.claims.sub;
           rule.where((membership) => anyOf([
             { userId },
             collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
             collections.streams.exists.where({ id: membership.streamId, authorId: userId }),
+            allowedTo.read("stream"),
           ]));
         },
         insert: ({ rule, collections, session, allOf, anyOf }) => {
@@ -443,9 +452,15 @@ export default defineConfig({
       timestamps: true,
       permissions: {
         read: ({ rule, allowedTo }) => rule.where(allowedTo.read("stream")),
-        insert: ({ rule, session, allOf, allowedTo }) => rule.where((entry) => allOf([
+        insert: ({ rule, collections, session, allOf, anyOf, allowedTo }) => rule.where((entry) => allOf([
           { authorId: session.claims.sub },
-          allowedTo.read("stream"),
+          anyOf([
+            allowedTo.read("stream"),
+            collections.streamMemberships.exists.where({
+              streamId: entry.streamId,
+              userId: session.claims.sub,
+            }),
+          ]),
         ])),
         update: ({ rule, collections, session, allOf, anyOf, allowedTo }) => {
           const userId = session.claims.sub;

@@ -2,11 +2,13 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
 import { createBebopAdminAccessHandler, createBebopBetterAuth, createBebopHandler } from "@bebopdev/core/server";
+import { createBebopClient } from "./bebop-generated-client.js";
 import { app } from "./bebop-generated-schema.js";
 import permissions from "./permissions.js";
 import bebopConfig from "./bebop.config.ts";
 import { getBetterAuthURL } from "./auth-config.ts";
 import { authorizeWorkspaceCommand } from "./command-authorization.js";
+import { withStreamCollections } from "./src/stream-client.js";
 
 type AuthServerConfig = {
   appId?: string;
@@ -148,6 +150,25 @@ export async function createAuthServer(config: AuthServerConfig) {
         return workspace;
       });
       await transaction.wait();
+
+      // Create each default channel with its own Stream and creator admin
+      // membership. The Stream and membership must be globally available
+      // before Jazz authorizes the Channel relationship.
+      const streamClient = withStreamCollections(
+        createBebopClient(writeDb),
+        writeDb,
+        session.user.id,
+      );
+      for (const channelName of ["general", "random"]) {
+        const channel = await streamClient.channels.create({
+          name: channelName,
+          workspaceId: transaction.value.id,
+          content: "",
+          visibility: "public",
+        });
+        await channel.waitForGlobal();
+      }
+
       return json({ doc: transaction.value, durability: "global" });
     } catch (error) {
       return json({ message: error instanceof Error ? error.message : "Could not create workspace." }, 409);
@@ -247,6 +268,47 @@ export async function createAuthServer(config: AuthServerConfig) {
 
       const users = await snapshot.client!.db.all(app.better_auth_user.select("id", "name"), { tier: "global" });
       response.end(JSON.stringify(users.map(({ id, name }) => ({ id, name }))));
+    },
+    async listWorkspaceMembers(request: IncomingMessage, response: ServerResponse, workspaceId: string) {
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      response.setHeader("vary", "cookie");
+      if (request.method !== "GET") {
+        response.statusCode = 405;
+        response.setHeader("allow", "GET");
+        response.end(JSON.stringify({ message: "Method not allowed." }));
+        return;
+      }
+
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(request.headers),
+        query: { disableCookieCache: true },
+      });
+      if (!session) {
+        response.statusCode = 401;
+        response.end(JSON.stringify({ message: "Sign in to view workspace members." }));
+        return;
+      }
+
+      const memberships = await snapshot.client!.db.all(app.workspaceMemberships.where({
+        workspaceId,
+        status: "active",
+      }), { tier: "global" });
+      if (!memberships.some((membership) => membership.userId === session.user.id)) {
+        response.statusCode = 403;
+        response.end(JSON.stringify({ message: "Active workspace membership is required." }));
+        return;
+      }
+
+      const activeMemberIds = new Set(memberships.map(({ userId }) => userId));
+      const users = await snapshot.client!.db.all(app.better_auth_user.select("id", "name"), { tier: "global" });
+      const workspaceUsers = users
+        .filter(({ id }) => activeMemberIds.has(id))
+        .map(({ id, name }) => ({ id, name }));
+      if (!workspaceUsers.some(({ id }) => id === session.user.id)) {
+        workspaceUsers.unshift({ id: session.user.id, name: session.user.name });
+      }
+      response.end(JSON.stringify(workspaceUsers));
     },
     close: () => jazzSession.close(),
   };

@@ -4,76 +4,11 @@ import { betterAuth as jazzBetterAuth, JazzProvider, useJazzAuth } from "jazz-to
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { authClient } from "../auth-client.ts";
 import { App } from "./App.tsx";
-import { BebopAdminLogin } from "@bebopdev/admin";
+import { BebopAdminLogin, Button } from "@bebopdev/admin";
+import { Homepage } from "./Homepage.tsx";
+import { PlaygroundWidget } from "./PlaygroundPage.tsx";
 import "@bebopdev/admin/styles.css";
-import "./index.css";
-
-function AuthPanel() {
-  const [leftWritesLocal, setLeftWritesLocal] = React.useState(() => sessionStorage.getItem("bebop-logout-pending-writes") === "true");
-  React.useEffect(() => {
-    const refresh = () => setLeftWritesLocal(sessionStorage.getItem("bebop-logout-pending-writes") === "true");
-    window.addEventListener("bebop-logout-complete", refresh);
-    return () => window.removeEventListener("bebop-logout-complete", refresh);
-  }, []);
-  const [mode, setMode] = React.useState<"sign-in" | "sign-up">("sign-in");
-  const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [error, setError] = React.useState("");
-  const [submitting, setSubmitting] = React.useState(false);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-
-    try {
-      const result = mode === "sign-up"
-        ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password })
-        : await authClient.signIn.email({ email: email.trim(), password });
-
-      if (result.error) setError(result.error.message ?? "Could not sign in.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign in.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="auth-shell">
-      <a className="wordmark" href="#top" aria-label="Bebop home">bebop<span>♪</span></a>
-      <section className="auth-card">
-        {leftWritesLocal && <p className="auth-copy" role="status">Signed out. Jazz could not confirm that every local change synced. Your local data was kept in this browser; sign in with the same account to retry.</p>}
-        <p className="eyebrow">YOUR BEBOP ACCOUNT</p>
-        <h1>{mode === "sign-up" ? "Save your work." : "Welcome back."}</h1>
-        <p className="auth-copy">Sign in with Better Auth to open your Jazz account and start creating.</p>
-        <form className="auth-form" onSubmit={submit}>
-          {mode === "sign-up" && (
-            <>
-              <label htmlFor="auth-name">Name</label>
-              <input id="auth-name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required />
-            </>
-          )}
-          <label htmlFor="auth-email">Email</label>
-          <input id="auth-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-          <label htmlFor="auth-password">Password</label>
-          <input id="auth-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} minLength={8} required />
-          {error && <p className="auth-error" role="alert">{error}</p>}
-          <button className="create-button" type="submit" disabled={submitting}>
-            {submitting ? "Working…" : mode === "sign-up" ? "Create account" : "Sign in"}<span>↗</span>
-          </button>
-        </form>
-        <p className="auth-switch">
-          {mode === "sign-up" ? "Already have an account?" : "New to Bebop?"}{" "}
-          <button type="button" onClick={() => { setMode(mode === "sign-up" ? "sign-in" : "sign-up"); setError(""); }}>
-            {mode === "sign-up" ? "Sign in" : "Create one"}
-          </button>
-        </p>
-      </section>
-    </main>
-  );
-}
+import "./tailwind.css";
 
 async function checkFirstAdminAvailability() {
   const response = await fetch("/api/bebop/admin-setup", { credentials: "same-origin", cache: "no-store" });
@@ -102,20 +37,33 @@ function AdminLoginPanel() {
 
 function SignedOutPage() {
   const { pathname } = useLocation();
-  return pathname === "/admin" || pathname.startsWith("/admin/")
-    ? <AdminLoginPanel />
-    : <AuthPanel />;
+  const [leftWritesLocal, setLeftWritesLocal] = React.useState(() => sessionStorage.getItem("bebop-logout-pending-writes") === "true");
+  React.useEffect(() => {
+    const refresh = () => setLeftWritesLocal(sessionStorage.getItem("bebop-logout-pending-writes") === "true");
+    window.addEventListener("bebop-logout-complete", refresh);
+    return () => window.removeEventListener("bebop-logout-complete", refresh);
+  }, []);
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return <AdminLoginPanel />;
+
+  return (
+    <Homepage>
+      <PlaygroundWidget
+        mode="preview"
+        notice={leftWritesLocal ? "Signed out. Jazz could not confirm that every local change synced. Your local data was kept in this browser; sign in with the same account to retry." : undefined}
+      />
+    </Homepage>
+  );
 }
 
 function JazzLoading() {
-  return <main className="shell"><p className="session-message">Opening your Bebop account…</p></main>;
+  return <main className="bebop-admin grid min-h-svh place-items-center bg-white px-6 text-slate-600"><p role="status">Opening your Bebop account…</p></main>;
 }
 
 function JazzError({ retry, error }: { retry: () => Promise<void>; error?: Error }) {
   return (
-    <main className="shell">
-      <p className="session-message" role="alert">Could not open your Bebop account: {error?.message}</p>
-      <button className="create-button retry-button" type="button" onClick={() => void retry()}>Try again <span>↗</span></button>
+    <main className="bebop-admin grid min-h-svh place-items-center gap-4 bg-white px-6 text-slate-600">
+      <p role="alert">Could not open your Bebop account: {error?.message}</p>
+      <Button className="rounded-md bg-[#b45d7e] normal-case tracking-normal text-white hover:bg-[#9e4b6b]" type="button" onClick={() => void retry()}>Try again ↗</Button>
     </main>
   );
 }

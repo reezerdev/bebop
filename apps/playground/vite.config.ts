@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { jazzPlugin } from "jazz-tools/dev/vite";
 import { getBetterAuthURL } from "./auth-config.ts";
@@ -44,6 +45,9 @@ async function sendWebResponse(response: Response, target: ServerResponse): Prom
 function betterAuthPlugin(): Plugin {
   const authRuntimeFiles = new Set([
     path.join(projectDirectory, "auth.ts"),
+    path.join(projectDirectory, "permissions.ts"),
+    path.join(projectDirectory, "bebop.config.ts"),
+    path.join(projectDirectory, "bebop-generated-schema.ts"),
     path.resolve(projectDirectory, "../../packages/bebop/dist/server.js"),
   ]);
   let restartPending = false;
@@ -58,11 +62,12 @@ function betterAuthPlugin(): Plugin {
         const requestPath = new URL(request.url ?? "/", "http://localhost").pathname;
         const isAuthRoute = requestPath === "/api/auth" || requestPath.startsWith("/api/auth/");
         const isUsersRoute = requestPath === "/api/bebop/users";
+        const workspaceMembersMatch = /^\/api\/bebop\/workspaces\/([^/]+)\/members$/.exec(requestPath);
         const isAdminSetupRoute = requestPath === "/api/bebop/admin-setup";
         const isAdminAccessRoute = requestPath === "/api/bebop/admin-access";
         const isWorkspaceCreateRoute = requestPath === "/api/bebop/collections/workspaces" && request.method === "POST";
         const isCommandRoute = requestPath.startsWith("/api/bebop/collections/");
-        if (!isAuthRoute && !isUsersRoute && !isAdminSetupRoute && !isAdminAccessRoute && !isCommandRoute) {
+        if (!isAuthRoute && !isUsersRoute && !workspaceMembersMatch && !isAdminSetupRoute && !isAdminAccessRoute && !isCommandRoute) {
           next();
           return;
         }
@@ -76,8 +81,9 @@ function betterAuthPlugin(): Plugin {
         ));
 
         void authServerPromise
-          .then(async ({ handler, listUsers, adminSetupStatus, adminAccessHandler, commandHandler, createWorkspaceHandler }) => {
+          .then(async ({ handler, listUsers, listWorkspaceMembers, adminSetupStatus, adminAccessHandler, commandHandler, createWorkspaceHandler }) => {
             if (isUsersRoute) return listUsers(request, response);
+            if (workspaceMembersMatch) return listWorkspaceMembers(request, response, decodeURIComponent(workspaceMembersMatch[1]));
             if (isAdminSetupRoute) return adminSetupStatus(request, response);
             if (isAdminAccessRoute) return sendWebResponse(await adminAccessHandler(await toWebRequest(request)), response);
             if (isWorkspaceCreateRoute) return sendWebResponse(await createWorkspaceHandler(await toWebRequest(request)), response);
@@ -126,6 +132,7 @@ export default defineConfig(({ mode }) => {
     server: { host: "127.0.0.1", port, strictPort: true },
     plugins: [
       react(),
+      tailwindcss(),
       jazzPlugin({
         appId: "bebop-first-admin-playground-20260929",
         server: {

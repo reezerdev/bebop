@@ -184,6 +184,9 @@ importers:
       jazz-tools:
         specifier: 2.0.0-alpha.58
         version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      lucide-react:
+        specifier: ^0.468.0
+        version: 0.468.0(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -212,6 +215,12 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.1
         version: 6.1.1(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      '@tailwindcss/vite':
+        specifier: ^4.1.0
+        version: 4.3.3(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      tailwindcss:
+        specifier: ^4.1.0
+        version: 4.3.3
       tsx:
         specifier: ^4.20.6
         version: 4.23.15

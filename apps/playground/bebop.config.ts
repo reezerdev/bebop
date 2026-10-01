@@ -61,6 +61,7 @@ const entriesFields = [
 ] as const;
 
 export default defineConfig({
+  logging: { hooks: true },
   upload: { limits: { fileSize: 20 * 1024 * 1024 } },
   collections: [
     {

@@ -1,6 +1,8 @@
 import type { Db, QueryBuilder, TableProxy } from "jazz-tools";
+import pino from "pino";
 import type { BebopConfig, CollectionChangeContext, CollectionDocument, CollectionHooks, Fields } from "./bebop.ts";
 import type { BebopCommandRequest } from "./client.ts";
+import { runLoggedHook, type HookLogEvent } from "./hook-logging.ts";
 import { BebopValidationError, validateCollectionData } from "./validation.ts";
 
 export { createBebopBetterAuth } from "./auth.ts";
@@ -13,6 +15,15 @@ type ServerTable = TableProxy<ServerDocument, Record<string, unknown>> & {
   where(input: Record<string, unknown>): QueryBuilder<ServerDocument>;
 };
 type ServerApp = Record<string, object>;
+
+let hookLogger: ReturnType<typeof pino> | undefined;
+
+function logServerHookEvent(event: HookLogEvent): void {
+  hookLogger ??= pino({ name: "bebop" });
+  const { err, ...fields } = event;
+  if (event.outcome === "error") hookLogger.error({ ...fields, err }, "Bebop hook failed");
+  else hookLogger.info(fields, "Bebop hook completed");
+}
 
 export type BebopCommandSession = {
   /** Request-scoped Jazz Db used to read the current document for authorization. */
@@ -96,6 +107,7 @@ function mutationRequest(collection: string, operation: string, id?: string): { 
 
 /** Create a host-mounted Web Request/Response endpoint for command collections. */
 export function createBebopHandler<const TConfig extends BebopConfig>(options: BebopCommandHandlerOptions<TConfig>) {
+  const logHooks = options.config.logging?.hooks === true;
   return async function handleBebopRequest(request: Request): Promise<Response> {
     const route = parseRoute(request);
     if (!route) return json({ message: "Unsupported Bebop command route." }, 404);
@@ -154,7 +166,14 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
       if (permission === "error") return json({ message: "Could not authorize this delete." }, 500);
       if (permission === "denied") return json({ message: "Your current session cannot delete this document." }, 403);
       try {
-        await hooks?.beforeDelete?.({ id: route.id!, doc: currentDoc as CollectionDocument<Fields> });
+        if (hooks?.beforeDelete) {
+          const hookContext = { id: route.id!, doc: currentDoc as CollectionDocument<Fields> };
+          if (logHooks) {
+            await runLoggedHook({ collection: route.collection, hook: "beforeDelete", operation: "delete", id: route.id }, () => hooks.beforeDelete!(hookContext), logServerHookEvent);
+          } else {
+            await hooks.beforeDelete(hookContext);
+          }
+        }
       } catch (error) {
         options.onError?.(error, { request, collection: route.collection, operation: route.operation });
         return json({ message: error instanceof Error ? error.message : "The beforeDelete hook rejected the command." }, 422);
@@ -167,7 +186,14 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
         return json({ message: "Jazz did not confirm this delete." }, 409);
       }
       try {
-        await hooks?.afterDelete?.({ id: route.id!, doc: currentDoc as CollectionDocument<Fields> });
+        if (hooks?.afterDelete) {
+          const hookContext = { id: route.id!, doc: currentDoc as CollectionDocument<Fields> };
+          if (logHooks) {
+            await runLoggedHook({ collection: route.collection, hook: "afterDelete", operation: "delete", id: route.id }, () => hooks.afterDelete!(hookContext), logServerHookEvent);
+          } else {
+            await hooks.afterDelete(hookContext);
+          }
+        }
       } catch (error) {
         options.onError?.(error, { request, collection: route.collection, operation: route.operation });
         return json({ message: error instanceof Error ? error.message : "The afterDelete hook failed.", writeAccepted: true }, 500);
@@ -198,7 +224,11 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
       if (requestedPermission === "error") return json({ message: "Could not authorize this document." }, 500);
       if (requestedPermission === "denied") return json({ message: "Your current session cannot save this document." }, 403);
 
-      const hookPatch = await hooks?.beforeChange?.(changeContext);
+      const hookPatch = hooks?.beforeChange
+        ? logHooks
+          ? await runLoggedHook({ collection: route.collection, hook: "beforeChange", operation: route.operation, ...(route.id ? { id: route.id } : {}) }, () => hooks.beforeChange!(changeContext), logServerHookEvent)
+          : await hooks.beforeChange(changeContext)
+        : undefined;
       const data = { ...changeContext.data, ...hookPatch };
       validateWriteFields(definition, data);
       await validateCollectionData(definition, data, route.operation, currentDoc ?? undefined);
@@ -211,7 +241,14 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
         await write.wait({ tier: "global" });
         const doc = write.value as ServerDocument;
         try {
-          await hooks?.afterChange?.({ operation: "create", doc: doc as CollectionDocument<Fields> });
+          if (hooks?.afterChange) {
+            const hookContext = { operation: "create" as const, doc: doc as CollectionDocument<Fields> };
+            if (logHooks) {
+              await runLoggedHook({ collection: route.collection, hook: "afterChange", operation: "create", id: doc.id }, () => hooks.afterChange!(hookContext), logServerHookEvent);
+            } else {
+              await hooks.afterChange(hookContext);
+            }
+          }
         } catch (error) {
           options.onError?.(error, { request, collection: route.collection, operation: route.operation });
           return json({ message: error instanceof Error ? error.message : "The afterChange hook failed.", writeAccepted: true }, 500);
@@ -224,7 +261,14 @@ export function createBebopHandler<const TConfig extends BebopConfig>(options: B
       const doc = await writeDb.one(table.where({ id: route.id! })) as ServerDocument | null;
       if (!doc) return json({ message: "Jazz confirmed the update but the saved document could not be read back." }, 500);
       try {
-        await hooks?.afterChange?.({ operation: "update", doc: doc as CollectionDocument<Fields>, originalDoc: currentDoc as CollectionDocument<Fields> });
+        if (hooks?.afterChange) {
+          const hookContext = { operation: "update" as const, doc: doc as CollectionDocument<Fields>, originalDoc: currentDoc as CollectionDocument<Fields> };
+          if (logHooks) {
+            await runLoggedHook({ collection: route.collection, hook: "afterChange", operation: "update", id: route.id }, () => hooks.afterChange!(hookContext), logServerHookEvent);
+          } else {
+            await hooks.afterChange(hookContext);
+          }
+        }
       } catch (error) {
         options.onError?.(error, { request, collection: route.collection, operation: route.operation });
         return json({ message: error instanceof Error ? error.message : "The afterChange hook failed.", writeAccepted: true }, 500);

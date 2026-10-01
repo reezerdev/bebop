@@ -486,6 +486,13 @@ function compileFieldType(field: Exclude<FieldDefinition, { type: "relationship"
 }
 
 function validateConfig(config: BebopConfig): void {
+  if (config.logging !== undefined && (typeof config.logging !== "object" || config.logging === null || Array.isArray(config.logging))) {
+    throw new Error("logging must be an object.");
+  }
+  if (config.logging?.hooks !== undefined && typeof config.logging.hooks !== "boolean") {
+    throw new Error("logging.hooks must be a boolean.");
+  }
+
   if (!Array.isArray(config.collections) || config.collections.length === 0) {
     throw new Error("Bebop config must define at least one collection.");
   }

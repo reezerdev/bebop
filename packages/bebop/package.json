@@ -37,7 +37,8 @@
     "jazz-tools": "2.0.0-alpha.58"
   },
   "dependencies": {
-    "better-auth": "1.7.1"
+    "better-auth": "1.7.1",
+    "pino": "^10.3.1"
   },
   "devDependencies": {
     "jazz-tools": "2.0.0-alpha.58",

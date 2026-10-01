@@ -273,12 +273,14 @@ export type CollectionDefinition<TFields extends Fields = Fields> = {
   permissions?: CollectionPermissions<TFields>;
   /** Direct writes are local-first. Command writes go through the host's trusted Bebop handler. */
   writeMode?: "direct" | "command";
-  /** Client-side lifecycle callbacks run by the generated Bebop mutation client. */
+  /** Lifecycle callbacks run by the generated mutation client or command handler, depending on writeMode. */
   hooks?: CollectionHooks<TFields>;
 };
 export type BebopConfig = {
   collections: readonly CollectionDefinition[];
   upload?: { limits?: { fileSize?: number } };
+  /** Opt-in lifecycle hook logging. Disabled by default. */
+  logging?: { hooks?: boolean };
 };
 
 export function defineConfig<const T extends BebopConfig>(config: T): T {

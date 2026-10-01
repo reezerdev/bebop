@@ -27,6 +27,29 @@ export default defineConfig({
 
 `@bebopdev/cli` reads this config to generate the Jazz schema, admin manifest, typed client, and permission files. The exported `createBebopClient` factory provides typed queries and lifecycle-aware create, update, and delete methods. See the [Local API guide](../../docs/local-api.md) for filters, search, pagination, and durability, and the [access control guide](../../docs/access-control.md) for direct and command writes. Lifecycle hooks in direct mode run in the client; command mode uses the `./server` handler with host-supplied authorization and an attributed writer.
 
+## Hook logging
+
+Hook logging is disabled by default. Set `logging.hooks` to `true` to emit one compact event when each configured hook completes or throws:
+
+```ts
+export default defineConfig({
+  logging: { hooks: true },
+  collections: [
+    {
+      slug: "posts",
+      fields: [{ name: "title", type: "text", required: true }],
+      hooks: {
+        beforeChange({ operation, id }) {
+          // Your hook logic
+        },
+      },
+    },
+  ],
+});
+```
+
+Events include the collection, hook, operation, document ID when available, duration, and outcome. Bebop omits document data. Direct-write hooks log through the browser console; command-write hooks log as structured JSON through Pino in the server process. Leave `logging.hooks` unset or `false` for stress tests to skip timing, event formatting, and log output.
+
 ## Permissions
 
 Use the collection's `permissions` object to build Jazz rules for reads and direct writes. Every direct operation must be granted explicitly; omitted operations are denied. Command writes require the server handler's `authorize` callback. To give callbacks field-specific row types, define the fields as a readonly tuple and apply `satisfies CollectionDefinition<typeof taskFields>` to the plain collection object. Updates can check the stored row with `whereOld` and the proposed row with `whereNew`; `collections.<slug>.exists.where(...)` expresses a cross-collection check.

@@ -1,12 +1,12 @@
 {
-  "name": "@bebopdev/cli",
+  "name": "@bebopdev/create-bebop-app",
   "version": "0.1.0",
-  "description": "Generate Jazz schemas from Bebop collections and run the Bebop development server.",
+  "description": "Create a starter React app with Bebop and Jazz.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/reezerdev/bebop.git",
-    "directory": "packages/cli"
+    "url": "git+https://github.com/reezerdev/bebop.git",
+    "directory": "packages/create-bebop-app"
   },
   "homepage": "https://github.com/reezerdev/bebop#readme",
   "publishConfig": {
@@ -14,7 +14,7 @@
   },
   "files": [
     "bin",
-    "lib",
+    "templates",
     "README.md"
   ],
   "type": "module",
@@ -22,12 +22,7 @@
     "node": ">=22.12.0"
   },
   "bin": {
-    "bebop": "./bin/bebop.mjs"
-  },
-  "dependencies": {
-    "@bebopdev/core": "workspace:*",
-    "auth": "1.7.1",
-    "tsx": "^4.23.15"
+    "create-bebop-app": "bin/create-bebop-app.mjs"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"

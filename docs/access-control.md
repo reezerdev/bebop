@@ -9,67 +9,66 @@ Declare a callback for every operation the collection should allow. The operatio
 ```ts
 import { defineConfig, type CollectionDefinition } from "@bebopdev/core";
 
-const taskFields = [
+const channelFields = [
   { name: "name", type: "text", required: true },
   { name: "workspace", type: "relationship", relationTo: "workspaces" },
   { name: "author", type: "relationship", relationTo: "users", required: true },
-  { name: "assignee", type: "relationship", relationTo: "users" },
-  { name: "status", type: "select", options: ["backlog", "todo", "done"] },
+  { name: "visibility", type: "select", options: ["public", "private"] },
 ] as const;
 
 export default defineConfig({
   collections: [{
-    slug: "tasks",
-    fields: taskFields,
+    slug: "channels",
+    fields: channelFields,
     permissions: {
-      read: ({ rule, collections, session }) => rule.where((task) =>
+      read: ({ rule, collections, session }) => rule.where((channel) =>
         collections.workspaceMemberships.exists.where({
-          workspaceId: task.workspaceId,
+          workspaceId: channel.workspaceId,
           userId: session.claims.sub,
           status: "active",
         }),
       ),
-      insert: ({ rule, collections, session, allOf }) => rule.where((newTask) =>
+      insert: ({ rule, collections, session, allOf }) => rule.where((newChannel) =>
         allOf([
           { authorId: session.claims.sub },
           collections.workspaceMemberships.exists.where({
-            workspaceId: newTask.workspaceId,
+            workspaceId: newChannel.workspaceId,
             userId: session.claims.sub,
             status: "active",
           }),
         ]),
       ),
-      update: ({ rule, collections, session, allOf, anyOf }) => rule
-        .whereOld((currentTask) => allOf([
-          anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+      update: ({ rule, collections, session, allOf }) => rule
+        .whereOld((currentChannel) => allOf([
+          { authorId: session.claims.sub },
           collections.workspaceMemberships.exists.where({
-            workspaceId: currentTask.workspaceId,
+            workspaceId: currentChannel.workspaceId,
             userId: session.claims.sub,
             status: "active",
           }),
         ]))
-        .whereNew((updatedTask) => allOf([
-          anyOf([{ authorId: session.claims.sub }, { assigneeId: session.claims.sub }]),
+        .whereNew((updatedChannel) => allOf([
+          { authorId: session.claims.sub },
           collections.workspaceMemberships.exists.where({
-            workspaceId: updatedTask.workspaceId,
+            workspaceId: updatedChannel.workspaceId,
             userId: session.claims.sub,
             status: "active",
           }),
         ])),
-      delete: ({ rule, collections, session, allOf }) => rule.where((task) => allOf([
+      delete: ({ rule, collections, session, allOf }) => rule.where((channel) => allOf([
         { authorId: session.claims.sub },
         collections.workspaceMemberships.exists.where({
-          workspaceId: task.workspaceId,
+          workspaceId: channel.workspaceId,
           userId: session.claims.sub,
           status: "active",
         }),
       ])),
     },
-  } satisfies CollectionDefinition<typeof taskFields>],
+  } satisfies CollectionDefinition<typeof channelFields>],
 });
 ```
 
-`CollectionDefinition<typeof taskFields>` gives callbacks the configured fields while keeping the collection a plain object. The row callback receives Jazz's symbolic `RowContext`, not a loaded document. TypeScript cannot infer a sibling inline `fields` property into callback parameters, so use this `satisfies` annotation when callbacks need field-specific checks:
+`CollectionDefinition<typeof channelFields>` gives callbacks the configured fields while keeping the collection a plain object. The row callback receives Jazz's symbolic `RowContext`, not a loaded document. TypeScript cannot infer a sibling inline `fields` property into callback parameters, so use this `satisfies` annotation when callbacks need field-specific checks:
 
 - `read`: the existing row being considered for the result.
 - `insert`: the proposed new row.
@@ -79,9 +78,9 @@ export default defineConfig({
 
 These callbacks build a declarative policy; they do not run once per document as arbitrary JavaScript. Express comparisons with row conditions and Jazz helpers. For checks against another collection, `collections.<slug>.exists.where(...)` creates a read-only existence predicate; it does not grant permissions on that other collection. `allOf`, `anyOf`, `allowedTo`, `isCreator`, and `session` are the corresponding Jazz helpers. A condition such as `{ authorId: session.claims.sub }` compares the candidate row's stored field with a verified session claim.
 
-The playground's Better Auth integration uses `session.claims.sub` as the Better Auth user ID for its Task rules. An application must compare values from the same identity namespace; a Better Auth user ID is not automatically equal to a Jazz account ID. Use `session.user.account` only when the stored ownership field actually contains that Jazz account ID.
+The playground's Better Auth integration uses `session.claims.sub` as the Better Auth user ID for its Channel rules. An application must compare values from the same identity namespace; a Better Auth user ID is not automatically equal to a Jazz account ID. Use `session.user.account` only when the stored ownership field actually contains that Jazz account ID.
 
-`rule.where(...)` checks one row condition. On update, use both `whereOld` and `whereNew` when access to the original and resulting row differs. For example, requiring an active membership in both checks prevents an update from moving a Task into a Workspace where the actor has no active membership.
+`rule.where(...)` checks one row condition. On update, use both `whereOld` and `whereNew` when access to the original and resulting row differs. For example, requiring an active membership in both checks prevents an update from moving a Channel into a Workspace where the actor has no active membership.
 
 ## Public and authenticated rules
 
@@ -107,7 +106,7 @@ permissions: {
 }
 ```
 
-The playground grants public access to its demo Workspaces and Media, gives authenticated sessions read access to Workspace Memberships, and scopes Task reads and writes through active Workspace membership. Membership writes use `writeMode: "command"`; the deployed Jazz policy denies direct writes.
+The playground grants public access to its demo Workspaces and Media, gives authenticated sessions read access to Workspace Memberships, and scopes Channel reads and writes through active Workspace membership. Membership writes use `writeMode: "command"`; the deployed Jazz policy denies direct writes.
 
 The older `access` option remains supported for compatibility and is deprecated. It retains its authenticated default and legacy callback behavior. Do not set both `access` and `permissions` on one collection.
 

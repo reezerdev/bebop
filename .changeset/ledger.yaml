@@ -1,0 +1,12 @@
+"@bebopdev/admin@0.1.0":
+  dir: packages/admin
+  intents:
+    - warm-fireants-boil
+"@bebopdev/cli@0.1.0":
+  dir: packages/cli
+  intents:
+    - big-sheep-add
+"@bebopdev/core@0.1.0":
+  dir: packages/bebop
+  intents:
+    - brave-teeth-nail

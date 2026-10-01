@@ -13,6 +13,16 @@ const packages = [
   ["@bebopdev/admin", "packages/admin"],
   ["@bebopdev/cli", "packages/cli"],
 ];
+const jazzRuntimePackages = [
+  "@garden-co/jazz-napi-darwin-arm64",
+  "@garden-co/jazz-napi-darwin-x64",
+  "@garden-co/jazz-napi-linux-arm64-gnu",
+  "@garden-co/jazz-napi-linux-x64-gnu",
+  "@garden-co/jazz-napi-win32-x64-msvc",
+  "jazz-napi",
+  "jazz-tools",
+  "jazz-wasm",
+];
 let succeeded = false;
 
 function run(command, args, cwd) {
@@ -22,10 +32,12 @@ function run(command, args, cwd) {
 try {
   await mkdir(tarballDirectory, { recursive: true });
   const tarballs = {};
+  const packageManifests = new Map();
 
   for (const [name, directory] of packages) {
     const packageDirectory = path.join(repositoryRoot, directory);
     const manifest = JSON.parse(await readFile(path.join(packageDirectory, "package.json"), "utf8"));
+    packageManifests.set(name, manifest);
     run("pnpm", ["pack", "--pack-destination", tarballDirectory], packageDirectory);
     const filename = `${name.slice(1).replace("/", "-")}-${manifest.version}.tgz`;
     tarballs[name] = path.join(tarballDirectory, filename);
@@ -43,6 +55,8 @@ try {
   for (const name of ["@bebopdev/core", "@bebopdev/admin"]) {
     consumerManifest.dependencies[name] = `file:${tarballs[name]}`;
   }
+  const jazzVersion = packageManifests.get("@bebopdev/core").peerDependencies["jazz-tools"];
+  consumerManifest.dependencies["jazz-tools"] = jazzVersion;
   consumerManifest.devDependencies["@bebopdev/cli"] = `file:${tarballs["@bebopdev/cli"]}`;
   await writeFile(consumerManifestPath, `${JSON.stringify(consumerManifest, null, 2)}\n`);
   await writeFile(
@@ -54,6 +68,8 @@ try {
       "  esbuild@0.27.7: true",
       "  esbuild@0.28.2: true",
       "  protobufjs@8.0.1: true",
+      "minimumReleaseAgeExclude:",
+      ...jazzRuntimePackages.map((name) => `  - '${name}@${jazzVersion}'`),
       "overrides:",
       `  "@bebopdev/core": ${JSON.stringify(`file:${tarballs["@bebopdev/core"]}`)}`,
       "",

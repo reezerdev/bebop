@@ -1,35 +1,5 @@
 import { defineConfig, type CollectionDefinition } from "@bebopdev/core";
 
-const tasksFields = [
-  { name: "name", type: "text", required: true },
-  { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
-  { name: "content", type: "text", admin: { input: "textarea" } },
-  { name: "image", type: "upload", relationTo: "media" },
-  { name: "priority", type: "select", options: [
-    { label: "Low", value: "low" },
-    { label: "Medium", value: "medium" },
-    { label: "High", value: "high" },
-    { label: "Urgent", value: "urgent" },
-  ], admin: { position: "sidebar" } },
-  { name: "parentTask", type: "relationship", relationTo: "tasks", admin: { position: "sidebar" } },
-  { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
-  { name: "status", type: "select", options: [
-    { label: "Backlog", value: "backlog" },
-    { label: "To Do", value: "todo" },
-    { label: "In Progress", value: "in-progress" },
-    { label: "In Review", value: "in-review" },
-    { label: "Done", value: "done" },
-  ], admin: { position: "sidebar" } },
-  { name: "assignee", type: "relationship", relationTo: "users", admin: { position: "sidebar" } },
-  { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
-  { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
-  { name: "visibility", type: "select", required: true, options: [
-    { label: "Public", value: "public" },
-    { label: "Private", value: "private" },
-    { label: "Protected", value: "protected" },
-  ], admin: { position: "sidebar" } },
-  { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
-] as const;
 const channelsFields = [
   { name: "name", type: "text", required: true },
   { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
@@ -45,7 +15,6 @@ const streamsFields = [
   { name: "members", type: "join", collection: "streamMemberships", on: "stream" },
   { name: "entries", type: "join", collection: "entries", on: "stream" },
   { name: "channels", type: "join", collection: "channels", on: "stream" },
-  { name: "tasks", type: "join", collection: "tasks", on: "stream" },
 ] as const;
 const streamMembershipsFields = [
   { name: "stream", type: "relationship", relationTo: "streams", required: true },
@@ -195,89 +164,6 @@ export default defineConfig({
       ],
     },
     {
-      slug: "tasks" as const,
-      labels: { singular: "Task", plural: "Tasks" },
-      timestamps: true,
-      permissions: {
-        read: ({ rule, collections, session, allOf, anyOf }) => {
-          const userId = session.claims.sub;
-          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
-            workspaceId,
-            userId,
-            status: "active",
-          });
-          const manager = (workspaceId: unknown) => anyOf([
-            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
-            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
-          ]);
-          const streamMember = (streamId: unknown) => collections.streamMemberships.exists.where({ streamId, userId });
-          rule.where((task) => allOf([
-            activeMember(task.workspaceId),
-            anyOf([
-              { visibility: "public" },
-              manager(task.workspaceId),
-              streamMember(task.streamId),
-            ]),
-          ]));
-        },
-        insert: ({ rule, collections, session, allOf }) => {
-          const userId = session.claims.sub;
-          rule.where((task) => allOf([
-            { authorId: userId },
-            collections.workspaceMemberships.exists.where({ workspaceId: task.workspaceId, userId, status: "active" }),
-            collections.streams.exists.where({ id: task.streamId, workspaceId: task.workspaceId, authorId: userId }),
-            collections.streamMemberships.exists.where({ streamId: task.streamId, userId, role: "admin" }),
-          ]));
-        },
-        update: ({ rule, collections, session, allOf, anyOf }) => {
-          const userId = session.claims.sub;
-          const activeMember = (workspaceId: unknown) => collections.workspaceMemberships.exists.where({
-            workspaceId,
-            userId,
-            status: "active",
-          });
-          const manager = (workspaceId: unknown) => anyOf([
-            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
-            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
-          ]);
-          const streamAdmin = (streamId: unknown) => anyOf([
-            collections.streamMemberships.exists.where({ streamId, userId, role: "admin" }),
-          ]);
-          const canEdit = (task: { id: unknown; workspaceId: unknown; streamId: unknown; visibility: unknown; authorId: unknown; assigneeId?: unknown }) => allOf([
-            activeMember(task.workspaceId),
-            anyOf([
-              manager(task.workspaceId),
-              streamAdmin(task.streamId),
-              allOf([
-                anyOf([{ visibility: "public" }, { visibility: "private" }]),
-                anyOf([{ authorId: userId }, { assigneeId: userId }]),
-              ]),
-            ]),
-          ]);
-          rule.whereOld(canEdit).whereNew((task) => allOf([
-            canEdit(task),
-            collections.tasks.exists.where({ id: task.id, workspaceId: task.workspaceId, streamId: task.streamId }),
-          ]));
-        },
-        delete: ({ rule, collections, session, allOf, anyOf }) => {
-          const userId = session.claims.sub;
-          rule.where((task) => allOf([
-            { authorId: userId },
-            collections.workspaceMemberships.exists.where({ workspaceId: task.workspaceId, userId, status: "active" }),
-            anyOf([
-              collections.streamMemberships.exists.where({ streamId: task.streamId, userId, role: "admin" }),
-            ]),
-          ]));
-        },
-      },
-      admin: {
-        useAsTitle: "name",
-        defaultColumns: ["name", "workspace", "stream", "status", "assignee", "dueAt"],
-        listSearchableFields: ["name", "content"],
-      },
-      fields: tasksFields,
-    } satisfies CollectionDefinition<typeof tasksFields>,
-    {
       slug: "channels" as const,
       labels: { singular: "Channel", plural: "Channels" },
       timestamps: true,
@@ -353,10 +239,7 @@ export default defineConfig({
             collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
           ]);
           const streamMember = (streamId: unknown) => collections.streamMemberships.exists.where({ streamId, userId });
-          const publicEntity = (streamId: unknown) => anyOf([
-            collections.tasks.exists.where({ streamId, visibility: "public" }),
-            collections.channels.exists.where({ streamId, visibility: "public" }),
-          ]);
+          const publicEntity = (streamId: unknown) => collections.channels.exists.where({ streamId, visibility: "public" });
           rule.where((stream) => allOf([
             activeMember(stream.workspaceId),
             anyOf([streamMember(stream.id), manager(stream.workspaceId), publicEntity(stream.id)]),

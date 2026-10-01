@@ -9,22 +9,22 @@ The API follows the pinned `jazz-tools@2.0.0-alpha.58` query and write behavior.
 Each collection exposes:
 
 ```ts
-client.tasks.query({
-  where: { status: { in: ["todo", "in-progress"] }, dueAt: { lte: new Date() } },
+client.channels.query({
+  where: { visibility: { in: ["public", "private"] } },
   orderBy: { field: "$updatedAt", direction: "desc" },
   limit: 20,
   offset: 0,
   includeTimestamps: true,
 });
 
-const page = await client.tasks.find({
+const page = await client.channels.find({
   where: { workspaceId: "workspace-id" },
   orderBy: { field: "name", direction: "asc" },
   limit: 20,
   offset: 40,
 });
 
-const task = await client.tasks.findById("task-id");
+const channel = await client.channels.findById("channel-id");
 ```
 
 `query()` returns a Jazz `QueryBuilder`, suitable for Jazz React's `useAll` subscription. `find()` executes it through the supplied `Db`. `findById()` returns the local document or `null`. Use limits for interactive lists; `find()` without a limit reads every matching document.
@@ -44,10 +44,10 @@ An `id` filter is also supported. Sort fields include configured stored fields, 
 Set `admin.listSearchableFields` to text fields. The client exposes `search()` and `searchIds()`:
 
 ```ts
-const results = await db.all(client.tasks.search({
+const results = await db.all(client.channels.search({
   search: "release",
   fields: ["name", "content"],
-  where: { status: "todo" },
+  where: { visibility: "public" },
   orderBy: { field: "$updatedAt", direction: "desc" },
   limit: 20,
   offset: 0,
@@ -71,7 +71,7 @@ A `join` field is virtual reverse metadata. It generates no stored column and ca
 The collection client exposes `create`, `update`, and `delete`. Direct mode returns after the local optimistic mutation and reports `durability: "local"`:
 
 ```ts
-const result = await client.tasks.create({ name: "Review release" });
+const result = await client.channels.create({ name: "release-updates", workspaceId: "workspace-id" });
 // Local replica is updated here.
 await result.waitForGlobal(); // Rejects if Jazz does not confirm global durability.
 ```

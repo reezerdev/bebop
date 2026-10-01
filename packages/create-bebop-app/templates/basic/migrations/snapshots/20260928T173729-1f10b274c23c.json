@@ -1,0 +1,35 @@
+{
+  "todos": {
+    "columns": [
+      {
+        "name": "title",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "notes",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "completed",
+        "column_type": {
+          "type": "Boolean"
+        },
+        "nullable": true
+      },
+      {
+        "name": "dueAt",
+        "column_type": {
+          "type": "Timestamp"
+        },
+        "nullable": true
+      }
+    ],
+    "relations": {}
+  }
+}

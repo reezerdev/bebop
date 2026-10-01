@@ -11,7 +11,6 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
     "media": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.media.exists.where(input as never) } },
     "workspaces": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.workspaces.exists.where(input as never) } },
     "workspaceMemberships": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.workspaceMemberships.exists.where(input as never) } },
-    "tasks": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.tasks.exists.where(input as never) } },
     "channels": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.channels.exists.where(input as never) } },
     "streams": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.streams.exists.where(input as never) } },
     "streamMemberships": { exists: { where: (input: Record<string, unknown> | import("jazz-tools/permissions").PermissionExpressionInput) => policy.streamMemberships.exists.where(input as never) } },
@@ -159,47 +158,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.workspaceMemberships.allowDelete.where(bebopAdmin);
   }
-  const tasksReadPermissions = bebopConfig.collections[4].permissions;
-  if (tasksReadPermissions?.read) {
-    tasksReadPermissions?.read({
-      rule: bebopRule(policy.tasks.allowRead, true),
-      collections: bebopCollections,
-      session, allOf, anyOf, allowedTo, isCreator,
-    });
-  } else {
-    policy.tasks.allowRead.where(bebopAdmin);
-  }
-  const tasksInsertPermissions = bebopConfig.collections[4].permissions;
-  if (tasksInsertPermissions?.insert) {
-    tasksInsertPermissions?.insert({
-      rule: bebopRule(policy.tasks.allowInsert, true),
-      collections: bebopCollections,
-      session, allOf, anyOf, allowedTo, isCreator,
-    });
-  } else {
-    policy.tasks.allowInsert.where(bebopAdmin);
-  }
-  const tasksUpdatePermissions = bebopConfig.collections[4].permissions;
-  if (tasksUpdatePermissions?.update) {
-    tasksUpdatePermissions?.update({
-      rule: bebopRule(policy.tasks.allowUpdate, true),
-      collections: bebopCollections,
-      session, allOf, anyOf, allowedTo, isCreator,
-    });
-  } else {
-    policy.tasks.allowUpdate.where(bebopAdmin);
-  }
-  const tasksDeletePermissions = bebopConfig.collections[4].permissions;
-  if (tasksDeletePermissions?.delete) {
-    tasksDeletePermissions?.delete({
-      rule: bebopRule(policy.tasks.allowDelete, true),
-      collections: bebopCollections,
-      session, allOf, anyOf, allowedTo, isCreator,
-    });
-  } else {
-    policy.tasks.allowDelete.where(bebopAdmin);
-  }
-  const channelsReadPermissions = bebopConfig.collections[5].permissions;
+  const channelsReadPermissions = bebopConfig.collections[4].permissions;
   if (channelsReadPermissions?.read) {
     channelsReadPermissions?.read({
       rule: bebopRule(policy.channels.allowRead, true),
@@ -209,7 +168,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.channels.allowRead.where(bebopAdmin);
   }
-  const channelsInsertPermissions = bebopConfig.collections[5].permissions;
+  const channelsInsertPermissions = bebopConfig.collections[4].permissions;
   if (channelsInsertPermissions?.insert) {
     channelsInsertPermissions?.insert({
       rule: bebopRule(policy.channels.allowInsert, true),
@@ -219,7 +178,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.channels.allowInsert.where(bebopAdmin);
   }
-  const channelsUpdatePermissions = bebopConfig.collections[5].permissions;
+  const channelsUpdatePermissions = bebopConfig.collections[4].permissions;
   if (channelsUpdatePermissions?.update) {
     channelsUpdatePermissions?.update({
       rule: bebopRule(policy.channels.allowUpdate, true),
@@ -229,7 +188,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.channels.allowUpdate.where(bebopAdmin);
   }
-  const channelsDeletePermissions = bebopConfig.collections[5].permissions;
+  const channelsDeletePermissions = bebopConfig.collections[4].permissions;
   if (channelsDeletePermissions?.delete) {
     channelsDeletePermissions?.delete({
       rule: bebopRule(policy.channels.allowDelete, true),
@@ -239,7 +198,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.channels.allowDelete.where(bebopAdmin);
   }
-  const streamsReadPermissions = bebopConfig.collections[6].permissions;
+  const streamsReadPermissions = bebopConfig.collections[5].permissions;
   if (streamsReadPermissions?.read) {
     streamsReadPermissions?.read({
       rule: bebopRule(policy.streams.allowRead, true),
@@ -249,7 +208,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streams.allowRead.where(bebopAdmin);
   }
-  const streamsInsertPermissions = bebopConfig.collections[6].permissions;
+  const streamsInsertPermissions = bebopConfig.collections[5].permissions;
   if (streamsInsertPermissions?.insert) {
     streamsInsertPermissions?.insert({
       rule: bebopRule(policy.streams.allowInsert, true),
@@ -259,7 +218,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streams.allowInsert.where(bebopAdmin);
   }
-  const streamsUpdatePermissions = bebopConfig.collections[6].permissions;
+  const streamsUpdatePermissions = bebopConfig.collections[5].permissions;
   if (streamsUpdatePermissions?.update) {
     streamsUpdatePermissions?.update({
       rule: bebopRule(policy.streams.allowUpdate, true),
@@ -269,7 +228,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streams.allowUpdate.where(bebopAdmin);
   }
-  const streamsDeletePermissions = bebopConfig.collections[6].permissions;
+  const streamsDeletePermissions = bebopConfig.collections[5].permissions;
   if (streamsDeletePermissions?.delete) {
     streamsDeletePermissions?.delete({
       rule: bebopRule(policy.streams.allowDelete, true),
@@ -279,7 +238,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streams.allowDelete.where(bebopAdmin);
   }
-  const streamMembershipsReadPermissions = bebopConfig.collections[7].permissions;
+  const streamMembershipsReadPermissions = bebopConfig.collections[6].permissions;
   if (streamMembershipsReadPermissions?.read) {
     streamMembershipsReadPermissions?.read({
       rule: bebopRule(policy.streamMemberships.allowRead, true),
@@ -289,7 +248,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streamMemberships.allowRead.where(bebopAdmin);
   }
-  const streamMembershipsInsertPermissions = bebopConfig.collections[7].permissions;
+  const streamMembershipsInsertPermissions = bebopConfig.collections[6].permissions;
   if (streamMembershipsInsertPermissions?.insert) {
     streamMembershipsInsertPermissions?.insert({
       rule: bebopRule(policy.streamMemberships.allowInsert, true),
@@ -299,7 +258,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streamMemberships.allowInsert.where(bebopAdmin);
   }
-  const streamMembershipsUpdatePermissions = bebopConfig.collections[7].permissions;
+  const streamMembershipsUpdatePermissions = bebopConfig.collections[6].permissions;
   if (streamMembershipsUpdatePermissions?.update) {
     streamMembershipsUpdatePermissions?.update({
       rule: bebopRule(policy.streamMemberships.allowUpdate, true),
@@ -309,7 +268,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streamMemberships.allowUpdate.where(bebopAdmin);
   }
-  const streamMembershipsDeletePermissions = bebopConfig.collections[7].permissions;
+  const streamMembershipsDeletePermissions = bebopConfig.collections[6].permissions;
   if (streamMembershipsDeletePermissions?.delete) {
     streamMembershipsDeletePermissions?.delete({
       rule: bebopRule(policy.streamMemberships.allowDelete, true),
@@ -319,7 +278,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.streamMemberships.allowDelete.where(bebopAdmin);
   }
-  const entriesReadPermissions = bebopConfig.collections[8].permissions;
+  const entriesReadPermissions = bebopConfig.collections[7].permissions;
   if (entriesReadPermissions?.read) {
     entriesReadPermissions?.read({
       rule: bebopRule(policy.entries.allowRead, true),
@@ -329,7 +288,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.entries.allowRead.where(bebopAdmin);
   }
-  const entriesInsertPermissions = bebopConfig.collections[8].permissions;
+  const entriesInsertPermissions = bebopConfig.collections[7].permissions;
   if (entriesInsertPermissions?.insert) {
     entriesInsertPermissions?.insert({
       rule: bebopRule(policy.entries.allowInsert, true),
@@ -339,7 +298,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.entries.allowInsert.where(bebopAdmin);
   }
-  const entriesUpdatePermissions = bebopConfig.collections[8].permissions;
+  const entriesUpdatePermissions = bebopConfig.collections[7].permissions;
   if (entriesUpdatePermissions?.update) {
     entriesUpdatePermissions?.update({
       rule: bebopRule(policy.entries.allowUpdate, true),
@@ -349,7 +308,7 @@ const appPermissions = s.definePermissions(app, ({ policy, session, allOf, anyOf
   } else {
     policy.entries.allowUpdate.where(bebopAdmin);
   }
-  const entriesDeletePermissions = bebopConfig.collections[8].permissions;
+  const entriesDeletePermissions = bebopConfig.collections[7].permissions;
   if (entriesDeletePermissions?.delete) {
     entriesDeletePermissions?.delete({
       rule: bebopRule(policy.entries.allowDelete, true),

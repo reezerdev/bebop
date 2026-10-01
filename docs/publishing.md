@@ -1,6 +1,6 @@
 # Publishing the Bebop packages
 
-The public packages are `@bebopdev/core`, `@bebopdev/admin`, and `@bebopdev/cli`. Their first release is `0.1.0-beta.0`, published on npm's `beta` tag. This lets early users install `@bebopdev/core@beta` while the stable `latest` tag remains reserved for a later release.
+The public packages are `@bebopdev/core`, `@bebopdev/admin`, and `@bebopdev/cli`. Their current release is `0.1.0`, published on npm's `beta` tag. This lets early users install `@bebopdev/core@beta` while the stable `latest` tag remains on the initial `0.1.0-beta.0` release until a stable release is ready.
 
 For the planned stable release, use the [v1.0.0 release checklist](./v1.0.0-release-checklist.md). Version changes are gated on all listed checks, including the admin performance benchmark; publishing remains a separate step.
 

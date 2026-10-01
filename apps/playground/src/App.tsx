@@ -10,7 +10,6 @@ import { createBebopClient } from "../bebop-generated-client.js";
 import { Homepage } from "./Homepage.tsx";
 import { PlaygroundWidget } from "./PlaygroundPage.tsx";
 import { withStreamCollections } from "./stream-client.js";
-import { withAcyclicTaskParents } from "./task-parent.js";
 import { signOutWithLocalFallback } from "./logout.js";
 
 export function App() {
@@ -29,9 +28,9 @@ export function App() {
   const currentUserName = authSession?.user.name?.trim() ?? "";
   const currentUserEmail = authSession?.user.email?.trim() ?? "";
   const currentUserImage = authSession?.user.image ?? "";
-  const bebop = useMemo(() => withAcyclicTaskParents(withStreamCollections(createBebopClient(db, {
+  const bebop = useMemo(() => withStreamCollections(createBebopClient(db, {
     commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
-  }), db, currentUserId)), [db, currentUserId]);
+  }), db, currentUserId), [db, currentUserId]);
   const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [users, setUsers] = useState<readonly { id: string; name: string }[]>([]);
@@ -104,10 +103,9 @@ export function App() {
   }, [canAccessAdmin, currentUserId, currentUserName, isAdminRoute, users]);
   const relationOptions = useMemo(() => ({ users: authorOptions }), [authorOptions]);
   const preflightRelatedWrite = useCallback((collectionSlug: string) =>
-    collectionSlug === "tasks" || collectionSlug === "channels" ? "unknown" : undefined,
+    collectionSlug === "channels" ? "unknown" : undefined,
   []);
   const createDefaults = useMemo(() => ({
-    tasks: { author: currentUserId, assignee: currentUserId, status: "todo", visibility: "public" },
     channels: { author: currentUserId, visibility: "public" },
     streams: { author: currentUserId },
     entries: { author: currentUserId, type: "message" },

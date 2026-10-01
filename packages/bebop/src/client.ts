@@ -7,12 +7,13 @@ import type {
   Fields,
   StoredFields,
 } from "./bebop.ts";
-import { runLoggedHook, type HookLogEvent } from "./hook-logging.ts";
+import { runMaybeLoggedHook, type HookLogEvent } from "./hook-logging.ts";
 import { validateCollectionData } from "./validation.ts";
 
 function logClientHookEvent(event: HookLogEvent): void {
   const { err, ...fields } = event;
   if (event.outcome === "error") console.error("[bebop] Hook failed", fields, err);
+  else if (event.outcome === "skipped") console.info("[bebop] Hook skipped (no callback configured)", fields);
   else console.info("[bebop] Hook completed", fields);
 }
 
@@ -366,11 +367,13 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
           operation: "create",
           data: { ...input } as Partial<StoredFields<Fields>>,
         };
-        const patch = hooks?.beforeChange
-          ? logHooks
-            ? await runLoggedHook({ collection: collectionName, hook: "beforeChange", operation: "create" }, () => hooks.beforeChange!(context), logClientHookEvent)
-            : await hooks.beforeChange(context)
-          : undefined;
+        const patch = logHooks
+          ? await runMaybeLoggedHook(
+              { collection: collectionName, hook: "beforeChange", operation: "create" },
+              hooks?.beforeChange ? () => hooks.beforeChange!(context) : undefined,
+              logClientHookEvent,
+            )
+          : await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
         validateWriteData(document);
         await validateCollectionData(definition, document, "create");
@@ -392,13 +395,15 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
           doc = write.value as CollectionDocument<Fields>;
         }
         try {
-          if (hooks?.afterChange) {
-            const hookContext = { operation: "create" as const, doc };
-            if (logHooks) {
-              await runLoggedHook({ collection: collectionName, hook: "afterChange", operation: "create", id: doc.id }, () => hooks.afterChange!(hookContext), logClientHookEvent);
-            } else {
-              await hooks.afterChange(hookContext);
-            }
+          const hookContext = { operation: "create" as const, doc };
+          if (logHooks) {
+            await runMaybeLoggedHook(
+              { collection: collectionName, hook: "afterChange", operation: "create", id: doc.id },
+              hooks?.afterChange ? () => hooks.afterChange!(hookContext) : undefined,
+              logClientHookEvent,
+            );
+          } else {
+            await hooks?.afterChange?.(hookContext);
           }
         } catch (error) {
           throw new BebopHookError("afterChange", error, write);
@@ -426,11 +431,13 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
           data: { ...input } as Partial<StoredFields<Fields>>,
           originalDoc: originalDoc!,
         };
-        const patch = hooks?.beforeChange
-          ? logHooks
-            ? await runLoggedHook({ collection: collectionName, hook: "beforeChange", operation: "update", id }, () => hooks.beforeChange!(context), logClientHookEvent)
-            : await hooks.beforeChange(context)
-          : undefined;
+        const patch = logHooks
+          ? await runMaybeLoggedHook(
+              { collection: collectionName, hook: "beforeChange", operation: "update", id },
+              hooks?.beforeChange ? () => hooks.beforeChange!(context) : undefined,
+              logClientHookEvent,
+            )
+          : await hooks?.beforeChange?.(context);
         const document = { ...context.data, ...patch };
         validateWriteData(document);
         await validateCollectionData(definition, document, "update", originalDoc!);
@@ -449,13 +456,15 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
         }
         const doc = { ...originalDoc, ...changes } as CollectionDocument<Fields>;
         try {
-          if (hooks?.afterChange) {
-            const hookContext = { operation: "update" as const, doc, originalDoc: originalDoc! };
-            if (logHooks) {
-              await runLoggedHook({ collection: collectionName, hook: "afterChange", operation: "update", id }, () => hooks.afterChange!(hookContext), logClientHookEvent);
-            } else {
-              await hooks.afterChange(hookContext);
-            }
+          const hookContext = { operation: "update" as const, doc, originalDoc: originalDoc! };
+          if (logHooks) {
+            await runMaybeLoggedHook(
+              { collection: collectionName, hook: "afterChange", operation: "update", id },
+              hooks?.afterChange ? () => hooks.afterChange!(hookContext) : undefined,
+              logClientHookEvent,
+            );
+          } else {
+            await hooks?.afterChange?.(hookContext);
           }
         } catch (error) {
           throw new BebopHookError("afterChange", error, write);
@@ -470,23 +479,27 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
           return { id, durability: "global" as const, waitForGlobal: async () => {} };
         }
         const doc = await readLocalDocument(id) as CollectionDocument<Fields> | null ?? undefined;
-        if (hooks?.beforeDelete) {
-          const hookContext = { id, ...(doc ? { doc } : {}) };
-          if (logHooks) {
-            await runLoggedHook({ collection: collectionName, hook: "beforeDelete", operation: "delete", id }, () => hooks.beforeDelete!(hookContext), logClientHookEvent);
-          } else {
-            await hooks.beforeDelete(hookContext);
-          }
+        const beforeDeleteContext = { id, ...(doc ? { doc } : {}) };
+        if (logHooks) {
+          await runMaybeLoggedHook(
+            { collection: collectionName, hook: "beforeDelete", operation: "delete", id },
+            hooks?.beforeDelete ? () => hooks.beforeDelete!(beforeDeleteContext) : undefined,
+            logClientHookEvent,
+          );
+        } else {
+          await hooks?.beforeDelete?.(beforeDeleteContext);
         }
         const write = db.delete(table, id) as WriteHandle<unknown, unknown>;
         try {
-          if (hooks?.afterDelete) {
-            const hookContext = { id, ...(doc ? { doc } : {}) };
-            if (logHooks) {
-              await runLoggedHook({ collection: collectionName, hook: "afterDelete", operation: "delete", id }, () => hooks.afterDelete!(hookContext), logClientHookEvent);
-            } else {
-              await hooks.afterDelete(hookContext);
-            }
+          const afterDeleteContext = { id, ...(doc ? { doc } : {}) };
+          if (logHooks) {
+            await runMaybeLoggedHook(
+              { collection: collectionName, hook: "afterDelete", operation: "delete", id },
+              hooks?.afterDelete ? () => hooks.afterDelete!(afterDeleteContext) : undefined,
+              logClientHookEvent,
+            );
+          } else {
+            await hooks?.afterDelete?.(afterDeleteContext);
           }
         } catch (error) {
           throw new BebopHookError("afterDelete", error, write);

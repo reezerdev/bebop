@@ -4,7 +4,8 @@ export type HookLogEvent = {
   hook: "beforeChange" | "afterChange" | "beforeDelete" | "afterDelete";
   operation: "create" | "update" | "delete";
   id?: string;
-  outcome: "success" | "error";
+  callbackConfigured: boolean;
+  outcome: "success" | "error" | "skipped";
   durationMs: number;
   err?: unknown;
 };
@@ -12,17 +13,29 @@ export type HookLogEvent = {
 export type HookLogContext = Pick<HookLogEvent, "collection" | "hook" | "operation" | "id">;
 
 /** Logs only callback metadata; hook input and document contents are intentionally omitted. */
-export async function runLoggedHook<T>(
+export async function runMaybeLoggedHook<T>(
   context: HookLogContext,
-  invoke: () => T | Promise<T>,
+  invoke: (() => T | Promise<T>) | undefined,
   writeEvent: (event: HookLogEvent) => void,
-): Promise<T> {
+): Promise<T | undefined> {
+  if (!invoke) {
+    safelyWriteEvent(writeEvent, {
+      event: "bebop.hook",
+      ...context,
+      callbackConfigured: false,
+      outcome: "skipped",
+      durationMs: 0,
+    });
+    return undefined;
+  }
+
   const startedAt = performance.now();
   try {
     const result = await invoke();
     safelyWriteEvent(writeEvent, {
       event: "bebop.hook",
       ...context,
+      callbackConfigured: true,
       outcome: "success",
       durationMs: Math.round(performance.now() - startedAt),
     });
@@ -31,6 +44,7 @@ export async function runLoggedHook<T>(
     safelyWriteEvent(writeEvent, {
       event: "bebop.hook",
       ...context,
+      callbackConfigured: true,
       outcome: "error",
       durationMs: Math.round(performance.now() - startedAt),
       err,

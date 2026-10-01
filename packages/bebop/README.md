@@ -29,7 +29,7 @@ export default defineConfig({
 
 ## Hook logging
 
-Hook logging is disabled by default. Set `logging.hooks` to `true` to emit one compact event when each configured hook completes or throws:
+Hook logging is disabled by default. Set `logging.hooks` to `true` to emit one compact event for each lifecycle stage reached by a write, even when that stage has no callback configured:
 
 ```ts
 export default defineConfig({
@@ -48,7 +48,7 @@ export default defineConfig({
 });
 ```
 
-Events include the collection, hook, operation, document ID when available, duration, and outcome. Bebop omits document data. Direct-write hooks log through the browser console; command-write hooks log as structured JSON through Pino in the server process. Leave `logging.hooks` unset or `false` for stress tests to skip timing, event formatting, and log output.
+Events include the collection, hook, operation, document ID when available, whether a callback is configured, duration, and outcome (`success`, `error`, or `skipped`). A skipped event means the lifecycle stage ran but has no callback; it has a zero duration. Bebop omits document data. Direct-write hooks log through the browser console; command-write hooks log as structured JSON through Pino in the server process. Leave `logging.hooks` unset or `false` for stress tests to skip timing, event formatting, and log output.
 
 ## Permissions
 

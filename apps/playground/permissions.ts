@@ -1,4 +1,4 @@
-// Bebop permission source fingerprint: 03b2fb1b69f7afe576f7a5a795779bf5eb0b8041ec7b3e923ad0aaf3a69af22a
+// Bebop permission source fingerprint: cb9595efcf73a3ea11f227572985e14b756fc81aa0b1c31910f4fc0b2e1f3035
 // Generated from bebop.config.ts. Unspecified access defaults to authenticated sessions; omitted Jazz permission operations are denied.
 import { schema as s } from "jazz-tools";
 import { app } from "./bebop-generated-schema.js";

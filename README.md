@@ -33,10 +33,10 @@ To delete the playground's local Jazz server database, stop `pnpm dev` and run `
 Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts), then run `pnpm generate` or let `pnpm dev` regenerate the outputs:
 
 ```ts
-import { collection, defineConfig } from "@bebopdev/core";
+import { defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
-  collections: [collection({
+  collections: [{
     slug: "tasks",
     labels: { singular: "Task", plural: "Tasks" },
     permissions: {
@@ -55,7 +55,7 @@ export default defineConfig({
       { name: "content", type: "text", admin: { input: "textarea" } },
       { name: "status", type: "select", options: ["todo", "done"] },
     ],
-  })],
+  }],
 });
 ```
 
@@ -65,7 +65,7 @@ Set `labels.singular` and `labels.plural` to control document and collection nam
 
 ## Access and writes
 
-Use `permissions` for Jazz-style, per-operation rules. Each callback receives a `rule` builder, typed `session`, and read-only `collections.<slug>.exists.where(...)` helpers. Inside `rule.where((row) => ...)`, `row` is a typed policy reference for the candidate row; update rules also expose `whereOld` and `whereNew`. Every operation must be granted explicitly; omitted operations are denied. The playground keeps Workspaces and Media public with explicit `rule.always()` grants, routes Membership writes through the Better Auth command handler, and limits Task access to active Workspace members. The older `access` option remains supported for compatibility and is deprecated.
+Use `permissions` for Jazz-style, per-operation rules. Each callback receives a `rule` builder, typed `session`, and read-only `collections.<slug>.exists.where(...)` helpers. Inside `rule.where((row) => ...)`, `row` is a typed policy reference for the candidate row; update rules also expose `whereOld` and `whereNew`. For exact field checks inside callbacks, define the fields as a readonly tuple and apply `satisfies CollectionDefinition<typeof fields>` to the collection object. Every operation must be granted explicitly; omitted operations are denied. The playground keeps Workspaces and Media public with explicit `rule.always()` grants, routes Membership writes through the Better Auth command handler, and limits Task access to active Workspace members. The older `access` option remains supported for compatibility and is deprecated.
 
 The Better Auth integration checks admin status before mounting `/admin`. By default, only users accepted by Better Auth's Admin plugin can enter; an auth collection can customize the rule with `access.admin`, which receives the authenticated `req.user` and `req.isAdmin`. Other auth providers can mount `createBebopAdminAccessHandler` with their verified session resolver, or pass their own `canAccessAdmin` result to `BebopAdmin`.
 

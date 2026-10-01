@@ -9,18 +9,18 @@ pnpm add @bebopdev/core jazz-tools
 Define collections with Payload-compatible field objects, then use `defineConfig` to create the config consumed by `bebop dev`:
 
 ```ts
-import { collection, defineConfig } from "@bebopdev/core";
+import { defineConfig } from "@bebopdev/core";
 
 export default defineConfig({
   collections: [
-    collection({
+    {
       slug: "posts",
       labels: { singular: "Post", plural: "Posts" },
       fields: [
         { name: "title", type: "text", required: true },
         { name: "publishedAt", type: "date" },
       ],
-    }),
+    },
   ],
 });
 ```
@@ -29,25 +29,31 @@ export default defineConfig({
 
 ## Permissions
 
-Use the collection's `permissions` object to build Jazz rules for reads and direct writes. Every direct operation must be granted explicitly; omitted operations are denied. Command writes require the server handler's `authorize` callback. `collection(...)` types the current row reference from the collection's fields. Updates can check the stored row with `whereOld` and the proposed row with `whereNew`; `collections.<slug>.exists.where(...)` expresses a cross-collection check.
+Use the collection's `permissions` object to build Jazz rules for reads and direct writes. Every direct operation must be granted explicitly; omitted operations are denied. Command writes require the server handler's `authorize` callback. To give callbacks field-specific row types, define the fields as a readonly tuple and apply `satisfies CollectionDefinition<typeof taskFields>` to the plain collection object. Updates can check the stored row with `whereOld` and the proposed row with `whereNew`; `collections.<slug>.exists.where(...)` expresses a cross-collection check.
 
 ```ts
-collection({
-  slug: "tasks",
-  fields: [
-    { name: "workspace", type: "relationship", relationTo: "workspaces" },
-      { name: "author", type: "relationship", relationTo: "users" },
-  ],
-  permissions: {
-    read: ({ rule, collections, session }) => rule.where((task) =>
-      collections.workspaceMemberships.exists.where({
-        workspaceId: task.workspaceId,
-        userId: session.claims.sub,
-        status: "active",
-      }),
-    ),
-    insert: ({ rule }) => rule.never(),
-  },
+import { defineConfig, type CollectionDefinition } from "@bebopdev/core";
+
+const taskFields = [
+  { name: "workspace", type: "relationship", relationTo: "workspaces" },
+  { name: "author", type: "relationship", relationTo: "users" },
+] as const;
+
+export default defineConfig({
+  collections: [{
+    slug: "tasks",
+    fields: taskFields,
+    permissions: {
+      read: ({ rule, collections, session }) => rule.where((task) =>
+        collections.workspaceMemberships.exists.where({
+          workspaceId: task.workspaceId,
+          userId: session.claims.sub,
+          status: "active",
+        }),
+      ),
+      insert: ({ rule }) => rule.never(),
+    },
+  } satisfies CollectionDefinition<typeof taskFields>],
 });
 ```
 
@@ -56,17 +62,22 @@ collection({
 Add one collection with `auth: true` to use Better Auth's built-in user model. The collection's custom scalar fields become Better Auth additional user fields; Bebop supplies `name`, `email`, `role`, and the other built-in user properties. Relationships refer to the configured slug, while the generated Jazz schema maps them to Better Auth's protected user table.
 
 ```ts
-collection({
-  slug: "users",
-  auth: true,
-  labels: { singular: "User", plural: "Users" },
-  admin: { useAsTitle: "name", defaultColumns: ["name", "email", "role"] },
-  fields: [{ name: "department", type: "text" }],
-});
+import { defineConfig } from "@bebopdev/core";
 
-collection({
-  slug: "tasks",
-  fields: [{ name: "assignee", type: "relationship", relationTo: "users" }],
+export default defineConfig({
+  collections: [
+    {
+      slug: "users",
+      auth: true,
+      labels: { singular: "User", plural: "Users" },
+      admin: { useAsTitle: "name", defaultColumns: ["name", "email", "role"] },
+      fields: [{ name: "department", type: "text" }],
+    },
+    {
+      slug: "tasks",
+      fields: [{ name: "assignee", type: "relationship", relationTo: "users" }],
+    },
+  ],
 });
 ```
 
@@ -79,13 +90,17 @@ admin: { useAsTitle: ["workspace", "user"] }
 `bebop generate` creates the Better Auth schema automatically and installs Bebop's JWT and Admin plugins. A custom user field is read-only on public auth endpoints by default; opt into signup input with `auth: { input: true }` only when users may safely set that value themselves. The built-in admin panel is restricted to Better Auth administrators by default, including users listed in `adminUserIds`. To customize entry, define `access.admin` on the auth collection:
 
 ```ts
-collection({
-  slug: "users",
-  auth: true,
-  fields: [],
-  access: {
-    admin: ({ req: { user, isAdmin } }) => isAdmin || user.role === "support",
-  },
+import { defineConfig } from "@bebopdev/core";
+
+export default defineConfig({
+  collections: [{
+    slug: "users",
+    auth: true,
+    fields: [],
+    access: {
+      admin: ({ req: { user, isAdmin } }) => isAdmin || user.role === "support",
+    },
+  }],
 });
 ```
 
@@ -102,15 +117,20 @@ For a public operation, use `rule.always()`. For authenticated-only behavior, us
 Mark a collection as upload-enabled and point an upload field at it:
 
 ```ts
-collection({
-  slug: "media",
-  upload: { mimeTypes: ["image/*"] },
-  fields: [{ name: "alt", type: "text" }],
-});
+import { defineConfig } from "@bebopdev/core";
 
-collection({
-  slug: "tasks",
-  fields: [{ name: "image", type: "upload", relationTo: "media" }],
+export default defineConfig({
+  collections: [
+    {
+      slug: "media",
+      upload: { mimeTypes: ["image/*"] },
+      fields: [{ name: "alt", type: "text" }],
+    },
+    {
+      slug: "tasks",
+      fields: [{ name: "image", type: "upload", relationTo: "media" }],
+    },
+  ],
 });
 ```
 

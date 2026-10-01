@@ -7,18 +7,20 @@ Bebop's `permissions` option is a small, collection-scoped wrapper around Jazz's
 Declare a callback for every operation the collection should allow. The operation names follow Jazz: `read`, `insert`, `update`, and `delete`. Any omitted operation is denied. An empty `permissions: {}` object denies all four operations.
 
 ```ts
-import { collection, defineConfig } from "@bebopdev/core";
+import { defineConfig, type CollectionDefinition } from "@bebopdev/core";
+
+const taskFields = [
+  { name: "name", type: "text", required: true },
+  { name: "workspace", type: "relationship", relationTo: "workspaces" },
+  { name: "author", type: "relationship", relationTo: "users", required: true },
+  { name: "assignee", type: "relationship", relationTo: "users" },
+  { name: "status", type: "select", options: ["backlog", "todo", "done"] },
+] as const;
 
 export default defineConfig({
-  collections: [collection({
+  collections: [{
     slug: "tasks",
-    fields: [
-      { name: "name", type: "text", required: true },
-      { name: "workspace", type: "relationship", relationTo: "workspaces" },
-      { name: "author", type: "relationship", relationTo: "users", required: true },
-      { name: "assignee", type: "relationship", relationTo: "users" },
-      { name: "status", type: "select", options: ["backlog", "todo", "done"] },
-    ],
+    fields: taskFields,
     permissions: {
       read: ({ rule, collections, session }) => rule.where((task) =>
         collections.workspaceMemberships.exists.where({
@@ -63,11 +65,11 @@ export default defineConfig({
         }),
       ])),
     },
-  })],
+  } satisfies CollectionDefinition<typeof taskFields>],
 });
 ```
 
-`collection(...)` preserves the collection's field types for the current row reference. The row callback receives Jazz's symbolic `RowContext`, not a loaded document:
+`CollectionDefinition<typeof taskFields>` gives callbacks the configured fields while keeping the collection a plain object. The row callback receives Jazz's symbolic `RowContext`, not a loaded document. TypeScript cannot infer a sibling inline `fields` property into callback parameters, so use this `satisfies` annotation when callbacks need field-specific checks:
 
 - `read`: the existing row being considered for the result.
 - `insert`: the proposed new row.
@@ -114,13 +116,17 @@ The older `access` option remains supported for compatibility and is deprecated.
 With the built-in Better Auth integration, Bebop checks the Better Auth Admin plugin before the admin UI is shown. Only admins can enter by default, including IDs configured with Better Auth's `adminUserIds`. An auth collection can customize this decision in Payload's `access.admin` shape:
 
 ```ts
-collection({
-  slug: "users",
-  auth: true,
-  fields: [],
-  access: {
-    admin: ({ req: { user, isAdmin } }) => isAdmin || user.role === "support",
-  },
+import { defineConfig } from "@bebopdev/core";
+
+export default defineConfig({
+  collections: [{
+    slug: "users",
+    auth: true,
+    fields: [],
+    access: {
+      admin: ({ req: { user, isAdmin } }) => isAdmin || user.role === "support",
+    },
+  }],
 });
 ```
 

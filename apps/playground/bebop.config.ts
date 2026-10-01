@@ -1,10 +1,70 @@
-import { collection, defineConfig } from "@bebopdev/core";
+import { defineConfig, type CollectionDefinition } from "@bebopdev/core";
+
+const tasksFields = [
+  { name: "name", type: "text", required: true },
+  { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
+  { name: "content", type: "text", admin: { input: "textarea" } },
+  { name: "image", type: "upload", relationTo: "media" },
+  { name: "priority", type: "select", options: [
+    { label: "Low", value: "low" },
+    { label: "Medium", value: "medium" },
+    { label: "High", value: "high" },
+    { label: "Urgent", value: "urgent" },
+  ], admin: { position: "sidebar" } },
+  { name: "parentTask", type: "relationship", relationTo: "tasks", admin: { position: "sidebar" } },
+  { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
+  { name: "status", type: "select", options: [
+    { label: "Backlog", value: "backlog" },
+    { label: "To Do", value: "todo" },
+    { label: "In Progress", value: "in-progress" },
+    { label: "In Review", value: "in-review" },
+    { label: "Done", value: "done" },
+  ], admin: { position: "sidebar" } },
+  { name: "assignee", type: "relationship", relationTo: "users", admin: { position: "sidebar" } },
+  { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
+  { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
+  { name: "visibility", type: "select", required: true, options: [
+    { label: "Public", value: "public" },
+    { label: "Private", value: "private" },
+    { label: "Protected", value: "protected" },
+  ], admin: { position: "sidebar" } },
+  { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
+] as const;
+const channelsFields = [
+  { name: "name", type: "text", required: true },
+  { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
+  { name: "content", type: "text", admin: { input: "textarea" } },
+  { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
+  { name: "visibility", type: "select", required: true, options: ["public", "private"] },
+  { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
+] as const;
+const streamsFields = [
+  { name: "name", type: "text", required: true },
+  { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
+  { name: "author", type: "relationship", relationTo: "users", required: true },
+  { name: "members", type: "join", collection: "streamMemberships", on: "stream" },
+  { name: "entries", type: "join", collection: "entries", on: "stream" },
+  { name: "channels", type: "join", collection: "channels", on: "stream" },
+  { name: "tasks", type: "join", collection: "tasks", on: "stream" },
+] as const;
+const streamMembershipsFields = [
+  { name: "stream", type: "relationship", relationTo: "streams", required: true },
+  { name: "user", type: "relationship", relationTo: "users", required: true },
+  { name: "role", type: "select", required: true, options: ["admin", "member"] },
+] as const;
+const entriesFields = [
+  { name: "stream", type: "relationship", relationTo: "streams", required: true },
+  { name: "type", type: "select", required: true, options: ["message", "comment", "update", "system"] },
+  { name: "content", type: "text", required: true, admin: { input: "textarea" } },
+  { name: "author", type: "relationship", relationTo: "users", required: true },
+  { name: "parentEntry", type: "relationship", relationTo: "entries" },
+] as const;
 
 export default defineConfig({
   upload: { limits: { fileSize: 20 * 1024 * 1024 } },
   collections: [
-    collection({
-      slug: "users",
+    {
+      slug: "users" as const,
       auth: true,
       access: {
         admin: ({ req: { user, isAdmin } }) =>
@@ -36,9 +96,9 @@ export default defineConfig({
         { name: "position", label: "Position", type: "text" },
         { name: "image", label: "Image", type: "upload", relationTo: "media" },
       ],
-    }),
-    collection({
-      slug: "media",
+    },
+    {
+      slug: "media" as const,
       labels: { singular: "Media", plural: "Media" },
       upload: { mimeTypes: ["image/*"] },
       timestamps: true,
@@ -50,9 +110,9 @@ export default defineConfig({
       },
       admin: { useAsTitle: "filename", defaultColumns: ["filename", "mimeType", "filesize"] },
       fields: [{ name: "alt", type: "text" }],
-    }),
-    collection({
-      slug: "workspaces",
+    },
+    {
+      slug: "workspaces" as const,
       labels: { singular: "Workspace", plural: "Workspaces" },
       timestamps: true,
       permissions: {
@@ -78,9 +138,9 @@ export default defineConfig({
           admin: { defaultColumns: ["user", "workspace", "role", "status"] },
         },
       ],
-    }),
-    collection({
-      slug: "workspaceMemberships",
+    },
+    {
+      slug: "workspaceMemberships" as const,
       labels: { singular: "Workspace Membership", plural: "Workspace Memberships" },
       timestamps: true,
       writeMode: "command",
@@ -106,9 +166,9 @@ export default defineConfig({
           { label: "Deactivated", value: "deactivated" },
         ] },
       ],
-    }),
-    collection({
-      slug: "tasks",
+    },
+    {
+      slug: "tasks" as const,
       labels: { singular: "Task", plural: "Tasks" },
       timestamps: true,
       permissions: {
@@ -188,39 +248,10 @@ export default defineConfig({
         defaultColumns: ["name", "workspace", "stream", "status", "assignee", "dueAt"],
         listSearchableFields: ["name", "content"],
       },
-      fields: [
-        { name: "name", type: "text", required: true },
-        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
-        { name: "content", type: "text", admin: { input: "textarea" } },
-        { name: "image", type: "upload", relationTo: "media" },
-        { name: "priority", type: "select", options: [
-          { label: "Low", value: "low" },
-          { label: "Medium", value: "medium" },
-          { label: "High", value: "high" },
-          { label: "Urgent", value: "urgent" },
-        ], admin: { position: "sidebar" } },
-        { name: "parentTask", type: "relationship", relationTo: "tasks", admin: { position: "sidebar" } },
-        { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
-        { name: "status", type: "select", options: [
-          { label: "Backlog", value: "backlog" },
-          { label: "To Do", value: "todo" },
-          { label: "In Progress", value: "in-progress" },
-          { label: "In Review", value: "in-review" },
-          { label: "Done", value: "done" },
-        ], admin: { position: "sidebar" } },
-        { name: "assignee", type: "relationship", relationTo: "users", admin: { position: "sidebar" } },
-        { name: "dueAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
-        { name: "archivedAt", type: "date", admin: { position: "sidebar", date: { pickerAppearance: "dayAndTime" } } },
-        { name: "visibility", type: "select", required: true, options: [
-          { label: "Public", value: "public" },
-          { label: "Private", value: "private" },
-          { label: "Protected", value: "protected" },
-        ], admin: { position: "sidebar" } },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
-      ],
-    }),
-    collection({
-      slug: "channels",
+      fields: tasksFields,
+    } satisfies CollectionDefinition<typeof tasksFields>,
+    {
+      slug: "channels" as const,
       labels: { singular: "Channel", plural: "Channels" },
       timestamps: true,
       permissions: {
@@ -280,17 +311,10 @@ export default defineConfig({
         },
       },
       admin: { useAsTitle: "name", defaultColumns: ["name", "workspace", "visibility", "stream"] },
-      fields: [
-        { name: "name", type: "text", required: true },
-        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
-        { name: "content", type: "text", admin: { input: "textarea" } },
-        { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
-        { name: "visibility", type: "select", required: true, options: ["public", "private"] },
-        { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
-      ],
-    }),
-    collection({
-      slug: "streams",
+      fields: channelsFields,
+    } satisfies CollectionDefinition<typeof channelsFields>,
+    {
+      slug: "streams" as const,
       labels: { singular: "Stream", plural: "Streams" },
       timestamps: true,
       permissions: {
@@ -346,18 +370,10 @@ export default defineConfig({
         },
       },
       admin: { useAsTitle: "name", defaultColumns: ["name", "workspace", "author"] },
-      fields: [
-        { name: "name", type: "text", required: true },
-        { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
-        { name: "author", type: "relationship", relationTo: "users", required: true },
-        { name: "members", type: "join", collection: "streamMemberships", on: "stream" },
-        { name: "entries", type: "join", collection: "entries", on: "stream" },
-        { name: "channels", type: "join", collection: "channels", on: "stream" },
-        { name: "tasks", type: "join", collection: "tasks", on: "stream" },
-      ],
-    }),
-    collection({
-      slug: "streamMemberships",
+      fields: streamsFields,
+    } satisfies CollectionDefinition<typeof streamsFields>,
+    {
+      slug: "streamMemberships" as const,
       labels: { singular: "Stream Membership", plural: "Stream Memberships" },
       timestamps: true,
       permissions: {
@@ -400,14 +416,10 @@ export default defineConfig({
         },
       },
       admin: { useAsTitle: "user", defaultColumns: ["user", "stream", "role"] },
-      fields: [
-        { name: "stream", type: "relationship", relationTo: "streams", required: true },
-        { name: "user", type: "relationship", relationTo: "users", required: true },
-        { name: "role", type: "select", required: true, options: ["admin", "member"] },
-      ],
-    }),
-    collection({
-      slug: "entries",
+      fields: streamMembershipsFields,
+    } satisfies CollectionDefinition<typeof streamMembershipsFields>,
+    {
+      slug: "entries" as const,
       labels: { singular: "Entry", plural: "Entries" },
       timestamps: true,
       permissions: {
@@ -439,13 +451,7 @@ export default defineConfig({
         },
       },
       admin: { useAsTitle: "content", defaultColumns: ["type", "stream", "author"] },
-      fields: [
-        { name: "stream", type: "relationship", relationTo: "streams", required: true },
-        { name: "type", type: "select", required: true, options: ["message", "comment", "update", "system"] },
-        { name: "content", type: "text", required: true, admin: { input: "textarea" } },
-        { name: "author", type: "relationship", relationTo: "users", required: true },
-        { name: "parentEntry", type: "relationship", relationTo: "entries" },
-      ],
-    }),
+      fields: entriesFields,
+    } satisfies CollectionDefinition<typeof entriesFields>,
   ],
 });

@@ -281,21 +281,6 @@ export type BebopConfig = {
   upload?: { limits?: { fileSize?: number } };
 };
 
-export function collection<const TSlug extends string, const TFields extends Fields>(
-  definition: CollectionDefinition<TFields> & { slug: TSlug; auth: true },
-): CollectionDefinition<TFields> & { slug: TSlug; auth: true };
-export function collection<const TSlug extends string, const TFields extends Fields>(
-  definition: CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } },
-): CollectionDefinition<TFields> & { slug: TSlug; upload: true | { mimeTypes?: readonly string[] } };
-export function collection<const TSlug extends string, const TFields extends Fields>(
-  definition: CollectionDefinition<TFields> & { slug: TSlug },
-): CollectionDefinition<TFields> & { slug: TSlug };
-export function collection<const TSlug extends string, const TFields extends Fields>(
-  definition: CollectionDefinition<TFields> & { slug: TSlug },
-): CollectionDefinition<TFields> & { slug: TSlug } {
-  return definition;
-}
-
 export function defineConfig<const T extends BebopConfig>(config: T): T {
   return config;
 }

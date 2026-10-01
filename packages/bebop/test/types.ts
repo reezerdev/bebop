@@ -1,4 +1,4 @@
-import { collection, defineConfig } from "../src/bebop.ts";
+import { defineConfig, type CollectionDefinition } from "../src/bebop.ts";
 import { createBebopBetterAuthClient } from "../src/auth-client.ts";
 import type { BebopClient } from "../src/client.ts";
 
@@ -16,14 +16,25 @@ const config = defineConfig({
 
 declare const client: BebopClient<typeof config>;
 
+const ownedFields = [{ name: "ownerId", type: "text", required: true }] as const;
+
 const ownedConfig = defineConfig({
-  collections: [collection({
+  collections: [{
     slug: "ownedPosts",
-    fields: [{ name: "ownerId", type: "text", required: true }],
+    fields: ownedFields,
     access: {
       read: ({ row }) => {
+        // @ts-expect-error Access rows only contain configured fields.
+        void row.missing;
         return { ownerId: row.ownerId };
       },
+    },
+    permissions: {
+      read: ({ rule }) => rule.where((row) => {
+        // @ts-expect-error Permission rows only contain configured fields.
+        void row.missing;
+        return { ownerId: row.ownerId };
+      }),
     },
     hooks: {
       beforeChange: ({ data }) => {
@@ -33,12 +44,12 @@ const ownedConfig = defineConfig({
         return { ownerId };
       },
     },
-  })],
+  } satisfies CollectionDefinition<typeof ownedFields>],
 });
 
 const workspaceMembershipConfig = defineConfig({
   collections: [
-    collection({
+    {
       slug: "workspaces",
       fields: [{ name: "name", type: "text", required: true }],
       access: {
@@ -50,15 +61,15 @@ const workspaceMembershipConfig = defineConfig({
           });
         },
       },
-    }),
-    collection({
+    },
+    {
       slug: "workspaceMemberships",
       fields: [
         { name: "workspace", type: "relationship", relationTo: "workspaces", required: true },
         { name: "userAccount", type: "text", required: true },
         { name: "status", type: "select", options: ["active", "pending"] },
       ],
-    }),
+    },
   ],
 });
 void workspaceMembershipConfig;
@@ -93,8 +104,8 @@ if (false) {
 }
 
 const uploadConfig = defineConfig({ collections: [
-  collection({ slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }] }),
-  collection({ slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] }),
+  { slug: "media", upload: { mimeTypes: ["image/*"] }, fields: [{ name: "alt", type: "text" }] },
+  { slug: "tasks", fields: [{ name: "image", type: "upload", relationTo: "media" }] },
 ] });
 declare const uploadClient: BebopClient<typeof uploadConfig>;
 if (false) {
@@ -111,8 +122,8 @@ if (false) {
 }
 
 const authConfig = defineConfig({ collections: [
-  collection({ slug: "users", auth: true, fields: [] }),
-  collection({ slug: "tasks", fields: [{ name: "author", type: "relationship", relationTo: "users" }] }),
+  { slug: "users", auth: true, fields: [] },
+  { slug: "tasks", fields: [{ name: "author", type: "relationship", relationTo: "users" }] },
 ] });
 declare const authClient: BebopClient<typeof authConfig>;
 const betterAuthClient = createBebopBetterAuthClient();

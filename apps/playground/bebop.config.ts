@@ -342,6 +342,15 @@ export default defineConfig({
             id: membership.streamId,
             workspaceId: membership.workspaceId,
           });
+          const canManageWorkspace = (workspaceId: unknown) => anyOf([
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "admin" }),
+            collections.workspaceMemberships.exists.where({ workspaceId, userId, status: "active", role: "manager" }),
+          ]);
+          const isActiveWorkspaceMember = (membership: { workspaceId: unknown; userId: unknown }) => collections.workspaceMemberships.exists.where({
+            workspaceId: membership.workspaceId,
+            userId: membership.userId,
+            status: "active",
+          });
           const canJoinReadableChannel = (membership: { streamId: unknown; workspaceId: unknown }) => allOf([
             { userId, role: "member" },
             streamMatchesWorkspace(membership),
@@ -361,6 +370,14 @@ export default defineConfig({
             allOf([
               streamMatchesWorkspace(membership),
               collections.streamMemberships.exists.where({ streamId: membership.streamId, userId, role: "admin" }),
+              isActiveWorkspaceMember(membership),
+            ]),
+            allOf([
+              { role: "member" },
+              streamMatchesWorkspace(membership),
+              collections.channels.exists.where({ streamId: membership.streamId, workspaceId: membership.workspaceId }),
+              canManageWorkspace(membership.workspaceId),
+              isActiveWorkspaceMember(membership),
             ]),
             canJoinReadableChannel(membership),
           ]));

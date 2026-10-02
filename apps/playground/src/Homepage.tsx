@@ -32,7 +32,7 @@ export function Homepage({ children }: { children: ReactNode }) {
 
       <section className="bg-muted px-4 py-12 sm:px-8 sm:py-16" id="demo" aria-label="Bebop playground demo">
         {children}
-        <div className="mx-auto mt-5 w-full max-w-[900px]">
+        <div className="mx-auto mt-10 w-full max-w-[1000px]">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">The Bebop Playground</p>
           <p className="mt-2 text-sm text-muted-foreground">Switch workspaces, explore channels, and see messages take shape.</p>
         </div>

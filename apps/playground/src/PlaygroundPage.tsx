@@ -194,6 +194,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const [workspaceMemberDialogOpen, setWorkspaceMemberDialogOpen] = useState(false);
   const [channelDialogOpen, setChannelDialogOpen] = useState(false);
   const [joiningChannelId, setJoiningChannelId] = useState("");
+  const [addingChannelMember, setAddingChannelMember] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [message, setMessage] = useState("");
   const [inviteUserId, setInviteUserId] = useState("");
@@ -268,7 +269,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }, [currentUserId, currentUserName, props, workspaceMembers]);
   const currentStreamRole = (streamMemberships ?? []).find((membership) => membership.userId === currentUserId)?.role;
   const isCurrentChannelMember = (streamMemberships ?? []).some((membership) => membership.userId === currentUserId);
-  const canManageChannel = currentStreamRole === "admin";
+  const canManageChannel = currentStreamRole === "admin" || canManageWorkspace;
   const currentChannelMemberIds = new Set((streamMemberships ?? []).map((membership) => membership.userId));
   const channelMembers = useMemo(() => (streamMemberships ?? []).map((membership) => ({
     id: membership.userId,
@@ -480,7 +481,8 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
 
   async function addChannelMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!client || !activeChannel?.streamId || !inviteUserId) return;
+    if (!client || !activeChannel?.streamId || !inviteUserId || addingChannelMember) return;
+    setAddingChannelMember(true);
     try {
       const membership = await client.streamMemberships.create({
         workspaceId: activeChannel.workspaceId,
@@ -492,6 +494,8 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
       setInviteUserId("");
     } catch (error) {
       notifyError("Could not add channel member", error, "Could not add channel member.");
+    } finally {
+      setAddingChannelMember(false);
     }
   }
 
@@ -514,6 +518,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                   </div>
                   <div className="mt-2 grid gap-1 border-t border-border pt-2">
                     <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceDialog("create"); workspaceForm.reset({ name: "", slug: "" }); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Plus className="size-4" aria-hidden="true" />Add workspace</Button>
+                    {activeWorkspaceId && canManageWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { workspaceMemberForm.reset({ email: "" }); setWorkspaceMemberDialogOpen(true); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Plus className="size-4" aria-hidden="true" />Add workspace member</Button>}
                     {activeWorkspaceId && canRenameWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceName(activeWorkspace?.name ?? ""); setWorkspaceDialog("rename"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Pencil01 className="size-3.5" aria-hidden="true" />Rename workspace</Button>}
                     {activeWorkspaceId && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings01 className="size-3.5" aria-hidden="true" />Workspace settings</Button>}
                   </div>
@@ -570,15 +575,15 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                     </> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" id="live-channel-members-panel" role="tabpanel" aria-labelledby="live-channel-members-tab">
                       <div className="mx-auto max-w-3xl">
                         <div className="flex items-start justify-between gap-4 border-b border-border pb-4"><div><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to #{activeChannel.name}.</p></div><span className="rounded-none bg-secondary px-2 py-1 text-[10px] text-muted-foreground">{channelMembers.length}</span></div>
-                        {channelMembers.length ? <MemberRoster members={channelMembers} currentUserId={currentUserId} rolePrefix="Channel" /> : <p className="py-5 text-xs text-muted-foreground">No channel members found.</p>}
+                        {streamMemberships === undefined ? <p className="py-5 text-xs text-muted-foreground" role="status">Loading channel members…</p> : channelMembers.length ? <MemberRoster members={channelMembers} currentUserId={currentUserId} rolePrefix="Channel" /> : <p className="py-5 text-xs text-muted-foreground">No channel members found.</p>}
                         {canManageChannel && <section className="mt-6 border-t border-border pt-5"><h3 className="text-sm font-semibold">Channel access</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Manage who belongs to #{activeChannel.name}.</p>
-                          {inviteOptions.length ? <form className="grid gap-2 border-t border-border pt-3" onSubmit={addChannelMember}>
+                          {streamMemberships === undefined ? <p className="mt-3 text-xs leading-5 text-muted-foreground" role="status">Loading channel members…</p> : workspaceMembersLoading ? <p className="mt-3 text-xs leading-5 text-muted-foreground" role="status">Loading workspace members…</p> : workspaceMembersError ? <p className="mt-3 text-xs leading-5 text-destructive" role="alert">{workspaceMembersError}</p> : inviteOptions.length ? <form className="grid gap-2 border-t border-border pt-3" onSubmit={addChannelMember}>
                             <Label htmlFor="invite-channel-member" className="normal-case tracking-normal">Add a workspace member</Label>
                             <select className="h-9 min-w-0 rounded-none border border-input bg-card px-2 text-xs" id="invite-channel-member" value={inviteUserId} onChange={(event) => setInviteUserId(event.target.value)}>
                               <option value="">Choose a member</option>
                               {inviteOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
                             </select>
-                            <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={!inviteUserId}>Add member</Button>
+                            <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={!inviteUserId || addingChannelMember}>{addingChannelMember ? "Adding…" : "Add member"}</Button>
                           </form> : <p className="mt-3 text-xs leading-5 text-muted-foreground">All available workspace members are already here.</p>}
                         </section>}
                       </div>

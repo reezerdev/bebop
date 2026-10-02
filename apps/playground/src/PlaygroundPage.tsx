@@ -245,11 +245,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }, [workspaceDialog, workspaceMemberDialogOpen, channelDialogOpen]);
 
   const orderedChannels = useMemo(() => [...(channels ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [channels]);
-  const orderedWorkspaces = useMemo(() => [...(workspaces ?? [])].sort((a, b) => {
-    if (a.id === activeWorkspaceId) return -1;
-    if (b.id === activeWorkspaceId) return 1;
-    return a.name.localeCompare(b.name);
-  }), [activeWorkspaceId, workspaces]);
+  const orderedWorkspaces = useMemo(() => [...(workspaces ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [workspaces]);
   const activeWorkspace = (workspaces ?? []).find((workspace) => workspace.id === activeWorkspaceId);
   const currentWorkspaceMembership = (workspaceMemberships ?? []).find((membership) => membership.userId === currentUserId);
   const canRenameWorkspace = currentWorkspaceMembership?.role === "admin";
@@ -516,17 +512,19 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                   <span className="relative grid size-10 place-items-center rounded-none bg-white text-base font-semibold text-black">{workspaceInitial(activeWorkspace?.name)}</span>
                 </summary>
                 <div className="absolute left-full top-0 z-50 ml-3 w-72 rounded-none border border-border bg-card p-3 text-foreground">
-                  <div className="mb-2 border-b border-border px-2 pb-3"><p className="truncate text-sm font-semibold">{activeWorkspace?.name ?? "Choose a workspace"}</p></div>
-                  {activeWorkspaceId && <div className="grid gap-1 pb-2">
-                    <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings01 className="size-3.5" aria-hidden="true" />Workspace settings</Button>
-                    {canManageWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { workspaceMemberForm.reset({ email: "" }); setWorkspaceMemberDialogOpen(true); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Plus className="size-4" aria-hidden="true" />Add workspace member</Button>}
-                    {canRenameWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceName(activeWorkspace?.name ?? ""); setWorkspaceDialog("rename"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Pencil01 className="size-3.5" aria-hidden="true" />Rename workspace</Button>}
+                  {activeWorkspace && <div className="rounded-none bg-accent p-2 text-accent-foreground">
+                    <div className="flex min-w-0 items-center gap-2 px-1 py-1" aria-current="true"><span className="grid size-7 shrink-0 place-items-center rounded-none bg-white text-[10px] font-bold text-black">{workspaceInitial(activeWorkspace.name)}</span><span className="min-w-0 flex-1 truncate text-sm font-semibold">{activeWorkspace.name}</span><Check className="size-4 shrink-0" aria-hidden="true" /></div>
+                    <div className="mt-2 grid gap-1 border-t border-accent-foreground/20 pt-2">
+                      <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-accent-foreground hover:bg-accent-foreground/10 hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings01 className="size-3.5" aria-hidden="true" />Workspace settings</Button>
+                      {canManageWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-accent-foreground hover:bg-accent-foreground/10 hover:text-accent-foreground" type="button" onClick={(event) => { workspaceMemberForm.reset({ email: "" }); setWorkspaceMemberDialogOpen(true); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Plus className="size-4" aria-hidden="true" />Add workspace member</Button>}
+                      {canRenameWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-accent-foreground hover:bg-accent-foreground/10 hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceName(activeWorkspace.name); setWorkspaceDialog("rename"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Pencil01 className="size-3.5" aria-hidden="true" />Rename workspace</Button>}
+                    </div>
                   </div>}
                   <div className="mt-1 border-t border-border pt-2">
                     <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Switch workspace</p>
                     <div className="grid gap-1">
-                      {orderedWorkspaces.map((workspace) => <Button key={workspace.id} variant="ghost" size="sm" className={`h-9 justify-start gap-2 rounded-none px-2 text-left text-xs normal-case tracking-normal hover:bg-accent hover:text-accent-foreground ${workspace.id === activeWorkspaceId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={(event) => { setActiveWorkspaceId(workspace.id); setActiveChannelId(""); setActiveChannelView("messages"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><span className="grid size-6 shrink-0 place-items-center rounded-none bg-white text-[10px] font-bold text-black">{workspaceInitial(workspace.name)}</span><span className="truncate">{workspace.name}</span>{workspace.id === activeWorkspaceId && <Check className="ml-auto size-4 text-primary" aria-hidden="true" />}</Button>)}
-                      {!workspaces?.length && <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">Create a workspace to begin.</p>}
+                      {orderedWorkspaces.filter((workspace) => workspace.id !== activeWorkspaceId).map((workspace) => <Button key={workspace.id} variant="ghost" size="sm" className="h-9 justify-start gap-2 rounded-none px-2 text-left text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveWorkspaceId(workspace.id); setActiveChannelId(""); setActiveChannelView("messages"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><span className="grid size-6 shrink-0 place-items-center rounded-none bg-white text-[10px] font-bold text-black">{workspaceInitial(workspace.name)}</span><span className="truncate">{workspace.name}</span></Button>)}
+                      {!orderedWorkspaces.some((workspace) => workspace.id !== activeWorkspaceId) && <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">{activeWorkspaceId ? "No other workspaces." : "Create a workspace to begin."}</p>}
                     </div>
                   </div>
                   <div className="mt-2 border-t border-border pt-2">

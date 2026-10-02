@@ -9,9 +9,7 @@ export function Homepage({ children }: { children: ReactNode }) {
             <img className="h-10 w-[117px] shrink-0" src="/Logotype.svg" alt="" />
           </a>
           <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex" aria-label="Main navigation">
-            <a className="transition-colors hover:text-foreground" href="#product">Product</a>
             <a className="transition-colors hover:text-foreground" href="#demo">Docs</a>
-            <a className="transition-colors hover:text-foreground" href="#pricing">Pricing</a>
           </nav>
           <a className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:hidden" href="#demo">Explore playground</a>
         </div>

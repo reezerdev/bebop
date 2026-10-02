@@ -12,3 +12,9 @@
     border-radius: 0 !important;
   }
 }
+
+.bebop-logo-mark {
+  background-color: var(--foreground);
+  -webkit-mask: url("/Logotype.svg") center / contain no-repeat;
+  mask: url("/Logotype.svg") center / contain no-repeat;
+}

@@ -190,7 +190,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const [awaitingWorkspaceId, setAwaitingWorkspaceId] = useState("");
   const [activeChannelId, setActiveChannelId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<"create" | "rename" | null>(null);
-  const [showChannelForm, setShowChannelForm] = useState(false);
+  const [channelDialogOpen, setChannelDialogOpen] = useState(false);
   const [joiningChannelId, setJoiningChannelId] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
   const [message, setMessage] = useState("");
@@ -228,13 +228,16 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }, []);
 
   useEffect(() => {
-    if (!workspaceDialog) return;
+    if (!workspaceDialog && !channelDialogOpen) return;
     const closeOnEscape = (event: WindowEventMap["keydown"]) => {
-      if (event.key === "Escape") setWorkspaceDialog(null);
+      if (event.key === "Escape") {
+        setWorkspaceDialog(null);
+        setChannelDialogOpen(false);
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [workspaceDialog]);
+  }, [workspaceDialog, channelDialogOpen]);
 
   const orderedChannels = useMemo(() => [...(channels ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [channels]);
   const activeWorkspace = (workspaces ?? []).find((workspace) => workspace.id === activeWorkspaceId);
@@ -407,7 +410,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
       setActiveChannelId(created.doc.id);
       setActiveChannelView("messages");
       channelForm.reset({ name: "", visibility: "public" });
-      setShowChannelForm(false);
+      setChannelDialogOpen(false);
     } catch (error) {
       notifyError("Could not create channel", error, "Could not create channel.");
     }
@@ -508,16 +511,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
             <aside className="min-w-0 rounded-none border-r border-border bg-card p-4 text-foreground">
               {activeTab === "messages" ? (
                 <>
-                  <div className="mb-3 flex min-h-10 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create channel" title="Create channel" onClick={() => setShowChannelForm((value) => !value)}><Plus className="size-4" aria-hidden="true" /></Button></div>
-                  {showChannelForm && (
-                    <form className="mb-3 grid gap-2 rounded-none border border-border bg-card p-3" onSubmit={channelForm.handleSubmit(createChannel)}>
-                      <Label htmlFor="channel-name" className="normal-case tracking-normal">Channel name</Label>
-                      <Input className="h-9 rounded-none border border-input px-2 text-xs" id="channel-name" {...channelForm.register("name", { validate: (value) => !!value.trim() || "Enter a channel name." })} placeholder="team-updates" autoFocus />
-                      <Label htmlFor="channel-visibility" className="normal-case tracking-normal">Visibility</Label>
-                      <select className="h-9 rounded-none border border-input bg-card px-2 text-xs" id="channel-visibility" {...channelForm.register("visibility")}><option value="public">Public</option><option value="private">Private</option></select>
-                      <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" className="h-8 normal-case tracking-normal" type="button" onClick={() => setShowChannelForm(false)}>Cancel</Button><Button size="sm" className="h-8 rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={!activeWorkspaceId || channelForm.formState.isSubmitting}>Create</Button></div>
-                    </form>
-                  )}
+                  <div className="mb-3 flex min-h-10 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create channel" title="Create channel" onClick={() => { channelForm.reset({ name: "", visibility: "public" }); setChannelDialogOpen(true); }}><Plus className="size-4" aria-hidden="true" /></Button></div>
                   <div className="grid gap-1">
                     {!orderedChannels.length && <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">No channels yet. Create one to start a conversation.</p>}
                     {orderedChannels.map((channel) => <Button key={channel.id} variant="ghost" size="sm" className={`h-9 min-w-0 justify-start gap-2 overflow-hidden rounded-none px-2 text-left text-xs normal-case tracking-normal ${channel.id === activeChannelId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={() => { setActiveChannelId(channel.id); setActiveChannelView("messages"); }} aria-current={channel.id === activeChannelId ? "page" : undefined}>
@@ -610,6 +604,30 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
               <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit">Save</Button>
             </div>
           </form>}
+        </div>
+      </Card>
+    </div>}
+    {channelDialogOpen && <div className="bebop-admin fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-foreground/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setChannelDialogOpen(false); }}>
+      <Card className="relative w-full max-w-md rounded-none border border-border bg-card text-foreground shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="channel-dialog-title">
+        <div className="px-6">
+          <header className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h2 id="channel-dialog-title" className="font-heading text-lg font-semibold tracking-wider uppercase">Create channel</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Add a channel to {activeWorkspace?.name ?? "your workspace"}.</p>
+            </div>
+            <Button className="-mr-2 -mt-2 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-foreground" variant="ghost" size="icon-sm" type="button" aria-label="Close channel dialog" onClick={() => setChannelDialogOpen(false)}>×</Button>
+          </header>
+          <form className="grid gap-3" onSubmit={channelForm.handleSubmit(createChannel)}>
+            <Label htmlFor="channel-name" className="normal-case tracking-normal">Channel name</Label>
+            <Input className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="channel-name" {...channelForm.register("name", { validate: (value) => !!value.trim() || "Enter a channel name." })} placeholder="team-updates" autoFocus />
+            {channelForm.formState.errors.name && <p className="text-xs text-destructive" role="alert">{channelForm.formState.errors.name.message}</p>}
+            <Label htmlFor="channel-visibility" className="normal-case tracking-normal">Visibility</Label>
+            <select className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="channel-visibility" {...channelForm.register("visibility")}><option value="public">Public</option><option value="private">Private</option></select>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="normal-case tracking-normal" type="button" onClick={() => { channelForm.reset({ name: "", visibility: "public" }); setChannelDialogOpen(false); }}>Cancel</Button>
+              <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={!activeWorkspaceId || channelForm.formState.isSubmitting}>Create</Button>
+            </div>
+          </form>
         </div>
       </Card>
     </div>}

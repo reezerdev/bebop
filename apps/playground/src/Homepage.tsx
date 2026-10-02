@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 export function Homepage({ children }: { children: ReactNode }) {
   return (
     <main className="bebop-admin min-h-screen bg-background text-foreground" id="top">
-      <header className="border-b border-border">
+      <header>
         <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-6 px-5 sm:px-8">
-          <a className="font-heading text-2xl font-semibold tracking-wider text-foreground" href="#top" aria-label="Bebop home">
-            bebop<span className="ml-1 align-top text-sm text-primary">♪</span>
+          <a className="inline-flex items-center text-foreground" href="#top" aria-label="Bebop home">
+            <span className="bebop-logo-mark h-10 w-[117px] shrink-0" aria-hidden="true" />
           </a>
           <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex" aria-label="Main navigation">
             <a className="transition-colors hover:text-foreground" href="#product">Product</a>
@@ -30,7 +30,7 @@ export function Homepage({ children }: { children: ReactNode }) {
         <p className="mt-5 text-sm text-muted-foreground">A live, hands-on look at Bebop.</p>
       </section>
 
-      <section className="border-b border-border bg-muted px-4 py-12 sm:px-8 sm:py-16" id="demo" aria-label="Bebop playground demo">
+      <section className="bg-muted px-4 py-12 sm:px-8 sm:py-16" id="demo" aria-label="Bebop playground demo">
         {children}
         <div className="mx-auto mt-5 flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -41,8 +41,7 @@ export function Homepage({ children }: { children: ReactNode }) {
       </section>
 
       <footer className="mx-auto flex min-h-20 max-w-7xl flex-col items-start justify-center gap-2 px-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8" id="pricing">
-        <a className="font-heading text-lg font-semibold tracking-wider text-foreground" href="#top" aria-label="Bebop home">bebop<span className="ml-1 align-top text-xs text-primary">♪</span></a>
-        <span>Schema-driven content, compiled onto Jazz.</span>
+        <span>© 2026 Reezer</span>
       </footer>
     </main>
   );

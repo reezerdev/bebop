@@ -41,7 +41,7 @@ const schema = {
       "workspaceId": s.uuid(),
       "content": s.string().optional(),
       "authorId": s.uuid(),
-      "visibility": s.enum("public", "private"),
+      "visibility": s.enum("public", "private").default("public"),
       "streamId": s.uuid()
     },
     {

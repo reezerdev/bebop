@@ -9,7 +9,7 @@ import { deploy, startLocalJazzServer, startTestJwtIssuer } from "jazz-tools/tes
 import { createBebopClient } from "../bebop-generated-client.js";
 import { app } from "../bebop-generated-schema.js";
 import permissions from "../permissions.js";
-import { withStreamCollections } from "./stream-client.js";
+import { createDefaultWorkspaceChannels } from "./workspace-channels.js";
 
 test("streams enforce Channel, Entry, and membership visibility", async () => {
   const issuer = await startTestJwtIssuer();
@@ -148,7 +148,7 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
     }).wait({ tier: "global" });
     const peer = await openViewer(peerId, { role: "member" });
     const globalAdmin = admin;
-    const memberClient = withStreamCollections(createBebopClient(member), member, memberId);
+    const memberClient = createBebopClient(member);
     const peerClient = createBebopClient(peer);
     const mediaData = { filename: "owner.png", mimeType: "image/png", filesize: 1, data: new Uint8Array([137]) };
     assert.equal(await member.canInsert(app.media, mediaData), "allowed");
@@ -171,6 +171,15 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
       role: "member",
       status: "active",
     }).wait({ tier: "global" });
+
+    const defaultChannels = await createDefaultWorkspaceChannels(memberClient.channels, workspaceId, memberId);
+    assert.deepEqual(defaultChannels.map((channel) => channel.name), ["general", "random"]);
+    for (const channel of defaultChannels) {
+      const admins = await memberClient.streamMemberships.find({
+        where: { streamId: channel.streamId, userId: memberId, role: "admin" },
+      });
+      assert.equal(admins.length, 1);
+    }
 
     const publicChannelWrite = await memberClient.channels.create({
       name: "Public channel",
@@ -300,11 +309,14 @@ test("streams enforce Channel, Entry, and membership visibility", async () => {
     const ownerMembershipEdit = await memberClient.streamMemberships.update(privateChannelMembership.doc.id, { role: "admin" });
     await ownerMembershipEdit.waitForGlobal();
 
+    const privateStreamMemberships = await memberClient.streamMemberships.find({ where: { streamId: privateChannelStreamId } });
     const channelDelete = await memberClient.channels.delete(privateChannelWrite.doc.id);
     await channelDelete.waitForGlobal();
     assert.equal(await memberClient.channels.findById(privateChannelWrite.doc.id), null);
     assert.equal(await memberClient.streams.findById(privateChannelStreamId), null);
-    assert.equal(await memberClient.streamMemberships.findById(privateChannelMembership.doc.id), null);
+    for (const membership of privateStreamMemberships) {
+      assert.equal(await memberClient.streamMemberships.findById(membership.id), null);
+    }
     assert.equal(await memberClient.entries.findById(privateChannelEntryWrite.doc.id), null);
 
     assert.equal(await peer.canRead(app.workspaceMemberships, peerMembership.id), "allowed");

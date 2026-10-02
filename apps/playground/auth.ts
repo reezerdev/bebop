@@ -3,12 +3,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createJazzSession } from "jazz-tools/backend";
 import { createBebopAdminAccessHandler, createBebopBetterAuth, createBebopHandler } from "@bebopdev/core/server";
 import { createBebopClient } from "./bebop-generated-client.js";
+import { createDefaultWorkspaceChannels } from "./src/workspace-channels.js";
 import { app } from "./bebop-generated-schema.js";
 import permissions from "./permissions.js";
 import bebopConfig from "./bebop.config.ts";
 import { getBetterAuthURL } from "./auth-config.ts";
 import { authorizeWorkspaceCommand } from "./command-authorization.js";
-import { withStreamCollections } from "./src/stream-client.js";
 
 type AuthServerConfig = {
   appId?: string;
@@ -151,23 +151,8 @@ export async function createAuthServer(config: AuthServerConfig) {
       });
       await transaction.wait();
 
-      // Create each default channel with its own Stream and creator admin
-      // membership. The Stream and membership must be globally available
-      // before Jazz authorizes the Channel relationship.
-      const streamClient = withStreamCollections(
-        createBebopClient(writeDb),
-        writeDb,
-        session.user.id,
-      );
-      for (const channelName of ["general", "random"]) {
-        const channel = await streamClient.channels.create({
-          name: channelName,
-          workspaceId: transaction.value.id,
-          content: "",
-          visibility: "public",
-        });
-        await channel.waitForGlobal();
-      }
+      const client = createBebopClient(writeDb);
+      await createDefaultWorkspaceChannels(client.channels, transaction.value.id, session.user.id);
 
       return json({ doc: transaction.value, durability: "global" });
     } catch (error) {

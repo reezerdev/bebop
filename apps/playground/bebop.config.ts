@@ -5,7 +5,7 @@ const channelsFields = [
   { name: "workspace", type: "relationship", relationTo: "workspaces", required: true, admin: { position: "sidebar" } },
   { name: "content", type: "text", admin: { input: "textarea" } },
   { name: "author", type: "relationship", relationTo: "users", required: true, admin: { position: "sidebar" } },
-  { name: "visibility", type: "select", required: true, options: ["public", "private"] },
+  { name: "visibility", type: "select", required: true, default: "public", options: ["public", "private"] },
   { name: "stream", type: "relationship", relationTo: "streams", required: true, admin: { position: "main", readOnly: true } },
 ] as const;
 const streamsFields = [
@@ -226,6 +226,45 @@ export default defineConfig({
       },
       admin: { useAsTitle: "name", defaultColumns: ["name", "workspace", "visibility", "stream"] },
       fields: channelsFields,
+      hooks: {
+        async beforeChange({ operation, data, client }) {
+          if (operation !== "create") return;
+          if (!client) throw new Error("Channel lifecycle hooks require a Bebop transaction client.");
+          const authorId = data.authorId;
+          const workspaceId = data.workspaceId;
+          if (!authorId || !workspaceId) throw new Error("A Channel requires an author and workspace.");
+          const stream = await client.streams.create({
+            name: `"${data.name}" Channel stream`,
+            workspaceId,
+            authorId,
+          });
+          await client.streamMemberships.create({
+            workspaceId,
+            streamId: stream.id,
+            userId: authorId,
+            role: "admin",
+          });
+          return { streamId: stream.id };
+        },
+        async beforeDelete({ doc, client }) {
+          if (!doc?.streamId) return;
+          if (!client) throw new Error("Channel lifecycle hooks require a Bebop transaction client.");
+          const entries = await client.entries.find({ where: { streamId: doc.streamId } });
+          for (const entry of entries) await client.entries.delete(entry.id);
+          await client.streams.delete(doc.streamId);
+        },
+        async afterDelete({ doc, userId, client }) {
+          if (!doc?.streamId) return;
+          if (!client) throw new Error("Channel lifecycle hooks require a Bebop transaction client.");
+          const memberships = await client.streamMemberships.find({ where: { streamId: doc.streamId } });
+          // Channel and Stream delete policies both use the actor's admin
+          // membership. Keep it until every related record has been removed.
+          const currentAdmin = memberships.filter((membership) => membership.userId === userId && membership.role === "admin");
+          const otherMemberships = memberships.filter((membership) => !currentAdmin.includes(membership));
+          for (const membership of otherMemberships) await client.streamMemberships.delete(membership.id);
+          for (const membership of currentAdmin) await client.streamMemberships.delete(membership.id);
+        },
+      },
     } satisfies CollectionDefinition<typeof channelsFields>,
     {
       slug: "streams" as const,

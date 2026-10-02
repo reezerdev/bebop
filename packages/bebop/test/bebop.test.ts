@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Db } from "jazz-tools";
 import { defineConfig } from "../src/bebop.ts";
-import { BebopHookError, createBebopClient } from "../src/client.ts";
+import { createBebopClient } from "../src/client.ts";
 import { BebopValidationError } from "../src/validation.ts";
 import { createBebopAdminAccessHandler } from "../src/admin-access.ts";
 import { createBebopHandler } from "../src/server.ts";
@@ -411,7 +411,7 @@ test("text and numeric validation constraints are checked in the shared client",
     ],
   }] });
   const fake = createFakeDb();
-  const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
+  const client = createBebopClient({ app: fake.app as object, config, db: fake.db });
 
   await assert.rejects(client.posts.create({ title: "ab", rank: 2 }), (error: unknown) => {
     assert.ok(error instanceof BebopValidationError);
@@ -841,49 +841,97 @@ test("field arrays reject duplicate names and invalid admin references", () => {
 
 function createFakeDb() {
   const rows = new Map<string, Record<string, unknown>>();
+  const rowTables = new Map<string, string>();
+  const tableNames = new WeakMap<object, string>();
   const events: ((event: { code: string; reason: string; transaction: never }) => void)[] = [];
   let nextId = 1;
-  const table = {
-    where: function (this: unknown, condition: Record<string, unknown>) {
-      return { table: this === table ? "posts" : "unbound", condition };
-    },
-    include: function (this: unknown, relations: Record<string, unknown>) {
-      return { table: this === table ? "posts" : "unbound", relations };
-    },
-    select: (...fields: string[]) => {
+  const tables = new Map<string, Record<string, unknown>>();
+  const getTable = (name: string) => {
+    const found = tables.get(name);
+    if (found) return found;
+    const table: Record<string, unknown> = {
+      where: (condition: Record<string, unknown>) => ({ table: name, condition }),
+      include: (relations: Record<string, unknown>) => ({ table: name, relations }),
+      select: (...fields: string[]) => {
       const operations: unknown[][] = [["select", ...fields]];
       const query = {
+        table: name,
+        condition: {} as Record<string, unknown>,
         operations,
-        where: (condition: Record<string, unknown>) => { operations.push(["where", condition]); return query; },
+        where: (condition: Record<string, unknown>) => { operations.push(["where", condition]); query.condition = { ...query.condition, ...condition }; return query; },
         orderBy: (field: string, direction?: string) => { operations.push(["orderBy", field, direction]); return query; },
         limit: (value: number) => { operations.push(["limit", value]); return query; },
         offset: (value: number) => { operations.push(["offset", value]); return query; },
       };
       return query;
-    },
+      },
+    };
+    tables.set(name, table);
+    tableNames.set(table, name);
+    return table;
   };
+  const app = new Proxy({}, { get: (_target, property) => getTable(String(property)) });
+  const matchingRows = (source: Map<string, Record<string, unknown>>, sourceTables: Map<string, string>, query: { table?: string; condition?: Record<string, unknown> }) =>
+    [...source.values()].filter((row) => (!query.table || sourceTables.get(String(row.id)) === query.table)
+      && Object.entries(query.condition ?? {}).every(([key, value]) => row[key] === value));
+  const makeWrite = <T>(value: T) => ({ value, wait: async () => value, txId: Promise.resolve("tx") });
   const db = {
-    one: async (query: { condition: { id?: unknown } }) => rows.get(String(query.condition.id)) ?? null,
-    all: async () => [...rows.values()],
-    insert: (_table: unknown, data: Record<string, unknown>) => {
-      const value = { id: `post-${nextId++}`, ...data };
+    one: async (query: { condition?: { id?: unknown }; table?: string }) => matchingRows(rows, rowTables, query)[0] ?? null,
+    all: async (query: { table?: string; condition?: Record<string, unknown> }) => matchingRows(rows, rowTables, query),
+    insert: (table: object, data: Record<string, unknown>, options?: { id?: string }) => {
+      const name = tableNames.get(table) ?? "posts";
+      const value = { id: options?.id ?? `${name}-${nextId++}`, ...data };
       rows.set(value.id, value);
-      return { value, wait: async () => value, txId: Promise.resolve("tx") };
+      rowTables.set(value.id, name);
+      return makeWrite(value);
     },
     update: (_table: unknown, id: string, data: Record<string, unknown>) => {
       rows.set(id, { ...rows.get(id), ...data, id });
-      return { value: undefined, wait: async () => undefined, txId: Promise.resolve("tx") };
+      return makeWrite(undefined);
     },
     delete: (_table: unknown, id: string) => {
       rows.delete(id);
-      return { value: undefined, wait: async () => undefined, txId: Promise.resolve("tx") };
+      rowTables.delete(id);
+      return makeWrite(undefined);
+    },
+    getAuthState: () => ({ session: { claims: { sub: "test-user" } } }),
+    transaction: async <T>(callback: (tx: {
+      one: (query: { table?: string; condition?: Record<string, unknown> }) => Promise<Record<string, unknown> | null>;
+      all: (query: { table?: string; condition?: Record<string, unknown> }) => Promise<Record<string, unknown>[]>;
+      insert: (table: object, data: Record<string, unknown>, options?: { id?: string }) => Record<string, unknown>;
+      update: (table: object, id: string, data: Record<string, unknown>) => void;
+      delete: (table: object, id: string) => void;
+    }) => T | Promise<T>) => {
+      const stagedRows = new Map(rows);
+      const stagedTables = new Map(rowTables);
+      const stagedTx = {
+        one: async (query: { table?: string; condition?: Record<string, unknown> }) => matchingRows(stagedRows, stagedTables, query)[0] ?? null,
+        all: async (query: { table?: string; condition?: Record<string, unknown> }) => matchingRows(stagedRows, stagedTables, query),
+        insert: (table: object, data: Record<string, unknown>, options?: { id?: string }) => {
+          const name = tableNames.get(table) ?? "posts";
+          const value = { id: options?.id ?? `${name}-${nextId++}`, ...data };
+          stagedRows.set(String(value.id), value);
+          stagedTables.set(String(value.id), name);
+          return value;
+        },
+        update: (_table: object, id: string, data: Record<string, unknown>) => {
+          stagedRows.set(id, { ...stagedRows.get(id), ...data, id });
+        },
+        delete: (_table: object, id: string) => { stagedRows.delete(id); stagedTables.delete(id); },
+      };
+      const value = await callback(stagedTx);
+      rows.clear();
+      stagedRows.forEach((row, id) => rows.set(id, row));
+      rowTables.clear();
+      stagedTables.forEach((name, id) => rowTables.set(id, name));
+      return makeWrite(value);
     },
     onMutationError: (listener: (event: { code: string; reason: string; transaction: never }) => void) => {
       events.push(listener);
       return () => events.splice(events.indexOf(listener), 1);
     },
   };
-  return { app: { posts: table }, db: db as unknown as Db, rows, events };
+  return { app, db: db as unknown as Db, rows, events };
 }
 
 test("shared collection queries validate fields and expose Jazz pagination", async () => {
@@ -981,7 +1029,7 @@ test("a before hook exception cancels the local write", async () => {
   assert.equal(fake.rows.size, 0);
 });
 
-test("an after hook failure reports that the local write already happened", async () => {
+test("an after hook failure rolls back the local transaction", async () => {
   const config = defineConfig({
     collections: [{
       slug: "posts",
@@ -994,13 +1042,60 @@ test("an after hook failure reports that the local write already happened", asyn
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
 
-  await assert.rejects(client.posts.create({ title: "already local" }), (error: unknown) => {
-    assert.ok(error instanceof BebopHookError);
-    assert.equal(error.localWriteApplied, true);
-    assert.equal(typeof error.write.wait, "function");
-    return true;
-  });
-  assert.equal(fake.rows.size, 1);
+  await assert.rejects(client.posts.create({ title: "already local" }), /after hook failed/);
+  assert.equal(fake.rows.size, 0);
+});
+
+test("lifecycle hooks stage nested Bebop client mutations in the same transaction", async () => {
+  const order: string[] = [];
+  const config = defineConfig({ collections: [
+    {
+      slug: "posts",
+      fields: [
+        { name: "title", type: "text", required: true },
+        { name: "auditId", type: "text", required: true, admin: { readOnly: true } },
+      ],
+      hooks: {
+        async beforeChange({ operation, data, client }) {
+          if (operation !== "create") return;
+          if (!client) throw new Error("missing hook client");
+          order.push("post:before");
+          const audit = await client.auditLogs.create({ message: data.title });
+          if (data.title === "related failure") await client.auditLogs.create({ message: "" });
+          return { auditId: audit.id };
+        },
+        async afterChange({ operation, doc, client }) {
+          if (operation !== "create") return;
+          if (!client) throw new Error("missing hook client");
+          assert.equal(await client.auditLogs.findById(String(doc.auditId)) !== null, true);
+          order.push("post:after");
+          if (doc.title === "rollback") throw new Error("post after hook rejected");
+        },
+      },
+    },
+    {
+      slug: "auditLogs",
+      fields: [{ name: "message", type: "text", required: true }],
+      hooks: {
+        beforeChange: () => { order.push("audit:before"); },
+        afterChange: () => { order.push("audit:after"); },
+      },
+    },
+  ] });
+  const fake = createFakeDb();
+  const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
+
+  const created = await client.posts.create({ title: "ship it" });
+  assert.equal(created.doc.auditId, "auditLogs-1");
+  await created.waitForGlobal();
+  assert.equal(fake.rows.size, 2);
+  assert.deepEqual(order, ["post:before", "audit:before", "audit:after", "post:after"]);
+
+  await assert.rejects(client.posts.create({ title: "related failure" }), /invalid field values/);
+  assert.equal(fake.rows.size, 2);
+
+  await assert.rejects(client.posts.create({ title: "rollback" }), /post after hook rejected/);
+  assert.equal(fake.rows.size, 2);
 });
 
 test("shared client forwards asynchronous Jazz mutation rejections", () => {

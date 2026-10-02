@@ -417,6 +417,7 @@ export const bebopAdminManifest = {
           "label": "Visibility",
           "kind": "select",
           "required": true,
+          "defaultValue": "public",
           "options": [
             "public",
             "private"

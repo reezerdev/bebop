@@ -9,7 +9,6 @@ import { bebopAdminManifest } from "../bebop-admin-manifest.js";
 import { createBebopClient } from "../bebop-generated-client.js";
 import { Homepage } from "./Homepage.tsx";
 import { PlaygroundWidget } from "./PlaygroundPage.tsx";
-import { withStreamCollections } from "./stream-client.js";
 import { signOutWithLocalFallback } from "./logout.js";
 
 export function App() {
@@ -28,9 +27,9 @@ export function App() {
   const currentUserName = authSession?.user.name?.trim() ?? "";
   const currentUserEmail = authSession?.user.email?.trim() ?? "";
   const currentUserImage = authSession?.user.image ?? "";
-  const bebop = useMemo(() => withStreamCollections(createBebopClient(db, {
+  const bebop = useMemo(() => createBebopClient(db, {
     commandTransport: createBebopFetchTransport({ basePath: "/api/bebop" }),
-  }), db, currentUserId), [db, currentUserId]);
+  }), [db]);
   const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
   const [canManageUsers, setCanManageUsers] = useState(false);
 

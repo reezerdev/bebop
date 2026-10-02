@@ -90,7 +90,9 @@ const result = await client.channels.create({ name: "release-updates", workspace
 await result.waitForGlobal(); // Rejects if Jazz does not confirm global durability.
 ```
 
-The client runs field validation and `beforeChange` before a direct write, then `afterChange` after the local write. An after-hook exception means the local mutation already happened; `BebopHookError` carries the write handle. `client.onMutationError(listener)` reports later Jazz mutation rejections. These callbacks are client-side behavior and can be bypassed by direct Jazz writes.
+For a direct collection with lifecycle hooks, Bebop runs its hook pipeline inside one local-first Jazz transaction. Each hook receives an optional transaction-scoped `client` with `find`, `findById`, `create`, `update`, and `delete` methods, plus the authenticated `userId` when the Jazz session has a `sub` claim. Nested writes run validation and their own hooks in that transaction and return their staged document; only the outer mutation returns the durability handle. A hook or nested validation error rolls the local transaction back. Read-only fields can be supplied by a `beforeChange` hook, then Bebop validates the final document. Command hooks run on the host and upload writes cannot stage nested mutations in a Jazz transaction, so their hook contexts do not include this client.
+
+`client.onMutationError(listener)` reports later Jazz rejections. These callbacks are client-side behavior and can be bypassed by direct Jazz writes.
 
 Command-mode mutations use `commandTransport`, run on the host through `createBebopHandler`, and are returned only after the handler confirms Jazz global durability. They report `durability: "global"`. See [access control and server writes](./access-control.md#command-collections).
 
@@ -98,4 +100,4 @@ Upload-enabled collections expose `create({ file })`, `update(id, { file })`, an
 
 ## Stable behavior for v1
 
-The v1 contract covers typed query construction, `find`/`findById`, filter operators above, sort fields, offset/limit pagination, relationship ID storage, virtual joins, create/update/delete, and direct versus command durability. It does not promise REST or GraphQL, server pagination for arbitrary host queries, full-text ranking, drafts or revisions, transactional side effects, or a generic plugin API.
+The v1 contract covers typed query construction, `find`/`findById`, filter operators above, sort fields, offset/limit pagination, relationship ID storage, virtual joins, create/update/delete, direct versus command durability, and transaction-scoped nested mutations from direct lifecycle hooks. It does not promise REST or GraphQL, server pagination for arbitrary host queries, full-text ranking, drafts or revisions, or a generic plugin API.

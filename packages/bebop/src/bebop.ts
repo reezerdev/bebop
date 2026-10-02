@@ -237,7 +237,28 @@ export type CollectionChangeContext<TFields extends Fields> = {
   id?: string;
   data: Partial<StoredFields<TFields>>;
   originalDoc?: Readonly<CollectionDocument<TFields>>;
+  /** Authenticated Jazz subject associated with the current replica, when present. */
+  userId?: string;
+  /** Bebop mutation and query methods scoped to the local-first transaction running this hook. */
+  client?: BebopHookClient;
 };
+
+export type BebopHookDocument = Readonly<Record<string, unknown>> & { id: string };
+export type BebopHookQueryOptions = {
+  where?: Readonly<Record<string, unknown>>;
+  orderBy?: { field: string; direction?: "asc" | "desc" };
+  limit?: number;
+  offset?: number;
+  includeTimestamps?: boolean;
+};
+export type BebopHookCollectionClient = {
+  find(options?: BebopHookQueryOptions): Promise<BebopHookDocument[]>;
+  findById(id: string): Promise<BebopHookDocument | null>;
+  create(data: Readonly<Record<string, unknown>>): Promise<BebopHookDocument>;
+  update(id: string, data: Readonly<Record<string, unknown>>): Promise<BebopHookDocument>;
+  delete(id: string): Promise<void>;
+};
+export type BebopHookClient = Readonly<Record<string, BebopHookCollectionClient>>;
 
 export type CollectionHooks<TFields extends Fields> = {
   beforeChange?: BivariantCallback<
@@ -248,14 +269,20 @@ export type CollectionHooks<TFields extends Fields> = {
     operation: "create" | "update";
     doc: Readonly<CollectionDocument<TFields>>;
     originalDoc?: Readonly<CollectionDocument<TFields>>;
+    userId?: string;
+    client?: BebopHookClient;
   }], void | Promise<void>>;
   beforeDelete?: BivariantCallback<[context: {
     id: string;
     doc?: Readonly<CollectionDocument<TFields>>;
+    userId?: string;
+    client?: BebopHookClient;
   }], void | Promise<void>>;
   afterDelete?: BivariantCallback<[context: {
     id: string;
     doc?: Readonly<CollectionDocument<TFields>>;
+    userId?: string;
+    client?: BebopHookClient;
   }], void | Promise<void>>;
 };
 

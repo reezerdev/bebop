@@ -178,15 +178,15 @@ importers:
       '@bebopdev/core':
         specifier: workspace:*
         version: link:../../packages/bebop
+      '@untitledui/icons':
+        specifier: 0.0.23
+        version: 0.0.23(react@19.3.0)
       better-auth:
         specifier: 1.7.1
         version: 1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       jazz-tools:
         specifier: 2.0.0-alpha.58
         version: 2.0.0-alpha.58(better-auth@1.7.1(@opentelemetry/api@1.9.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
-      lucide-react:
-        specifier: ^0.468.0
-        version: 0.468.0(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -1489,6 +1489,11 @@ packages:
 
   '@types/validate-npm-package-name@4.0.2':
     resolution: {integrity: sha512-lrpDziQipxCEeK5kWxvljWYhUvOiB2A9izZd9B2AFarYAkqZshb4lPbRs7zKEic6eGtH8V/2qJW+dPp9OtF6bw==}
+
+  '@untitledui/icons@0.0.23':
+    resolution: {integrity: sha512-WoBtPCXaxweF0RXS9IuqgEeJkBmT7A9SszPHB+vQJOxeAl0hDTFXHlWXsooYniXQ0JmP4+7RADdhWb39GWFT8g==}
+    peerDependencies:
+      react: '>= 16'
 
   '@vitejs/plugin-react@6.1.1':
     resolution: {integrity: sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw==}
@@ -4230,6 +4235,10 @@ snapshots:
       csstype: 3.2.3
 
   '@types/validate-npm-package-name@4.0.2': {}
+
+  '@untitledui/icons@0.0.23(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
 
   '@vitejs/plugin-react@6.1.1(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))':
     dependencies:

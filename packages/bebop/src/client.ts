@@ -1,5 +1,7 @@
-import type { Db, MutationErrorEvent, QueryBuilder, TableProxy, WriteHandle, WriteResult } from "jazz-tools";
+import type { Db, MutationErrorEvent, QueryBuilder, TableProxy, TransactionScope, WriteHandle, WriteResult } from "jazz-tools";
 import type {
+  BebopHookClient,
+  BebopHookDocument,
   BebopConfig,
   CollectionChangeContext,
   CollectionDocument,
@@ -18,7 +20,7 @@ function logClientHookEvent(event: HookLogEvent): void {
 }
 
 type RequiredCreateKey<TField> = TField extends { required: true }
-  ? TField extends { default: unknown }
+  ? TField extends { default: unknown } | { admin: { readOnly: true } }
     ? never
     : TField extends { type: "join" }
       ? never
@@ -209,11 +211,55 @@ function localWrite(write: WriteHandle<unknown, unknown>) {
   };
 }
 
+function createTransactionScopedDb(
+  db: Db,
+  transaction: TransactionScope<"mergeable">,
+  completion: Promise<WriteHandle<unknown, unknown>>,
+): Db {
+  const stagedWrite = <T>(value: T) => ({
+    value,
+    txId: completion.then((write) => write.txId),
+    wait: async (options: Parameters<WriteHandle<unknown, unknown>["wait"]>[0]) => {
+      const write = await completion;
+      return write.wait(options);
+    },
+  });
+  return {
+    all: (query: QueryBuilder<unknown>, options?: unknown) => transaction.all(query as never, options as never),
+    one: (query: QueryBuilder<unknown>, options?: unknown) => transaction.one(query as never, options as never),
+    insert: (table: object, data: unknown, options?: unknown) => stagedWrite(transaction.insert(table as never, data as never, options as never)),
+    update: (table: object, id: string, data: unknown, options?: unknown) => stagedWrite(transaction.update(table as never, id, data as never, options as never)),
+    delete: (table: object, id: string, options?: unknown) => stagedWrite(transaction.delete(table as never, id, options as never)),
+    getAuthState: () => db.getAuthState(),
+    onMutationError: (listener: Parameters<Db["onMutationError"]>[0]) => db.onMutationError(listener),
+  } as unknown as Db;
+}
+
 export class BebopDocumentNotFoundError extends Error {
   constructor(readonly collection: string, readonly id: string) {
     super(`Could not find ${collection} document "${id}" in the local database.`);
     this.name = "BebopDocumentNotFoundError";
   }
+}
+
+function createHookClient<TConfig extends BebopConfig, TApp extends object>(
+  client: BebopClient<TConfig, TApp>,
+  config: TConfig,
+): BebopHookClient {
+  const scoped: Record<string, BebopHookClient[string]> = {};
+  for (const definition of config.collections) {
+    if (definition.auth) continue;
+    const collection = (client as unknown as Record<string, BebopCollectionClient<Fields>>)[definition.slug];
+    if (!collection) continue;
+    scoped[definition.slug] = {
+      find: async (options) => await collection.find(options as never) as unknown as BebopHookDocument[],
+      findById: async (id) => await collection.findById(id) as BebopHookDocument | null,
+      create: async (data) => (await collection.create(data as never)).doc as unknown as BebopHookDocument,
+      update: async (id, data) => (await collection.update(id, data as never)).doc as unknown as BebopHookDocument,
+      delete: async (id) => { await collection.delete(id); },
+    };
+  }
+  return scoped;
 }
 
 type BebopQuery = QueryBuilder<Record<string, unknown> & { id: string }> & {
@@ -243,13 +289,33 @@ function nonnegativeInteger(value: number | undefined, name: string): number | u
   return value;
 }
 
-export function createBebopClient<const TConfig extends BebopConfig, const TApp extends object>(options: {
+function buildBebopClient<const TConfig extends BebopConfig, const TApp extends object>(options: {
   app: TApp;
   config: TConfig;
   db: Db;
   commandTransport?: BebopCommandTransport;
-}): BebopClient<TConfig, TApp> {
+}, transactionScope?: TransactionScope<"mergeable">): BebopClient<TConfig, TApp> {
   const { app, config, db, commandTransport } = options;
+  const getHookUserId = () => {
+    const subject = db.getAuthState().session?.claims.sub;
+    return typeof subject === "string" ? subject : undefined;
+  };
+  const hookUser = () => {
+    const userId = getHookUserId();
+    return userId ? { userId } : {};
+  };
+  let hookClient: BebopHookClient | undefined;
+  const createTransaction = async <TResult>(callback: (client: BebopClient<TConfig, TApp>) => Promise<TResult>) => {
+    let resolveCompletion!: (write: WriteHandle<unknown, unknown>) => void;
+    const completion = new Promise<WriteHandle<unknown, unknown>>((resolve) => { resolveCompletion = resolve; });
+    const write = await db.transaction(async (tx) => {
+      const scopedDb = createTransactionScopedDb(db, tx, completion);
+      const scopedClient = buildBebopClient({ ...options, db: scopedDb }, tx);
+      return callback(scopedClient);
+    });
+    resolveCompletion(write as WriteHandle<unknown, unknown>);
+    return write;
+  };
   const logHooks = config.logging?.hooks === true;
   const collections: Record<string, BebopCollectionClient<Fields> & { readFile(id: string): Promise<Blob | null> }> = {};
 
@@ -260,6 +326,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
     if (!table) throw new Error(`Generated Bebop app is missing collection "${collectionName}".`);
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
+    const hasLifecycleHooks = Boolean(hooks && Object.values(hooks).some((hook) => typeof hook === "function"));
     const decodeCommandDocument = (value: Readonly<Record<string, unknown>>) => {
       const document = { ...value };
       for (const field of definition.fields) {
@@ -396,12 +463,28 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
       find: (options) => db.all(query(options)),
       findById: (id) => readLocalDocument(id) as Promise<CollectionDocument<Fields> | null>,
       async create(data) {
+        if (transactionScope && definition.writeMode === "command") {
+          throw new Error(`Command collection "${collectionName}" cannot be mutated from a local lifecycle transaction.`);
+        }
+        if (transactionScope && definition.upload) {
+          throw new Error(`Upload collection "${collectionName}" cannot be mutated from a lifecycle transaction.`);
+        }
+        if (!transactionScope && hasLifecycleHooks && !definition.upload && definition.writeMode !== "command") {
+          const transaction = await createTransaction(async (scopedClient) => {
+            const scopedCollection = (scopedClient as unknown as Record<string, BebopCollectionClient<Fields>>)[collectionName];
+            return scopedCollection.create(data as never);
+          });
+          const mutation = transaction.value as BebopMutationResult<CollectionDocument<Fields>>;
+          return { doc: mutation.doc, ...localWrite(transaction as WriteHandle<unknown, unknown>) };
+        }
         const { file, ...rawInput } = data as Record<string, unknown>;
         const input = applyFieldDefaults(definition, rawInput);
         validateWriteData(input);
         if (!definition.upload && file !== undefined) throw new Error(`Unknown ${collectionName} write field "file".`);
         const mediaFile = definition.upload ? validateFile(file) : undefined;
-        await validateCollectionData(definition, input, "create");
+        if (!hooks?.beforeChange || definition.upload || definition.writeMode === "command") {
+          await validateCollectionData(definition, input, "create");
+        }
         if (definition.writeMode === "command") {
           if (!commandTransport) throw new Error(`Collection "${collectionName}" uses writeMode "command" and requires a command transport.`);
           const response = await commandTransport({ collection: collectionName, operation: "create", data: input });
@@ -411,6 +494,8 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
         const context: CollectionChangeContext<Fields> = {
           operation: "create",
           data: { ...input } as Partial<StoredFields<Fields>>,
+          ...hookUser(),
+          ...(hookClient ? { client: hookClient } : {}),
         };
         const patch = logHooks
           ? await runMaybeLoggedHook(
@@ -440,7 +525,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
           doc = write.value as CollectionDocument<Fields>;
         }
         try {
-          const hookContext = { operation: "create" as const, doc };
+          const hookContext = { operation: "create" as const, doc, ...hookUser(), ...(hookClient ? { client: hookClient } : {}) };
           if (logHooks) {
             await runMaybeLoggedHook(
               { collection: collectionName, hook: "afterChange", operation: "create", id: doc.id },
@@ -451,12 +536,27 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
             await hooks?.afterChange?.(hookContext);
           }
         } catch (error) {
+          if (transactionScope) throw error;
           throw new BebopHookError("afterChange", error, write);
         }
         return { doc, ...localWrite(write) };
       },
 
       async update(id, data) {
+        if (transactionScope && definition.writeMode === "command") {
+          throw new Error(`Command collection "${collectionName}" cannot be mutated from a local lifecycle transaction.`);
+        }
+        if (transactionScope && definition.upload) {
+          throw new Error(`Upload collection "${collectionName}" cannot be mutated from a lifecycle transaction.`);
+        }
+        if (!transactionScope && hasLifecycleHooks && !definition.upload && definition.writeMode !== "command") {
+          const transaction = await createTransaction(async (scopedClient) => {
+            const scopedCollection = (scopedClient as unknown as Record<string, BebopCollectionClient<Fields>>)[collectionName];
+            return scopedCollection.update(id, data as never);
+          });
+          const mutation = transaction.value as BebopMutationResult<CollectionDocument<Fields>>;
+          return { doc: mutation.doc, ...localWrite(transaction as WriteHandle<unknown, unknown>) };
+        }
         const { file, ...input } = data as Record<string, unknown>;
         validateWriteData(input);
         if (!definition.upload && file !== undefined) throw new Error(`Unknown ${collectionName} write field "file".`);
@@ -475,6 +575,8 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
           id,
           data: { ...input } as Partial<StoredFields<Fields>>,
           originalDoc: originalDoc!,
+          ...hookUser(),
+          ...(hookClient ? { client: hookClient } : {}),
         };
         const patch = logHooks
           ? await runMaybeLoggedHook(
@@ -501,7 +603,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
         }
         const doc = { ...originalDoc, ...changes } as CollectionDocument<Fields>;
         try {
-          const hookContext = { operation: "update" as const, doc, originalDoc: originalDoc! };
+          const hookContext = { operation: "update" as const, doc, originalDoc: originalDoc!, ...hookUser(), ...(hookClient ? { client: hookClient } : {}) };
           if (logHooks) {
             await runMaybeLoggedHook(
               { collection: collectionName, hook: "afterChange", operation: "update", id },
@@ -512,19 +614,34 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
             await hooks?.afterChange?.(hookContext);
           }
         } catch (error) {
+          if (transactionScope) throw error;
           throw new BebopHookError("afterChange", error, write);
         }
         return { doc, ...localWrite(write) };
       },
 
       async delete(id) {
+        if (transactionScope && definition.writeMode === "command") {
+          throw new Error(`Command collection "${collectionName}" cannot be mutated from a local lifecycle transaction.`);
+        }
+        if (!transactionScope && hasLifecycleHooks && !definition.upload && definition.writeMode !== "command") {
+          // Avoid opening an empty Jazz transaction for a missing document.
+          if (await readLocalDocument(id)) {
+            const transaction = await createTransaction(async (scopedClient) => {
+              const scopedCollection = (scopedClient as unknown as Record<string, BebopCollectionClient<Fields>>)[collectionName];
+              return scopedCollection.delete(id);
+            });
+            const mutation = transaction.value as BebopDeleteResult<CollectionDocument<Fields>>;
+            return { id: mutation.id, ...(mutation.doc ? { doc: mutation.doc } : {}), ...localWrite(transaction as WriteHandle<unknown, unknown>) };
+          }
+        }
         if (definition.writeMode === "command") {
           if (!commandTransport) throw new Error(`Collection "${collectionName}" uses writeMode "command" and requires a command transport.`);
           await commandTransport({ collection: collectionName, operation: "delete", id });
           return { id, durability: "global" as const, waitForGlobal: async () => {} };
         }
         const doc = await readLocalDocument(id) as CollectionDocument<Fields> | null ?? undefined;
-        const beforeDeleteContext = { id, ...(doc ? { doc } : {}) };
+        const beforeDeleteContext = { id, ...(doc ? { doc } : {}), ...hookUser(), ...(hookClient ? { client: hookClient } : {}) };
         if (logHooks) {
           await runMaybeLoggedHook(
             { collection: collectionName, hook: "beforeDelete", operation: "delete", id },
@@ -536,7 +653,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
         }
         const write = db.delete(table, id) as WriteHandle<unknown, unknown>;
         try {
-          const afterDeleteContext = { id, ...(doc ? { doc } : {}) };
+          const afterDeleteContext = { id, ...(doc ? { doc } : {}), ...hookUser(), ...(hookClient ? { client: hookClient } : {}) };
           if (logHooks) {
             await runMaybeLoggedHook(
               { collection: collectionName, hook: "afterDelete", operation: "delete", id },
@@ -547,6 +664,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
             await hooks?.afterDelete?.(afterDeleteContext);
           }
         } catch (error) {
+          if (transactionScope) throw error;
           throw new BebopHookError("afterDelete", error, write);
         }
         return { id, ...(doc ? { doc } : {}), ...localWrite(write) };
@@ -581,8 +699,19 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
     });
   }
 
-  return {
+  const client = {
     ...collections,
     onMutationError: (listener) => db.onMutationError(listener),
   } as BebopClient<TConfig, TApp>;
+  if (transactionScope) hookClient = createHookClient(client, config);
+  return client;
+}
+
+export function createBebopClient<const TConfig extends BebopConfig, const TApp extends object>(options: {
+  app: TApp;
+  config: TConfig;
+  db: Db;
+  commandTransport?: BebopCommandTransport;
+}): BebopClient<TConfig, TApp> {
+  return buildBebopClient(options);
 }

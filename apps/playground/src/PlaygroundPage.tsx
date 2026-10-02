@@ -87,7 +87,7 @@ type RosterMember = { id: string; name: string; role: string };
 
 function MemberRoster({ members, currentUserId, rolePrefix }: { members: readonly RosterMember[]; currentUserId?: string; rolePrefix: string }) {
   if (!members.length) return <p className="py-5 text-xs text-muted-foreground">No members to show.</p>;
-  return <ul className="divide-y divide-border">{members.map((member) => <li className="flex min-w-0 items-center gap-3 py-3" key={member.id}>
+  return <ul>{members.map((member, index) => <li className={`flex min-w-0 items-center gap-3 py-3 ${index > 0 ? "border-t border-border" : ""}`} key={member.id}>
     <Avatar name={member.name} className="size-9 text-[10px]" />
     <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-foreground">{member.name}{member.id === currentUserId && <span className="ml-1.5 font-normal text-muted-foreground">you</span>}</span><span className="mt-0.5 block text-[10px] capitalize text-muted-foreground">{rolePrefix} {member.role}</span></span>
   </li>)}</ul>;

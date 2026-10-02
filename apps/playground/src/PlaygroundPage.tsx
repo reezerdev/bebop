@@ -109,7 +109,7 @@ function ChannelTabs({ value, onChange, idPrefix, memberCount }: {
     document.getElementById(`${idPrefix}-${nextView}-tab`)?.focus();
   }
 
-  return <div className="flex h-11 shrink-0 items-end gap-5 border-b border-border px-6" role="tablist" aria-label="Channel views">
+  return <div className="flex h-11 shrink-0 items-end gap-2 border-b border-border px-3 sm:gap-5 sm:px-4 md:px-6" role="tablist" aria-label="Channel views">
     <button className={`h-10 border-b-2 px-0.5 text-xs font-medium transition-colors ${value === "messages" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`} type="button" id={`${idPrefix}-messages-tab`} role="tab" tabIndex={value === "messages" ? 0 : -1} aria-selected={value === "messages"} aria-controls={`${idPrefix}-messages-panel`} onKeyDown={handleTabKeyDown} onClick={() => onChange("messages")}>Messages</button>
     <button className={`flex h-10 items-center gap-1.5 border-b-2 px-0.5 text-xs font-medium transition-colors ${value === "members" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`} type="button" id={`${idPrefix}-members-tab`} role="tab" tabIndex={value === "members" ? 0 : -1} aria-selected={value === "members"} aria-controls={`${idPrefix}-members-panel`} onKeyDown={handleTabKeyDown} onClick={() => onChange("members")}>Members<span className="rounded-none bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{memberCount}</span></button>
   </div>;
@@ -137,7 +137,7 @@ function MessageComposer({
     }
   }
 
-  return <form className="mx-4 mb-4 mt-auto flex min-h-[62px] items-center gap-2 rounded-none border border-border bg-card px-4 py-1 transition-colors focus-within:border-input" onSubmit={onSubmit}>
+  return <form className="mx-2 mb-2 mt-auto flex min-h-[62px] items-center gap-2 rounded-none border border-border bg-card px-2 py-1 transition-colors focus-within:border-input sm:mx-4 sm:mb-4 sm:px-4" onSubmit={onSubmit}>
     <Textarea
       className="min-h-10 max-h-32 min-w-0 flex-1 resize-none border-0 px-1 py-3 text-sm leading-5 shadow-none placeholder:text-muted-foreground focus-visible:border-transparent focus-visible:ring-0"
       aria-label={ariaLabel}
@@ -148,13 +148,13 @@ function MessageComposer({
       rows={1}
     />
     <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
-      <Button variant="ghost" size="icon-xs" className="size-8 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-muted-foreground" type="button" disabled title="Attachments are not available yet" aria-label="Add attachment">
+      <Button variant="ghost" size="icon-xs" className="hidden size-8 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-muted-foreground sm:inline-flex" type="button" disabled title="Attachments are not available yet" aria-label="Add attachment">
         <Paperclip className="size-4" aria-hidden="true" />
       </Button>
-      <Button variant="ghost" size="icon-xs" className="size-8 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-muted-foreground" type="button" disabled title="Emoji picker is not available yet" aria-label="Choose emoji">
+      <Button variant="ghost" size="icon-xs" className="hidden size-8 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-muted-foreground sm:inline-flex" type="button" disabled title="Emoji picker is not available yet" aria-label="Choose emoji">
         <FaceSmile className="size-4" aria-hidden="true" />
       </Button>
-      <span className="mx-1 h-6 border-l border-border" aria-hidden="true" />
+      <span className="mx-1 hidden h-6 border-l border-border sm:block" aria-hidden="true" />
       <Button size="icon-xs" className="size-8 rounded-none bg-primary text-primary-foreground normal-case tracking-normal hover:bg-primary/80 disabled:bg-secondary disabled:text-muted-foreground" type="submit" disabled={!value.trim()} aria-label={submitLabel} title={submitLabel}>
         <ArrowUp className="size-4" aria-hidden="true" />
       </Button>
@@ -167,7 +167,7 @@ function JoinChannelPrompt({ channelName, onJoin, isJoining = false }: {
   onJoin: () => void;
   isJoining?: boolean;
 }) {
-  return <div className="mx-4 mb-4 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-none border border-border bg-muted px-4 py-3">
+  return <div className="mx-2 mb-2 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-none border border-border bg-muted px-2 py-3 sm:mx-4 sm:mb-4 sm:px-4">
     <div className="min-w-0"><p className="text-xs font-semibold text-foreground">You’re viewing #{channelName}</p><p className="mt-1 text-xs text-muted-foreground">Join this channel to send messages and participate.</p></div>
     <Button size="sm" className="shrink-0 rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="button" onClick={onJoin} disabled={isJoining}>{isJoining ? "Joining…" : "Join channel"}</Button>
   </div>;
@@ -504,14 +504,14 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
     <>
       <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Interactive playground">
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid min-h-[600px] grid-cols-[68px_224px_minmax(0,1fr)] bg-sidebar">
-              <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1.5 py-4 text-sidebar-foreground" aria-label="Playground sections">
+          <div className="min-w-0">
+            <div className="grid min-h-[600px] grid-cols-[48px_112px_minmax(0,1fr)] bg-sidebar sm:grid-cols-[60px_180px_minmax(0,1fr)] md:grid-cols-[68px_224px_minmax(0,1fr)]">
+              <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1 py-4 text-sidebar-foreground sm:px-1.5" aria-label="Playground sections">
                 <details ref={workspaceMenuRef} className="group relative z-30 mb-3 w-full">
                   <summary className="mx-auto flex w-full cursor-pointer list-none flex-col items-center gap-1 rounded-none p-1 hover:bg-sidebar-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Switch workspace${activeWorkspace?.name ? `: ${activeWorkspace.name}` : ""}`}>
                     <span className="relative grid size-10 place-items-center rounded-none bg-white text-base font-semibold text-black">{workspaceInitial(activeWorkspace?.name)}</span>
                   </summary>
-                  <div className="absolute left-full top-0 z-50 ml-3 w-72 rounded-none border border-border bg-card text-foreground">
+                  <div className="absolute left-full top-0 z-50 ml-3 w-60 rounded-none border border-border bg-card text-foreground sm:w-72">
                     {activeWorkspace && <div className="rounded-none bg-accent p-2 text-accent-foreground">
                       <div className="flex min-w-0 items-center gap-2 px-1 py-1" aria-current="true"><span className="grid size-7 shrink-0 place-items-center rounded-none bg-white text-[10px] font-bold text-black">{workspaceInitial(activeWorkspace.name)}</span><span className="min-w-0 flex-1 truncate text-sm font-semibold">{activeWorkspace.name}</span><Check className="size-4 shrink-0" aria-hidden="true" /></div>
                       <div className="mt-2 grid gap-1 border-t border-accent-foreground/20 pt-2">
@@ -532,7 +532,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                     </div>
                   </div>
                 </details>
-                <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageTextSquare01 className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
+                <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageTextSquare01 className="size-5" aria-hidden="true" /></span><span className={`text-[9px] font-semibold sm:text-[10px] ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
                 <div className="flex-1" />
                 <details ref={accountMenuRef} className="group relative z-30">
                   <summary className="cursor-pointer list-none rounded-none p-0.5 hover:bg-sidebar-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Open your account menu">
@@ -548,10 +548,10 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                 </details>
               </aside>
 
-              <aside className="min-w-0 rounded-none border-r border-border bg-card p-4 text-foreground">
+              <aside className="min-w-0 rounded-none border-r border-border bg-card p-2 text-foreground sm:p-3 md:p-4">
                 {activeTab === "messages" ? (
                   <>
-                    <div className="mb-3 flex min-h-10 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create channel" title="Create channel" onClick={() => { channelForm.reset({ name: "", visibility: "public" }); setChannelDialogOpen(true); }}><Plus className="size-4" aria-hidden="true" /></Button></div>
+                    <div className="mb-3 flex min-h-12 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create channel" title="Create channel" onClick={() => { channelForm.reset({ name: "", visibility: "public" }); setChannelDialogOpen(true); }}><Plus className="size-4" aria-hidden="true" /></Button></div>
                     <div className="grid gap-1">
                       {!orderedChannels.length && <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">No channels yet. Create one to start a conversation.</p>}
                       {orderedChannels.map((channel) => <Button key={channel.id} variant="ghost" size="sm" className={`h-9 min-w-0 justify-start gap-2 overflow-hidden rounded-none px-2 text-left text-xs normal-case tracking-normal ${channel.id === activeChannelId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={() => { setActiveChannelId(channel.id); setActiveChannelView("messages"); }} aria-current={channel.id === activeChannelId ? "page" : undefined}>
@@ -568,19 +568,19 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                 {activeTab === "messages" ? (
                   activeChannel ? (
                     <>
-                      <header className="flex min-h-[56px] items-center justify-between gap-4 border-b border-border px-6 py-3">
-                        <div className="min-w-0"><h2 className="flex items-baseline gap-2 text-base font-semibold"><span className="text-muted-foreground">{activeChannel.visibility === "private" ? <LockKeyholeSquare className="size-4" aria-hidden="true" /> : <Hash01 className="size-4" aria-hidden="true" />}</span>{activeChannel.name}</h2></div>
+                      <header className="flex min-h-[56px] items-center justify-between gap-2 border-b border-border px-3 py-3 sm:gap-4 sm:px-4 md:px-6">
+                        <div className="min-w-0"><h2 className="flex min-w-0 items-baseline gap-2 text-base font-semibold"><span className="shrink-0 text-muted-foreground">{activeChannel.visibility === "private" ? <LockKeyholeSquare className="size-4" aria-hidden="true" /> : <Hash01 className="size-4" aria-hidden="true" />}</span><span className="truncate">{activeChannel.name}</span></h2></div>
                       </header>
                       <ChannelTabs value={activeChannelView} onChange={setActiveChannelView} idPrefix="live-channel" memberCount={channelMembers.length} />
                       {activeChannelView === "messages" ? <>
-                        <div className="max-h-[440px] min-h-[250px] flex-1 overflow-y-auto px-6 py-5" id="live-channel-messages-panel" role="tabpanel" aria-labelledby="live-channel-messages-tab" aria-live="polite">
-                          {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 py-10 text-center"><Stars01 className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{isCurrentChannelMember ? "Start the conversation" : "No messages yet"}</h3><p className="mt-1 max-w-xs text-sm text-muted-foreground">{isCurrentChannelMember ? `Send the first message in #${activeChannel.name}.` : `There are no messages in #${activeChannel.name} yet.`}</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
+                        <div className="max-h-[440px] min-h-[250px] flex-1 overflow-y-auto px-3 py-5 sm:px-4 md:px-6" id="live-channel-messages-panel" role="tabpanel" aria-labelledby="live-channel-messages-tab" aria-live="polite">
+                          {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-3 py-10 text-center sm:px-6"><Stars01 className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{isCurrentChannelMember ? "Start the conversation" : "No messages yet"}</h3><p className="mt-1 max-w-xs text-sm text-muted-foreground">{isCurrentChannelMember ? `Send the first message in #${activeChannel.name}.` : `There are no messages in #${activeChannel.name} yet.`}</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
                             <div className="size-10 rounded-none bg-secondary" aria-hidden="true" />
                             <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author?.name ?? memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-muted-foreground">{entry.$createdAt ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{entry.content}</p></div>
                           </article>)}
                         </div>
                         {streamMemberships === undefined ? <div className="mx-4 mb-4 mt-auto rounded-none border border-border px-4 py-4 text-xs text-muted-foreground" role="status">Checking channel membership…</div> : isCurrentChannelMember ? <MessageComposer value={message} onChange={setMessage} onSubmit={sendMessage} placeholder={`Message #${activeChannel.name}`} ariaLabel={`Message #${activeChannel.name}`} submitLabel="Send message" /> : <JoinChannelPrompt channelName={activeChannel.name} onJoin={() => void joinChannel()} isJoining={joiningChannelId === activeChannel.id} />}
-                      </> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" id="live-channel-members-panel" role="tabpanel" aria-labelledby="live-channel-members-tab">
+                      </> : <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-4 md:px-6" id="live-channel-members-panel" role="tabpanel" aria-labelledby="live-channel-members-tab">
                         <div className="mx-auto max-w-3xl">
                           <div className="flex items-start justify-between gap-4 border-b border-border pb-4"><div><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to #{activeChannel.name}.</p></div><span className="rounded-none bg-secondary px-2 py-1 text-[10px] text-muted-foreground">{channelMembers.length}</span></div>
                           {streamMemberships === undefined ? <p className="py-5 text-xs text-muted-foreground" role="status">Loading channel members…</p> : channelMembers.length ? <MemberRoster members={channelMembers} currentUserId={currentUserId} rolePrefix="Channel" /> : <p className="py-5 text-xs text-muted-foreground">No channel members found.</p>}
@@ -598,12 +598,12 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                       </div>}
                     </>
                   ) : (
-                    <div className="flex flex-1 flex-col items-center justify-center px-8 py-10 text-center"><Stars01 className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{activeWorkspaceId ? "Choose a channel" : "Create your first workspace"}</h3><p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">{activeWorkspaceId ? "Pick a channel or create one to start chatting." : "Your workspace is where channels and messages live."}</p>
+                    <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 text-center sm:px-8"><Stars01 className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{activeWorkspaceId ? "Choose a channel" : "Create your first workspace"}</h3><p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">{activeWorkspaceId ? "Pick a channel or create one to start chatting." : "Your workspace is where channels and messages live."}</p>
                       {!activeWorkspaceId && <p className="mt-4 text-xs text-muted-foreground">Use the workspace menu in the left rail to add a workspace.</p>}
                     </div>
                   )
                 ) : (
-                  <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
                     <div className="mx-auto max-w-4xl">
                       <header className="border-b border-border pb-5"><p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{activeWorkspace?.name ?? "Workspace"} / Settings01</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Workspace settings</h2></header>
                       <section className="mt-6 max-w-2xl overflow-hidden rounded-none border border-border bg-card">
@@ -730,21 +730,21 @@ function PreviewWidget({ notice }: { notice?: string }) {
       {notice && <p className="mx-auto mb-3 w-full max-w-[900px] rounded-none border border-border bg-muted px-4 py-3 text-sm text-foreground" role="status">{notice}</p>}
       <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Playground preview">
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid min-h-[600px] grid-cols-[68px_224px_minmax(0,1fr)] bg-sidebar">
-              <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1.5 py-4 text-sidebar-foreground" aria-label="Playground sections">
+          <div className="min-w-0">
+            <div className="grid min-h-[600px] grid-cols-[48px_112px_minmax(0,1fr)] bg-sidebar sm:grid-cols-[60px_180px_minmax(0,1fr)] md:grid-cols-[68px_224px_minmax(0,1fr)]">
+              <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1 py-4 text-sidebar-foreground sm:px-1.5" aria-label="Playground sections">
                 <details ref={workspaceMenuRef} className="group relative z-30 mb-3 w-full">
                   <summary className="mx-auto flex w-full cursor-pointer list-none flex-col items-center gap-1 rounded-none p-1 hover:bg-sidebar-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Switch workspace: Acme Studio">
                     <span className="grid size-10 place-items-center rounded-none bg-white text-base font-semibold text-black">{workspaceInitial("Acme Studio")}</span>
                   </summary>
-                  <div className="absolute left-full top-0 z-50 ml-3 w-64 rounded-none border border-border bg-card p-3 text-foreground">
+                  <div className="absolute left-full top-0 z-50 ml-3 w-60 rounded-none border border-border bg-card p-3 text-foreground sm:w-64">
                     <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workspace</p>
                     <div className="flex items-center gap-2 rounded-none bg-accent px-2 py-2 text-xs font-semibold text-accent-foreground"><span className="grid size-6 place-items-center rounded-none bg-white text-[10px] text-black">{workspaceInitial("Acme Studio")}</span>Acme Studio<Check className="ml-auto size-4 text-primary" aria-hidden="true" /></div>
                     <Button variant="ghost" size="sm" className="mt-2 h-8 w-full justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => requestAuth("sign-up")}><Plus className="size-4" aria-hidden="true" />Create or join a workspace</Button>
                     <Button variant="ghost" size="sm" className="mt-1 h-8 w-full justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings01 className="size-3.5" aria-hidden="true" />Workspace settings</Button>
                   </div>
                 </details>
-                <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageTextSquare01 className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
+                <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageTextSquare01 className="size-5" aria-hidden="true" /></span><span className={`text-[9px] font-semibold sm:text-[10px] ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
                 <div className="flex-1" />
                 <details ref={accountMenuRef} className="group relative z-30">
                   <summary className="cursor-pointer list-none rounded-none p-0.5 hover:bg-sidebar-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Open your account menu"><Avatar name="Guest" tone="white" className="size-10 text-base" /></summary>
@@ -754,21 +754,21 @@ function PreviewWidget({ notice }: { notice?: string }) {
                   </div>
                 </details>
               </aside>
-              <aside className="min-w-0 rounded-none border-r border-border bg-card p-4 text-foreground">
+              <aside className="min-w-0 rounded-none border-r border-border bg-card p-2 text-foreground sm:p-3 md:p-4">
                 {activeTab === "messages" ? <>
-                  <div className="mb-3 flex min-h-10 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create a channel" onClick={() => requestAuth("sign-up")}><Plus className="size-4" aria-hidden="true" /></Button></div>
+                  <div className="mb-3 flex min-h-12 items-center justify-between border-b border-border pb-2 pl-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><span>Channels</span><Button variant="ghost" size="icon-xs" className="rounded-none text-muted-foreground normal-case tracking-normal hover:bg-accent hover:text-accent-foreground" type="button" aria-label="Create a channel" onClick={() => requestAuth("sign-up")}><Plus className="size-4" aria-hidden="true" /></Button></div>
                   <div className="grid gap-1">{demoChannels.map((item) => <Button key={item.id} variant="ghost" size="sm" className={`h-9 min-w-0 justify-start gap-2 overflow-hidden rounded-none px-2 text-left text-xs normal-case tracking-normal ${item.id === activeChannelId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={() => { setActiveChannelId(item.id); setActiveChannelView("messages"); }} aria-current={item.id === activeChannelId ? "page" : undefined}><span className="grid w-4 shrink-0 place-items-center text-muted-foreground" aria-hidden="true">{item.locked ? <LockKeyholeSquare className="size-3.5" /> : <Hash01 className="size-4" />}</span><span className="truncate">{item.name}</span></Button>)}</div>
                 </> : <div className="mt-7"><span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workspace settings</span><p className="mt-2 text-xs leading-5 text-muted-foreground">Manage people in Acme Studio.</p></div>}
               </aside>
               <section className="flex min-w-0 min-h-[600px] flex-col overflow-hidden rounded-none bg-card text-foreground" aria-label={activeTab === "messages" ? "Channels preview" : "Workspace settings preview"}>
                 {activeTab === "messages" ? <>
-                  <header className="flex min-h-[68px] items-center justify-between gap-4 border-b border-border px-6 py-3"><div><h2 className="flex items-baseline gap-2 text-base font-semibold"><span className="text-muted-foreground">{channel.locked ? <LockKeyholeSquare className="size-4" aria-hidden="true" /> : <Hash01 className="size-4" aria-hidden="true" />}</span>{channel.name}</h2></div><Button variant="outline" size="sm" className="shrink-0 rounded-none normal-case tracking-normal text-accent-foreground" type="button" onClick={() => requestAuth("sign-up")}>Create your workspace</Button></header>
+                  <header className="flex min-h-[68px] items-center justify-between gap-2 border-b border-border px-3 py-3 sm:gap-4 sm:px-4 md:px-6"><div className="min-w-0"><h2 className="flex min-w-0 items-baseline gap-2 text-base font-semibold"><span className="shrink-0 text-muted-foreground">{channel.locked ? <LockKeyholeSquare className="size-4" aria-hidden="true" /> : <Hash01 className="size-4" aria-hidden="true" />}</span><span className="truncate">{channel.name}</span></h2></div><Button variant="outline" size="sm" className="shrink-0 rounded-none normal-case tracking-normal text-accent-foreground" type="button" onClick={() => requestAuth("sign-up")}><span className="sm:hidden">Sign up</span><span className="hidden sm:inline">Create your workspace</span></Button></header>
                   <ChannelTabs value={activeChannelView} onChange={setActiveChannelView} idPrefix="preview-channel" memberCount={demoChannelMembers.length} />
                   {activeChannelView === "messages" ? <>
-                    <div className="flex-1 overflow-y-auto px-6 py-5" id="preview-channel-messages-panel" role="tabpanel" aria-labelledby="preview-channel-messages-tab">{demoMessages[channel.id].map((entry, index) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={`${channel.id}-${index}`}><div className="size-10 rounded-none bg-secondary" aria-hidden="true" /><div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author}</strong><time className="text-xs text-muted-foreground">{entry.time}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{entry.content}</p></div></article>)}</div>
+                    <div className="flex-1 overflow-y-auto px-3 py-5 sm:px-4 md:px-6" id="preview-channel-messages-panel" role="tabpanel" aria-labelledby="preview-channel-messages-tab">{demoMessages[channel.id].map((entry, index) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={`${channel.id}-${index}`}><div className="size-10 rounded-none bg-secondary" aria-hidden="true" /><div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author}</strong><time className="text-xs text-muted-foreground">{entry.time}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{entry.content}</p></div></article>)}</div>
                     <JoinChannelPrompt channelName={channel.name} onJoin={() => requestAuth("sign-up")} />
-                  </> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" id="preview-channel-members-panel" role="tabpanel" aria-labelledby="preview-channel-members-tab"><div className="mx-auto max-w-3xl"><div className="border-b border-border pb-4"><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to #{channel.name}.</p></div><MemberRoster members={demoChannelMembers} rolePrefix="Channel" /><Button variant="outline" size="sm" className="mt-4 gap-1 rounded-none normal-case tracking-normal" type="button" onClick={() => requestAuth("sign-up")}>Invite a member<ArrowUpRight className="size-3.5" aria-hidden="true" /></Button></div></div>}
-                </> : <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                  </> : <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-4 md:px-6" id="preview-channel-members-panel" role="tabpanel" aria-labelledby="preview-channel-members-tab"><div className="mx-auto max-w-3xl"><div className="border-b border-border pb-4"><h3 className="text-sm font-semibold">Channel members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to #{channel.name}.</p></div><MemberRoster members={demoChannelMembers} rolePrefix="Channel" /><Button variant="outline" size="sm" className="mt-4 gap-1 rounded-none normal-case tracking-normal" type="button" onClick={() => requestAuth("sign-up")}>Invite a member<ArrowUpRight className="size-3.5" aria-hidden="true" /></Button></div></div>}
+                </> : <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
                   <div className="mx-auto max-w-4xl"><header className="border-b border-border pb-5"><p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Acme Studio / Settings01</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Workspace settings</h2></header><section className="mt-6 max-w-2xl overflow-hidden rounded-none border border-border bg-card"><header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3"><div><h3 className="text-sm font-semibold">Members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to Acme Studio.</p></div><span className="rounded-none bg-secondary px-2 py-1 text-[10px] text-muted-foreground">{demoWorkspaceMembers.length}</span></header><div className="px-4"><MemberRoster members={demoWorkspaceMembers} rolePrefix="Workspace" /></div></section></div>
                 </div>}
               </section>

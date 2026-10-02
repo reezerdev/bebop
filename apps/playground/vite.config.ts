@@ -81,9 +81,13 @@ function betterAuthPlugin(): Plugin {
         ));
 
         void authServerPromise
-          .then(async ({ handler, listUsers, listWorkspaceMembers, adminSetupStatus, adminAccessHandler, commandHandler, createWorkspaceHandler }) => {
+          .then(async ({ handler, listUsers, listWorkspaceMembers, addWorkspaceMemberHandler, adminSetupStatus, adminAccessHandler, commandHandler, createWorkspaceHandler }) => {
             if (isUsersRoute) return listUsers(request, response);
-            if (workspaceMembersMatch) return listWorkspaceMembers(request, response, decodeURIComponent(workspaceMembersMatch[1]));
+            if (workspaceMembersMatch) {
+              const workspaceId = decodeURIComponent(workspaceMembersMatch[1]);
+              if (request.method === "POST") return sendWebResponse(await addWorkspaceMemberHandler(await toWebRequest(request), workspaceId), response);
+              return listWorkspaceMembers(request, response, workspaceId);
+            }
             if (isAdminSetupRoute) return adminSetupStatus(request, response);
             if (isAdminAccessRoute) return sendWebResponse(await adminAccessHandler(await toWebRequest(request)), response);
             if (isWorkspaceCreateRoute) return sendWebResponse(await createWorkspaceHandler(await toWebRequest(request)), response);

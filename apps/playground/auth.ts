@@ -160,6 +160,83 @@ export async function createAuthServer(config: AuthServerConfig) {
     }
   }
 
+  async function addWorkspaceMemberHandler(request: Request, workspaceId: string): Promise<Response> {
+    const json = (body: unknown, status = 200) => Response.json(body, {
+      status,
+      headers: { "cache-control": "no-store", vary: "cookie" },
+    });
+    if (request.method !== "POST") return json({ message: "Method not allowed." }, 405);
+    if (request.headers.get("origin") !== new URL(request.url).origin) return json({ message: "Invalid request origin." }, 403);
+    const session = await auth.api.getSession({ headers: request.headers, query: { disableCookieCache: true } });
+    if (!session) return json({ message: "Sign in before adding a workspace member." }, 401);
+
+    let data: { email?: unknown };
+    try { data = await request.json() as typeof data; }
+    catch { return json({ message: "Member data must be valid JSON." }, 400); }
+    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
+    if (!email || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json({ message: "Enter a valid email address." }, 400);
+    }
+
+    try {
+      const memberships = await snapshot.client!.db.all(app.workspaceMemberships.where({ workspaceId, status: "active" }), { tier: "global" });
+      const actorMembership = memberships.find((membership) => membership.userId === session.user.id);
+      if (!actorMembership || !["admin", "manager"].includes(actorMembership.role)) {
+        return json({ message: "Only workspace admins and managers can add members." }, 403);
+      }
+
+      const targetUser = (await snapshot.client!.db.all(
+        app.better_auth_user.select("id", "name", "email").where({ email }),
+        { tier: "global" },
+      ))[0];
+      if (!targetUser) return json({ message: "No account was found with that email address." }, 404);
+      if (memberships.some((membership) => membership.userId === targetUser.id)) {
+        return json({ message: "That person is already a member of this workspace." }, 409);
+      }
+
+      const { token } = await auth.api.getToken({ headers: request.headers });
+      const jazzRequest = new Request(request.url, { headers: { authorization: `Bearer ${token}` } });
+      const writeDb = await snapshot.client!.withAttributionForRequest(jazzRequest);
+      const transaction = await writeDb.exclusiveTransaction(async (tx) => {
+        const currentActorMembership = await tx.one(app.workspaceMemberships.where({
+          workspaceId,
+          userId: session.user.id,
+          status: "active",
+        }));
+        if (!currentActorMembership || !["admin", "manager"].includes(currentActorMembership.role)) {
+          return { error: { status: 403, message: "Only workspace admins and managers can add members." } };
+        }
+        const existingMembership = await tx.one(app.workspaceMemberships.where({
+          workspaceId,
+          userId: targetUser.id,
+          status: "active",
+        }));
+        if (existingMembership) {
+          return { error: { status: 409, message: "That person is already a member of this workspace." } };
+        }
+        const membership = tx.insert(app.workspaceMemberships, {
+          workspaceId,
+          userId: targetUser.id,
+          role: "member",
+          status: "active",
+        });
+        return { membership };
+      });
+      if ("error" in transaction.value) {
+        return json({ message: transaction.value.error.message }, transaction.value.error.status);
+      }
+      await transaction.wait();
+
+      return json({
+        member: { id: targetUser.id, name: targetUser.name || targetUser.email },
+        durability: "global",
+      });
+    } catch (error) {
+      console.error("Could not add workspace member:", error);
+      return json({ message: "Could not add this workspace member." }, 500);
+    }
+  }
+
   const adminAccessHandler = createBebopAdminAccessHandler({
     config: bebopConfig,
     async resolveSession(request) {
@@ -206,6 +283,7 @@ export async function createAuthServer(config: AuthServerConfig) {
     handler: toNodeHandler(auth.handler),
     commandHandler,
     createWorkspaceHandler,
+    addWorkspaceMemberHandler,
     adminAccessHandler,
     async adminSetupStatus(request: IncomingMessage, response: ServerResponse) {
       response.setHeader("content-type", "application/json");

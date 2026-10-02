@@ -24,6 +24,7 @@ type Client = ReturnType<typeof createBebopClient>;
 
 type UserOption = { id: string; name: string };
 type WorkspaceForm = { name: string; slug: string };
+type WorkspaceMemberForm = { email: string };
 type ChannelForm = { name: string; visibility: "public" | "private" };
 type PlaygroundWidgetProps = {
   mode: "preview";
@@ -190,6 +191,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const [awaitingWorkspaceId, setAwaitingWorkspaceId] = useState("");
   const [activeChannelId, setActiveChannelId] = useState("");
   const [workspaceDialog, setWorkspaceDialog] = useState<"create" | "rename" | null>(null);
+  const [workspaceMemberDialogOpen, setWorkspaceMemberDialogOpen] = useState(false);
   const [channelDialogOpen, setChannelDialogOpen] = useState(false);
   const [joiningChannelId, setJoiningChannelId] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
@@ -201,6 +203,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const toast = useToastManager();
   const lastErrorToast = useRef<{ description: string; timestamp: number } | undefined>(undefined);
   const workspaceForm = useForm<WorkspaceForm>({ defaultValues: { name: "", slug: "" } });
+  const workspaceMemberForm = useForm<WorkspaceMemberForm>({ defaultValues: { email: "" } });
   const channelForm = useForm<ChannelForm>({ defaultValues: { name: "", visibility: "public" } });
   const { data: workspaces } = useAll(client.workspaces.query());
   const { data: channels } = useAll(activeWorkspaceId
@@ -228,21 +231,23 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }, []);
 
   useEffect(() => {
-    if (!workspaceDialog && !channelDialogOpen) return;
+    if (!workspaceDialog && !workspaceMemberDialogOpen && !channelDialogOpen) return;
     const closeOnEscape = (event: WindowEventMap["keydown"]) => {
       if (event.key === "Escape") {
         setWorkspaceDialog(null);
+        setWorkspaceMemberDialogOpen(false);
         setChannelDialogOpen(false);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [workspaceDialog, channelDialogOpen]);
+  }, [workspaceDialog, workspaceMemberDialogOpen, channelDialogOpen]);
 
   const orderedChannels = useMemo(() => [...(channels ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [channels]);
   const activeWorkspace = (workspaces ?? []).find((workspace) => workspace.id === activeWorkspaceId);
   const currentWorkspaceMembership = (workspaceMemberships ?? []).find((membership) => membership.userId === currentUserId);
   const canRenameWorkspace = currentWorkspaceMembership?.role === "admin";
+  const canManageWorkspace = currentWorkspaceMembership?.role === "admin" || currentWorkspaceMembership?.role === "manager";
   const activeChannel = orderedChannels.find((channel) => channel.id === activeChannelId);
   const { data: entries } = useAll(activeChannel?.streamId
     ? client.entries.where({ streamId: activeChannel.streamId })
@@ -272,7 +277,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   })).sort((a, b) => a.name.localeCompare(b.name)), [memberNames, streamMemberships]);
   const workspaceRoster = useMemo(() => workspaceMembers.map((member) => ({
     ...member,
-    role: workspaceMemberships?.find((membership) => membership.userId === member.id)?.role === "admin" ? "admin" : "member",
+    role: workspaceMemberships?.find((membership) => membership.userId === member.id)?.role ?? "member",
   })).sort((a, b) => a.name.localeCompare(b.name)), [workspaceMembers, workspaceMemberships]);
   const inviteOptions = workspaceMembers.filter((member) => !currentChannelMemberIds.has(member.id));
 
@@ -392,6 +397,28 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
       setWorkspaceDialog(null);
     } catch (error) {
       notifyError("Could not rename workspace", error, "Could not rename workspace.");
+    }
+  }
+
+  async function addWorkspaceMember(values: WorkspaceMemberForm) {
+    if (!activeWorkspaceId) return;
+    try {
+      const response = await fetch(`/api/bebop/workspaces/${encodeURIComponent(activeWorkspaceId)}/members`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: values.email.trim() }),
+      });
+      const result = await response.json() as { member?: UserOption; message?: string };
+      if (!response.ok || !result.member) {
+        throw new Error(result.message || "Could not add this workspace member.");
+      }
+      setWorkspaceMembers((members) => members.some((member) => member.id === result.member!.id) ? members : [...members, result.member!]);
+      workspaceMemberForm.reset({ email: "" });
+      setWorkspaceMemberDialogOpen(false);
+      toast.add({ type: "success", title: "Workspace member added", description: `${result.member.name} can now access ${activeWorkspace?.name ?? "this workspace"}.` });
+    } catch (error) {
+      notifyError("Could not add workspace member", error, "Could not add this workspace member.");
     }
   }
 
@@ -567,7 +594,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                   <div className="mx-auto max-w-4xl">
                     <header className="border-b border-border pb-5"><p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{activeWorkspace?.name ?? "Workspace"} / Settings01</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Workspace settings</h2></header>
                     <section className="mt-6 max-w-2xl overflow-hidden rounded-none border border-border bg-card">
-                      <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3"><div><h3 className="text-sm font-semibold">Members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to {activeWorkspace?.name ?? "this workspace"}.</p></div><span className="rounded-none bg-secondary px-2 py-1 text-[10px] text-muted-foreground">{workspaceRoster.length}</span></header>
+                      <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3"><div><h3 className="text-sm font-semibold">Members</h3><p className="mt-1 text-xs text-muted-foreground">People who belong to {activeWorkspace?.name ?? "this workspace"}.</p></div><div className="flex shrink-0 items-center gap-3"><span className="rounded-none bg-secondary px-2 py-1 text-[10px] text-muted-foreground">{workspaceRoster.length}</span>{canManageWorkspace && <Button variant="outline" size="sm" className="h-8 rounded-none normal-case tracking-normal" type="button" onClick={() => { workspaceMemberForm.reset({ email: "" }); setWorkspaceMemberDialogOpen(true); }}>Add member</Button>}</div></header>
                       <div className="px-4">{workspaceMembersLoading ? <p className="py-5 text-xs text-muted-foreground">Loading members…</p> : workspaceMembersError ? <p className="py-5 text-xs text-destructive" role="alert">{workspaceMembersError}</p> : <MemberRoster members={workspaceRoster} currentUserId={currentUserId} rolePrefix="Workspace" />}</div>
                     </section>
                   </div>
@@ -604,6 +631,32 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
               <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit">Save</Button>
             </div>
           </form>}
+        </div>
+      </Card>
+    </div>}
+    {workspaceMemberDialogOpen && <div className="bebop-admin fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-foreground/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkspaceMemberDialogOpen(false); }}>
+      <Card className="relative w-full max-w-md rounded-none border border-border bg-card text-foreground shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="workspace-member-dialog-title">
+        <div className="px-6">
+          <header className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h2 id="workspace-member-dialog-title" className="font-heading text-lg font-semibold tracking-wider uppercase">Add workspace member</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Add an existing account to {activeWorkspace?.name ?? "your workspace"}.</p>
+            </div>
+            <Button className="-mr-2 -mt-2 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-foreground" variant="ghost" size="icon-sm" type="button" aria-label="Close add member dialog" onClick={() => setWorkspaceMemberDialogOpen(false)}>×</Button>
+          </header>
+          <form className="grid gap-3" onSubmit={workspaceMemberForm.handleSubmit(addWorkspaceMember)}>
+            <Label htmlFor="workspace-member-email" className="normal-case tracking-normal">Email address</Label>
+            <Input className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="workspace-member-email" type="email" autoComplete="email" placeholder="person@example.com" autoFocus {...workspaceMemberForm.register("email", {
+              required: "Enter an email address.",
+              pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email address." },
+            })} />
+            {workspaceMemberForm.formState.errors.email && <p className="text-xs text-destructive" role="alert">{workspaceMemberForm.formState.errors.email.message}</p>}
+            <p className="text-xs leading-5 text-muted-foreground">The person must already have a Bebop account. They’ll be added as a member.</p>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="normal-case tracking-normal" type="button" onClick={() => { workspaceMemberForm.reset({ email: "" }); setWorkspaceMemberDialogOpen(false); }}>Cancel</Button>
+              <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={workspaceMemberForm.formState.isSubmitting}>{workspaceMemberForm.formState.isSubmitting ? "Adding…" : "Add member"}</Button>
+            </div>
+          </form>
         </div>
       </Card>
     </div>}

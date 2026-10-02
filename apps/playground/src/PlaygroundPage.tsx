@@ -32,13 +32,13 @@ const demoChannels = [
 ] as const;
 const demoMessages: Record<string, { author: string; initials: string; time: string; content: string }[]> = {
   general: [
-    { author: "Maya Chen", initials: "MC", time: "9:18 AM", content: "Welcome to the Bebop demo. Pick a channel and try the conversation layout." },
+    { author: "Maya Chen", initials: "MC", time: "9:18 AM", content: "Welcome to the demo. Pick a channel and try the conversation layout." },
     { author: "Jordan Lee", initials: "JL", time: "9:24 AM", content: "Messages are entries, grouped into a stream that belongs to a channel." },
     { author: "You", initials: "Y", time: "9:32 AM", content: "This sample workspace is ready to explore." },
   ],
   design: [
     { author: "Jordan Lee", initials: "JL", time: "10:02 AM", content: "The new home page should make the product feel approachable and hands-on." },
-    { author: "Maya Chen", initials: "MC", time: "10:16 AM", content: "I like the framed app preview. Let's keep the Bebop identity in the details." },
+    { author: "Maya Chen", initials: "MC", time: "10:16 AM", content: "I like the framed app preview. Let's keep the product identity in the details." },
   ],
   launch: [
     { author: "Maya Chen", initials: "MC", time: "11:04 AM", content: "This private channel is a preview. Sign in to create and manage real channel access." },
@@ -63,7 +63,7 @@ function userInitials(name?: string): string {
 function Avatar({ name, image, className = "", tone = "color" }: { name: string; image?: string; className?: string; tone?: "color" | "white" }) {
   const [imageFailed, setImageFailed] = useState(false);
   useEffect(() => setImageFailed(false), [image]);
-  const toneClass = tone === "white" ? "bg-card text-sidebar-foreground" : "bg-secondary text-muted-foreground";
+  const toneClass = tone === "white" ? "bg-white text-black" : "bg-secondary text-muted-foreground";
   return <span className={`grid shrink-0 place-items-center overflow-hidden rounded-none font-semibold ${toneClass} ${className}`} aria-hidden="true">{image && !imageFailed ? <img className="size-full object-cover" src={image} alt="" onError={() => setImageFailed(true)} /> : userInitials(name)}</span>;
 }
 
@@ -174,8 +174,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
   const [awaitingWorkspaceId, setAwaitingWorkspaceId] = useState("");
   const [activeChannelId, setActiveChannelId] = useState("");
-  const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
-  const [showRenameForm, setShowRenameForm] = useState(false);
+  const [workspaceDialog, setWorkspaceDialog] = useState<"create" | "rename" | null>(null);
   const [showChannelForm, setShowChannelForm] = useState(false);
   const [joiningChannelId, setJoiningChannelId] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
@@ -213,17 +212,24 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
     return () => document.removeEventListener("pointerdown", closeMenusOutside);
   }, []);
 
+  useEffect(() => {
+    if (!workspaceDialog) return;
+    const closeOnEscape = (event: WindowEventMap["keydown"]) => {
+      if (event.key === "Escape") setWorkspaceDialog(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [workspaceDialog]);
+
   const orderedChannels = useMemo(() => [...(channels ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [channels]);
   const activeWorkspace = (workspaces ?? []).find((workspace) => workspace.id === activeWorkspaceId);
   const currentWorkspaceMembership = (workspaceMemberships ?? []).find((membership) => membership.userId === currentUserId);
   const canRenameWorkspace = currentWorkspaceMembership?.role === "admin";
   const activeChannel = orderedChannels.find((channel) => channel.id === activeChannelId);
   const { data: entries } = useAll(activeChannel?.streamId
-    ? client.entries.query({
-      where: { streamId: activeChannel.streamId },
-      orderBy: { field: "$createdAt", direction: "asc" },
-      includeTimestamps: true,
-    })
+    ? client.entries.where({ streamId: activeChannel.streamId })
+      .select("*", "$createdAt")
+      .orderBy("$createdAt", "asc")
       .include({ author: app.better_auth_user.select("id", "name") })
     : undefined);
   const { data: streamMemberships } = useAll(activeChannel?.streamId
@@ -286,7 +292,6 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
 
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? "");
-    setShowRenameForm(false);
   }, [activeWorkspace?.id, activeWorkspace?.name]);
 
   useEffect(() => {
@@ -354,7 +359,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
       setActiveChannelId("");
       setActiveChannelView("messages");
       workspaceForm.reset({ name: "", slug: "" });
-      setShowWorkspaceForm(false);
+      setWorkspaceDialog(null);
     } catch (error) {
       notifyError("Could not create workspace", error, "Could not create workspace.");
     }
@@ -366,7 +371,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
     try {
       const result = await client.workspaces.update(activeWorkspaceId, { name: workspaceName.trim() });
       await result.waitForGlobal();
-      setShowRenameForm(false);
+      setWorkspaceDialog(null);
     } catch (error) {
       notifyError("Could not rename workspace", error, "Could not rename workspace.");
     }
@@ -445,52 +450,39 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }
 
   return (
-    <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Interactive Bebop playground">
+    <>
+    <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Interactive playground">
       <div className="overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid min-h-[600px] grid-cols-[68px_224px_minmax(0,1fr)] bg-sidebar">
             <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1.5 py-4 text-sidebar-foreground" aria-label="Playground sections">
               <details ref={workspaceMenuRef} className="group relative z-30 mb-3 w-full">
                 <summary className="mx-auto flex w-full cursor-pointer list-none flex-col items-center gap-1 rounded-none p-1 hover:bg-sidebar-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Switch workspace${activeWorkspace?.name ? `: ${activeWorkspace.name}` : ""}`}>
-                  <span className="relative grid size-10 place-items-center rounded-none bg-card text-base font-semibold text-sidebar-foreground">{workspaceInitial(activeWorkspace?.name)}</span>
+                  <span className="relative grid size-10 place-items-center rounded-none bg-white text-base font-semibold text-black">{workspaceInitial(activeWorkspace?.name)}</span>
                 </summary>
                 <div className="absolute left-full top-0 z-50 ml-3 w-72 rounded-none border border-border bg-card p-3 text-foreground">
                   <div className="mb-2 border-b border-border px-2 pb-3"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Current workspace</p><p className="mt-1 truncate text-sm font-semibold">{activeWorkspace?.name ?? "Choose a workspace"}</p></div>
                   <div className="grid gap-1">
-                    {(workspaces ?? []).map((workspace) => <Button key={workspace.id} variant="ghost" size="sm" className={`h-9 justify-start gap-2 rounded-none px-2 text-left text-xs normal-case tracking-normal hover:bg-accent hover:text-accent-foreground ${workspace.id === activeWorkspaceId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={(event) => { setActiveWorkspaceId(workspace.id); setActiveChannelId(""); setActiveChannelView("messages"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><span className="grid size-6 shrink-0 place-items-center rounded-none bg-card text-[10px] font-bold text-sidebar-foreground">{workspaceInitial(workspace.name)}</span><span className="truncate">{workspace.name}</span>{workspace.id === activeWorkspaceId && <Check className="ml-auto size-4 text-primary" aria-hidden="true" />}</Button>)}
+                    {(workspaces ?? []).map((workspace) => <Button key={workspace.id} variant="ghost" size="sm" className={`h-9 justify-start gap-2 rounded-none px-2 text-left text-xs normal-case tracking-normal hover:bg-accent hover:text-accent-foreground ${workspace.id === activeWorkspaceId ? "bg-accent font-semibold text-accent-foreground" : "text-muted-foreground"}`} type="button" onClick={(event) => { setActiveWorkspaceId(workspace.id); setActiveChannelId(""); setActiveChannelView("messages"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><span className="grid size-6 shrink-0 place-items-center rounded-none bg-white text-[10px] font-bold text-black">{workspaceInitial(workspace.name)}</span><span className="truncate">{workspace.name}</span>{workspace.id === activeWorkspaceId && <Check className="ml-auto size-4 text-primary" aria-hidden="true" />}</Button>)}
                     {!workspaces?.length && <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">Create a workspace to begin.</p>}
                   </div>
                   <div className="mt-2 grid gap-1 border-t border-border pt-2">
-                    <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => setShowWorkspaceForm((value) => !value)}><Plus className="size-4" aria-hidden="true" />Add workspace</Button>
-                    {activeWorkspaceId && canRenameWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => setShowRenameForm((value) => !value)}><Pencil className="size-3.5" aria-hidden="true" />Rename workspace</Button>}
+                    <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceDialog("create"); workspaceForm.reset({ name: "", slug: "" }); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Plus className="size-4" aria-hidden="true" />Add workspace</Button>
+                    {activeWorkspaceId && canRenameWorkspace && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setWorkspaceName(activeWorkspace?.name ?? ""); setWorkspaceDialog("rename"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Pencil className="size-3.5" aria-hidden="true" />Rename workspace</Button>}
                     {activeWorkspaceId && <Button variant="ghost" size="sm" className="h-8 justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings className="size-3.5" aria-hidden="true" />Workspace settings</Button>}
                   </div>
-                  {showRenameForm && canRenameWorkspace && <form className="mt-2 grid gap-2 rounded-none border border-border bg-muted p-3" onSubmit={renameWorkspace}>
-                    <Label htmlFor="workspace-rename" className="normal-case tracking-normal">Workspace name</Label>
-                    <Input className="h-9 rounded-none border border-input bg-card px-2 text-xs" id="workspace-rename" value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} required />
-                    <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" className="h-8 normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => { setWorkspaceName(activeWorkspace?.name ?? ""); setShowRenameForm(false); }}>Cancel</Button><Button size="sm" className="h-8 rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit">Save</Button></div>
-                  </form>}
-                  {showWorkspaceForm && <form className="mt-2 grid gap-2 rounded-none border border-border bg-muted p-3" onSubmit={workspaceForm.handleSubmit(createWorkspace)}>
-                    <Label htmlFor="workspace-name" className="normal-case tracking-normal">Workspace name</Label>
-                    <Input className="h-9 rounded-none border border-input bg-card px-2 text-xs" id="workspace-name" {...workspaceForm.register("name", { validate: (value) => !!value.trim() || "Enter a workspace name." })} placeholder="Studio North" autoFocus />
-                    {workspaceForm.formState.errors.name && <p className="text-xs text-destructive">{workspaceForm.formState.errors.name.message}</p>}
-                    <Label htmlFor="workspace-slug" className="normal-case tracking-normal">Slug <span className="font-normal text-muted-foreground">optional</span></Label>
-                    <Input className="h-9 rounded-none border border-input bg-card px-2 text-xs" id="workspace-slug" {...workspaceForm.register("slug")} placeholder="studio-north" />
-                    {workspaceForm.formState.errors.slug && <p className="text-xs text-destructive">{workspaceForm.formState.errors.slug.message}</p>}
-                    <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" className="h-8 normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => setShowWorkspaceForm(false)}>Cancel</Button><Button size="sm" className="h-8 rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={workspaceForm.formState.isSubmitting}>Create</Button></div>
-                  </form>}
                 </div>
               </details>
-              <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-10 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-primary text-primary-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageSquareText className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
+              <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageSquareText className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
               <div className="flex-1" />
               <details ref={accountMenuRef} className="group relative z-30">
                 <summary className="cursor-pointer list-none rounded-none p-0.5 hover:bg-sidebar-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Open your account menu">
                   <Avatar name={currentUserName || currentUserEmail || "You"} image={props.currentUserImage} tone="white" className="size-10 text-base" />
                 </summary>
                 <div className="absolute bottom-0 left-full z-50 ml-3 w-64 rounded-none border border-border bg-card p-4 text-foreground">
-                  <div className="flex items-center gap-3"><Avatar name={currentUserName || currentUserEmail || "You"} image={props.currentUserImage} tone="white" className="size-10 text-base" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{currentUserName || "Your account"}</p><p className="truncate text-xs text-muted-foreground">{currentUserEmail || "Signed in to Bebop"}</p></div></div>
+                  <div className="flex items-center gap-3"><Avatar name={currentUserName || currentUserEmail || "You"} image={props.currentUserImage} tone="white" className="size-10 text-base" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{currentUserName || "Your account"}</p><p className="truncate text-xs text-muted-foreground">{currentUserEmail || "Signed in"}</p></div></div>
                   <div className="mt-3 grid gap-1 border-t border-border pt-3">
-                    <p className="px-2 text-[10px] text-muted-foreground">Bebop account</p>
+                    <p className="px-2 text-[10px] text-muted-foreground">Account</p>
                     <Button variant="ghost" size="sm" className="h-8 justify-start rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => void props.onLogout()}>Sign out</Button>
                   </div>
                 </div>
@@ -528,14 +520,13 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                   <>
                     <header className="flex min-h-[68px] items-center justify-between gap-4 border-b border-border px-6 py-3">
                       <div className="min-w-0"><h2 className="flex items-baseline gap-2 text-base font-semibold"><span className="text-muted-foreground">{activeChannel.visibility === "private" ? <LockKeyhole className="size-4" aria-hidden="true" /> : <Hash className="size-4" aria-hidden="true" />}</span>{activeChannel.name}</h2></div>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{channelMembers.length} members</span>
                     </header>
                     <ChannelTabs value={activeChannelView} onChange={setActiveChannelView} idPrefix="live-channel" memberCount={channelMembers.length} />
                     {activeChannelView === "messages" ? <>
                     <div className="max-h-[440px] min-h-[250px] flex-1 overflow-y-auto px-6 py-5" id="live-channel-messages-panel" role="tabpanel" aria-labelledby="live-channel-messages-tab" aria-live="polite">
                       {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 py-10 text-center"><Sparkles className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{isCurrentChannelMember ? "Start the conversation" : "No messages yet"}</h3><p className="mt-1 max-w-xs text-sm text-muted-foreground">{isCurrentChannelMember ? `Send the first message in #${activeChannel.name}.` : `There are no messages in #${activeChannel.name} yet.`}</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
                         <div className="size-10 rounded-none bg-secondary" aria-hidden="true" />
-                        <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author?.name ?? memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-muted-foreground">{"$createdAt" in entry && entry.$createdAt instanceof Date ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{entry.content}</p></div>
+                        <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author?.name ?? memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-muted-foreground">{entry.$createdAt ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">{entry.content}</p></div>
                       </article>)}
                     </div>
                     {streamMemberships === undefined ? <div className="mx-4 mb-4 mt-auto rounded-none border border-border px-4 py-4 text-xs text-muted-foreground" role="status">Checking channel membership…</div> : isCurrentChannelMember ? <MessageComposer value={message} onChange={setMessage} onSubmit={sendMessage} placeholder={`Message #${activeChannel.name}`} ariaLabel={`Message #${activeChannel.name}`} submitLabel="Send message" /> : <JoinChannelPrompt channelName={activeChannel.name} onJoin={() => void joinChannel()} isJoining={joiningChannelId === activeChannel.id} />}
@@ -558,7 +549,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                   </>
                 ) : (
                   <div className="flex flex-1 flex-col items-center justify-center px-8 py-10 text-center"><Sparkles className="size-6 text-primary" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{activeWorkspaceId ? "Choose a channel" : "Create your first workspace"}</h3><p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">{activeWorkspaceId ? "Pick a channel or create one to start chatting." : "Your workspace is where channels and messages live."}</p>
-                    {!activeWorkspaceId && <p className="mt-4 text-xs text-muted-foreground">Use the Bebop menu in the left rail to add a workspace.</p>}
+                    {!activeWorkspaceId && <p className="mt-4 text-xs text-muted-foreground">Use the workspace menu in the left rail to add a workspace.</p>}
                   </div>
                 )
               ) : (
@@ -577,6 +568,36 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
         </div>
       </div>
     </Card>
+    {workspaceDialog && <div className="bebop-admin fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-foreground/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkspaceDialog(null); }}>
+      <Card className="relative w-full max-w-md rounded-none border border-border bg-card text-foreground shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="workspace-dialog-title">
+        <div className="px-6">
+          <header className="mb-6 flex items-start justify-between gap-4">
+            <h2 id="workspace-dialog-title" className="font-heading text-lg font-semibold tracking-wider uppercase">{workspaceDialog === "create" ? "Add workspace" : "Rename workspace"}</h2>
+            <Button className="-mr-2 -mt-2 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-foreground" variant="ghost" size="icon-sm" type="button" aria-label="Close workspace dialog" onClick={() => setWorkspaceDialog(null)}>×</Button>
+          </header>
+          {workspaceDialog === "create" ? <form className="grid gap-3" onSubmit={workspaceForm.handleSubmit(createWorkspace)}>
+            <Label htmlFor="workspace-name" className="normal-case tracking-normal">Workspace name</Label>
+            <Input className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="workspace-name" {...workspaceForm.register("name", { validate: (value) => !!value.trim() || "Enter a workspace name." })} placeholder="Studio North" autoFocus />
+            {workspaceForm.formState.errors.name && <p className="text-xs text-destructive" role="alert">{workspaceForm.formState.errors.name.message}</p>}
+            <Label htmlFor="workspace-slug" className="normal-case tracking-normal">Slug <span className="font-normal text-muted-foreground">optional</span></Label>
+            <Input className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="workspace-slug" {...workspaceForm.register("slug")} placeholder="studio-north" />
+            {workspaceForm.formState.errors.slug && <p className="text-xs text-destructive" role="alert">{workspaceForm.formState.errors.slug.message}</p>}
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="normal-case tracking-normal" type="button" onClick={() => { workspaceForm.reset({ name: "", slug: "" }); setWorkspaceDialog(null); }}>Cancel</Button>
+              <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit" disabled={workspaceForm.formState.isSubmitting}>Create</Button>
+            </div>
+          </form> : <form className="grid gap-3" onSubmit={renameWorkspace}>
+            <Label htmlFor="workspace-rename" className="normal-case tracking-normal">Workspace name</Label>
+            <Input className="h-10 rounded-none border border-input bg-card px-3 text-sm" id="workspace-rename" value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} required autoFocus />
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="normal-case tracking-normal" type="button" onClick={() => { setWorkspaceName(activeWorkspace?.name ?? ""); setWorkspaceDialog(null); }}>Cancel</Button>
+              <Button size="sm" className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="submit">Save</Button>
+            </div>
+          </form>}
+        </div>
+      </Card>
+    </div>}
+    </>
   );
 }
 
@@ -607,28 +628,28 @@ function PreviewWidget({ notice }: { notice?: string }) {
   return (
     <>
     {notice && <p className="mx-auto mb-3 w-full max-w-[900px] rounded-none border border-border bg-muted px-4 py-3 text-sm text-foreground" role="status">{notice}</p>}
-    <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Bebop playground preview">
+    <Card className="mx-auto w-full max-w-[900px] overflow-hidden rounded-none border border-border py-0 shadow-none ring-0" role="region" aria-label="Playground preview">
       <div className="overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid min-h-[600px] grid-cols-[68px_224px_minmax(0,1fr)] bg-sidebar">
             <aside className="flex flex-col items-center gap-2 border-r border-border bg-sidebar px-1.5 py-4 text-sidebar-foreground" aria-label="Playground sections">
               <details ref={workspaceMenuRef} className="group relative z-30 mb-3 w-full">
                 <summary className="mx-auto flex w-full cursor-pointer list-none flex-col items-center gap-1 rounded-none p-1 hover:bg-sidebar-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Switch workspace: Acme Studio">
-                  <span className="grid size-10 place-items-center rounded-none bg-card text-base font-semibold text-sidebar-foreground">{workspaceInitial("Acme Studio")}</span>
+                  <span className="grid size-10 place-items-center rounded-none bg-white text-base font-semibold text-black">{workspaceInitial("Acme Studio")}</span>
                 </summary>
                 <div className="absolute left-full top-0 z-50 ml-3 w-64 rounded-none border border-border bg-card p-3 text-foreground">
                   <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Workspace</p>
-                  <div className="flex items-center gap-2 rounded-none bg-accent px-2 py-2 text-xs font-semibold text-accent-foreground"><span className="grid size-6 place-items-center rounded-none bg-card text-[10px] text-sidebar-foreground">{workspaceInitial("Acme Studio")}</span>Acme Studio<Check className="ml-auto size-4 text-primary" aria-hidden="true" /></div>
+                  <div className="flex items-center gap-2 rounded-none bg-accent px-2 py-2 text-xs font-semibold text-accent-foreground"><span className="grid size-6 place-items-center rounded-none bg-white text-[10px] text-black">{workspaceInitial("Acme Studio")}</span>Acme Studio<Check className="ml-auto size-4 text-primary" aria-hidden="true" /></div>
                   <Button variant="ghost" size="sm" className="mt-2 h-8 w-full justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => requestAuth("sign-up")}><Plus className="size-4" aria-hidden="true" />Create or join a workspace</Button>
                   <Button variant="ghost" size="sm" className="mt-1 h-8 w-full justify-start gap-2 rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={(event) => { setActiveTab("settings"); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Settings className="size-3.5" aria-hidden="true" />Workspace settings</Button>
                 </div>
               </details>
-              <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-10 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-primary text-primary-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageSquareText className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
+              <Button variant="ghost" size="sm" className="group flex h-[58px] w-full flex-col gap-1 rounded-none bg-transparent p-1 text-sidebar-foreground normal-case tracking-normal hover:bg-transparent" type="button" onClick={() => setActiveTab("messages")} aria-pressed={activeTab === "messages"} aria-label="Channels"><span className={`grid size-8 place-items-center rounded-none transition-colors ${activeTab === "messages" ? "bg-accent text-accent-foreground" : "bg-transparent text-sidebar-foreground/60 group-hover:bg-sidebar-foreground/10 group-hover:text-sidebar-foreground"}`}><MessageSquareText className="size-5" aria-hidden="true" /></span><span className={`text-[10px] font-semibold ${activeTab === "messages" ? "text-sidebar-foreground" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"}`}>Channels</span></Button>
               <div className="flex-1" />
               <details ref={accountMenuRef} className="group relative z-30">
                 <summary className="cursor-pointer list-none rounded-none p-0.5 hover:bg-sidebar-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Open your account menu"><Avatar name="Guest" tone="white" className="size-10 text-base" /></summary>
                 <div className="absolute bottom-0 left-full z-50 ml-3 w-64 rounded-none border border-border bg-card p-4 text-foreground">
-                  <div className="flex items-center gap-3"><Avatar name="Guest" tone="white" className="size-10 text-base" /><div><p className="text-sm font-semibold">Guest preview</p><p className="text-xs text-muted-foreground">Sign in to your Bebop account</p></div></div>
+                  <div className="flex items-center gap-3"><Avatar name="Guest" tone="white" className="size-10 text-base" /><div><p className="text-sm font-semibold">Guest preview</p><p className="text-xs text-muted-foreground">Sign in to your account</p></div></div>
                   <div className="mt-3 grid gap-1 border-t border-border pt-3"><Button variant="ghost" size="sm" className="h-8 justify-start rounded-none px-2 text-xs normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground" type="button" onClick={() => requestAuth("sign-in")}>Sign in</Button><Button size="sm" className="h-8 justify-start rounded-none bg-primary px-2 text-xs normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="button" onClick={() => requestAuth("sign-up")}>Create account</Button></div>
                 </div>
               </details>

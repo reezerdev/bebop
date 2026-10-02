@@ -43,7 +43,7 @@ export function AuthDialog({ intent, onClose }: { intent: AuthIntent; onClose: (
       <Card className="relative w-full max-w-md rounded-none border border-border bg-card py-8 text-foreground shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
         <Button className="absolute right-3 top-3 rounded-none text-muted-foreground normal-case tracking-normal hover:bg-secondary hover:text-foreground" variant="ghost" size="icon-sm" type="button" aria-label="Close sign in" onClick={onClose}>×</Button>
         <div className="px-7 sm:px-9">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your Bebop account</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your account</p>
         <h2 id="auth-dialog-title" className="mt-3 text-2xl font-heading font-semibold tracking-wider text-foreground">{mode === "sign-up" ? "Start building in sync." : "Welcome back."}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{mode === "sign-up" ? "Create an account to open your own live workspace." : "Sign in to continue to your live playground."}</p>
         <form className="mt-6 grid gap-3" onSubmit={submit}>
@@ -63,7 +63,7 @@ export function AuthDialog({ intent, onClose }: { intent: AuthIntent; onClose: (
           </Button>
         </form>
         <p className="mt-5 text-center text-sm text-muted-foreground">
-          {mode === "sign-up" ? "Already have an account?" : "New to Bebop?"}{" "}
+          {mode === "sign-up" ? "Already have an account?" : "New here?"}{" "}
           <Button variant="link" className="h-auto px-0 py-0 text-primary normal-case tracking-normal" type="button" onClick={() => { setMode(mode === "sign-up" ? "sign-in" : "sign-up"); setError(""); }}>
             {mode === "sign-up" ? "Sign in" : "Create one"}
           </Button>

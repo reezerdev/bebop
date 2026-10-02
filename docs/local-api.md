@@ -36,9 +36,9 @@ const entriesWithAuthors = client.entries
   .where({ type: "message" })
   .orderBy("$createdAt", "asc")
   .include({
-  author: app.better_auth_user.select("id", "name"),
-  parentEntry: app.entries.select("id", "content"),
-});
+    author: app.better_auth_user.select("id", "name"),
+    parentEntry: app.entries.select("id", "content"),
+  });
 ```
 
 The relation names and selected fields are checked against the generated Jazz schema. Bebop's `query({...})` is also available as a convenience that validates its filter/sort options before returning a Jazz query; `find()` executes that query through the supplied `Db`, and `findById()` returns the local document or `null`. Direct Jazz-style queries use Jazz's schema typing without Bebop's additional option validation. Use limits for interactive lists; `find()` without a limit reads every matching document.

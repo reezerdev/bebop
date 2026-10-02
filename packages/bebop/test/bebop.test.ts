@@ -844,7 +844,12 @@ function createFakeDb() {
   const events: ((event: { code: string; reason: string; transaction: never }) => void)[] = [];
   let nextId = 1;
   const table = {
-    where: (condition: Record<string, unknown>) => ({ table: "posts", condition }),
+    where: function (this: unknown, condition: Record<string, unknown>) {
+      return { table: this === table ? "posts" : "unbound", condition };
+    },
+    include: function (this: unknown, relations: Record<string, unknown>) {
+      return { table: this === table ? "posts" : "unbound", relations };
+    },
     select: (...fields: string[]) => {
       const operations: unknown[][] = [["select", ...fields]];
       const query = {
@@ -885,7 +890,10 @@ test("shared collection queries validate fields and expose Jazz pagination", asy
   const config = defineConfig({ collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }] });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
+  assert.equal("where" in client.posts, true);
+  assert.equal("query" in client.posts, true);
   assert.deepEqual(client.posts.where({ title: "hello" }), { table: "posts", condition: { title: "hello" } });
+  assert.deepEqual(client.posts.include({ author: true }), { table: "posts", relations: { author: true } });
   const directQuery = client.posts.select("title").where({ title: "hello" }).orderBy("title", "asc").limit(10);
   assert.deepEqual((directQuery as unknown as { operations: unknown[][] }).operations, [
     ["select", "title"],

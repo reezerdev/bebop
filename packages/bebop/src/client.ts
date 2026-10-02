@@ -569,11 +569,14 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
       },
     };
 
-    collections[collectionName] = new Proxy(collectionClient, {
-      get(target, property, receiver) {
-        if (Reflect.has(target, property)) return Reflect.get(target, property, receiver);
+    collections[collectionName] = new Proxy(table as unknown as typeof collectionClient, {
+      get(_target, property) {
+        if (Object.hasOwn(collectionClient, property)) return Reflect.get(collectionClient, property, collectionClient);
         const jazzMember = Reflect.get(table, property, table);
         return typeof jazzMember === "function" ? jazzMember.bind(table) : jazzMember;
+      },
+      has(_target, property) {
+        return Object.hasOwn(collectionClient, property) || Reflect.has(table, property);
       },
     });
   }

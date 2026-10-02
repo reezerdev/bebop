@@ -139,8 +139,23 @@ export function createBebopFetchTransport(options: { basePath?: string; fetch?: 
   };
 }
 
-export type BebopCollectionClient<TFields extends Fields, TUpload extends boolean = false> = {
-  query(options?: BebopQueryOptions<TFields>): QueryBuilder<BebopClientDocument<TFields, TUpload>>;
+type JazzCollectionQuery<TApp, TCollection extends string, TFallback extends QueryBuilder<unknown>> =
+  [TApp] extends [never] ? TFallback
+    : TCollection extends keyof TApp
+      ? TApp[TCollection] extends QueryBuilder<unknown> ? TApp[TCollection] : TFallback
+      : TFallback;
+
+export type BebopCollectionClient<
+  TFields extends Fields,
+  TUpload extends boolean = false,
+  TQuery extends QueryBuilder<unknown> = QueryBuilder<BebopClientDocument<TFields, TUpload>>,
+> = {
+  /**
+   * Build a validated collection query, then continue with Jazz's fluent query API
+   * (where, select, include, requireIncludes, orderBy, limit, offset, includeDeleted,
+   * hopTo, and gather).
+   */
+  query(options?: BebopQueryOptions<TFields>): TQuery;
   queryIds(options?: Pick<BebopQueryOptions<TFields>, "where">): QueryBuilder<{ id: string }>;
   search(options: BebopSearchOptions<TFields>): QueryBuilder<BebopClientDocument<TFields, TUpload>>;
   searchIds(options: Pick<BebopSearchOptions<TFields>, "search" | "fields" | "where">): readonly QueryBuilder<{ id: string }>[];
@@ -151,8 +166,23 @@ export type BebopCollectionClient<TFields extends Fields, TUpload extends boolea
   delete(id: string): Promise<BebopDeleteResult<BebopClientDocument<TFields, TUpload>>>;
 } & (TUpload extends true ? { readFile(id: string): Promise<Blob | null> } : object);
 
-export type BebopClient<TConfig extends BebopConfig> = {
-  [TCollection in TConfig["collections"][number] as TCollection extends { auth: true } ? never : TCollection["slug"]]: BebopCollectionClient<TCollection["fields"], TCollection extends { upload: true | object } ? true : false>;
+type ClientCollection<TApp, TCollection> = TCollection extends {
+  slug: infer TSlug extends string;
+  fields: infer TFields extends Fields;
+}
+  ? BebopCollectionClient<
+      TFields,
+      TCollection extends { upload: true | object } ? true : false,
+      JazzCollectionQuery<
+        TApp,
+        TSlug,
+        QueryBuilder<BebopClientDocument<TFields, TCollection extends { upload: true | object } ? true : false>>
+      >
+    >
+  : never;
+
+export type BebopClient<TConfig extends BebopConfig, TApp extends object = object> = {
+  [TCollection in TConfig["collections"][number] as TCollection extends { auth: true } ? never : TCollection["slug"]]: ClientCollection<TApp, TCollection>;
 } & {
   onMutationError(listener: (event: MutationErrorEvent) => void): () => void;
 };
@@ -208,12 +238,12 @@ function nonnegativeInteger(value: number | undefined, name: string): number | u
   return value;
 }
 
-export function createBebopClient<const TConfig extends BebopConfig>(options: {
-  app: object;
+export function createBebopClient<const TConfig extends BebopConfig, const TApp extends object>(options: {
+  app: TApp;
   config: TConfig;
   db: Db;
   commandTransport?: BebopCommandTransport;
-}): BebopClient<TConfig> {
+}): BebopClient<TConfig, TApp> {
   const { app, config, db, commandTransport } = options;
   const logHooks = config.logging?.hooks === true;
   const collections: Record<string, BebopCollectionClient<Fields> & { readFile(id: string): Promise<Blob | null> }> = {};
@@ -221,7 +251,7 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
   for (const definition of config.collections) {
     if (definition.auth) continue;
     const collectionName = definition.slug;
-    const table = (app as Record<string, unknown>)[collectionName] as BebopTable;
+    const table = (app as unknown as Record<string, unknown>)[collectionName] as BebopTable;
     if (!table) throw new Error(`Generated Bebop app is missing collection "${collectionName}".`);
 
     const hooks = definition.hooks as CollectionHooks<Fields> | undefined;
@@ -538,5 +568,5 @@ export function createBebopClient<const TConfig extends BebopConfig>(options: {
   return {
     ...collections,
     onMutationError: (listener) => db.onMutationError(listener),
-  } as BebopClient<TConfig>;
+  } as BebopClient<TConfig, TApp>;
 }

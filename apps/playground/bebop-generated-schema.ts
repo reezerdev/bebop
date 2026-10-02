@@ -83,7 +83,6 @@ const schema = {
       "type": s.enum("message", "comment", "update", "system"),
       "content": s.string(),
       "authorId": s.uuid(),
-      "authorName": s.string(),
       "parentEntryId": s.uuid().optional()
     },
     {

@@ -2,7 +2,7 @@ import { useRowReadPermissions } from "../hooks/use-row-permissions.js";
 
 import { useAll, useDb } from "jazz-tools/react";
 import { Combobox } from "@base-ui/react/combobox";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 
 import { Controller, Control, FieldValues, RegisterOptions, UseFormRegister } from "react-hook-form";
 import { Check, ChevronDown, LoaderCircle, Search, X } from "lucide-react";
@@ -10,7 +10,8 @@ import { Check, ChevronDown, LoaderCircle, Search, X } from "lucide-react";
 import type { BebopAdminManifest, BebopAdminStoredField } from "../../../types.js";
 
 import { Button } from "../../../components/ui/button.js";
-import { Input } from "../../../components/ui/input.js";
+import { Input, inputBaseClassName } from "../../../components/ui/input.js";
+import { cn } from "cn";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select.js";
 
@@ -167,6 +168,12 @@ export function FieldInput({
 
 const relationPageSize = 25;
 
+type LoadedRelationPage = {
+  options: readonly BebopRelationOption[];
+  hasMore: boolean;
+  nextOffset: number;
+};
+
 function mergeRelationOptions(...groups: readonly (readonly BebopRelationOption[] | undefined)[]): BebopRelationOption[] {
   const unique = new Map<string, BebopRelationOption>();
   for (const group of groups) for (const option of group ?? []) unique.set(option.id, option);
@@ -212,8 +219,18 @@ export function RelationInput({
   const [hasMore, setHasMore] = useState(false);
   const [externalLoading, setExternalLoading] = useState(false);
   const [loadError, setLoadError] = useState<string>();
+  const [localLookupStarted, setLocalLookupStarted] = useState(false);
   const requestId = useRef(0);
+  const loadedPages = useRef(new Map<string, LoadedRelationPage>());
+  const pendingFirstPages = useRef(new Map<string, Promise<LoadedRelationPage>>());
+  const loadingMore = useRef(false);
+  const localLoadingMore = useRef(false);
+  const previousLocalRowCount = useRef(0);
   const portalContainer = useContext(AdminPortalContainer);
+
+  useEffect(() => {
+    if (open) setLocalLookupStarted(true);
+  }, [open]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(inputSearch.trim()), 250);
@@ -236,16 +253,36 @@ export function RelationInput({
   useEffect(() => {
     if (!loadOptions || !open) return;
     const currentRequestId = ++requestId.current;
+    const cachedPage = loadedPages.current.get(debouncedSearch);
+    if (cachedPage) {
+      setLoadedOptions(cachedPage.options);
+      setHasMore(cachedPage.hasMore);
+      setExternalLoading(false);
+      setLoadError(undefined);
+      rememberOptions(cachedPage.options);
+      return () => { requestId.current += 1; };
+    }
     setLoadedOptions([]);
     setHasMore(false);
     setExternalLoading(true);
     setLoadError(undefined);
-    void loadOptions({ search: debouncedSearch, limit: relationPageSize, offset: 0 })
-      .then((result) => {
+    let pendingPage = pendingFirstPages.current.get(debouncedSearch);
+    if (!pendingPage) {
+      pendingPage = loadOptions({ search: debouncedSearch, limit: relationPageSize, offset: 0 })
+        .then((result) => {
+          const page: LoadedRelationPage = { options: result.options, hasMore: result.hasMore, nextOffset: result.options.length };
+          loadedPages.current.set(debouncedSearch, page);
+          return page;
+        })
+        .finally(() => { pendingFirstPages.current.delete(debouncedSearch); });
+      pendingFirstPages.current.set(debouncedSearch, pendingPage);
+    }
+    void pendingPage
+      .then((page) => {
         if (currentRequestId !== requestId.current) return;
-        setLoadedOptions(result.options);
-        setHasMore(result.hasMore);
-        rememberOptions(result.options);
+        setLoadedOptions(page.options);
+        setHasMore(page.hasMore);
+        rememberOptions(page.options);
       })
       .catch((error: unknown) => {
         if (currentRequestId !== requestId.current) return;
@@ -269,8 +306,9 @@ export function RelationInput({
     if (targetCollection.listSearchableFields.length) return targetCollection.listSearchableFields;
     return targetCollection.fields.filter((candidate): candidate is BebopAdminStoredField => candidate.kind === "text").map((candidate) => candidate.storageName);
   }, [targetCollection]);
+  const shouldRunLocalLookup = localLookupStarted || open;
   const localQuery = useMemo(() => {
-    if (options || loadOptions || !open || !operations) return undefined;
+    if (options || loadOptions || !shouldRunLocalLookup || !operations) return undefined;
     const visibleLimit = (page + 1) * relationPageSize;
     const queryOptions = {
       orderBy: { field: sortField, direction: "asc" as const },
@@ -284,7 +322,7 @@ export function RelationInput({
       return operations.query({ where: { [searchFields[0]]: { contains: debouncedSearch } }, ...queryOptions });
     }
     return operations.query(queryOptions);
-  }, [debouncedSearch, loadOptions, open, operations, options, page, searchFields, sortField]);
+  }, [debouncedSearch, loadOptions, operations, options, page, searchFields, shouldRunLocalLookup, sortField]);
   const { data: localRows, isLoading: localLoading, error: localError } = useAll<AdminRecord>(localQuery);
   const localReadPermissions = useRowReadPermissions(db, table, localRows ?? []);
   const localOptions = useMemo(() => (localRows ?? [])
@@ -293,6 +331,14 @@ export function RelationInput({
     .map((row) => ({ id: row.id, name: targetCollection ? recordTitle(targetCollection, row) ?? row.id : row.id })),
   [localReadPermissions, localRows, page, targetCollection]);
   const localHasMore = !loadOptions && !options && (localRows?.length ?? 0) > (page + 1) * relationPageSize;
+
+  useEffect(() => {
+    const rowCount = localRows?.length ?? 0;
+    if (rowCount !== previousLocalRowCount.current) {
+      previousLocalRowCount.current = rowCount;
+      localLoadingMore.current = false;
+    }
+  }, [localRows]);
 
   const selectedLocalQuery = useMemo(() => {
     if (!value || options || loadOptions || localOptions.some((option) => option.id === value)) return undefined;
@@ -316,29 +362,53 @@ export function RelationInput({
 
   const loadMore = useCallback(() => {
     if (loadOptions) {
-      if (!hasMore || externalLoading) return;
+      if (!hasMore || externalLoading || loadingMore.current) return;
+      const search = debouncedSearch;
+      const currentPage = loadedPages.current.get(search) ?? {
+        options: loadedOptions,
+        hasMore,
+        nextOffset: loadedOptions.length,
+      };
+      if (!currentPage.hasMore) return;
+      loadingMore.current = true;
       const currentRequestId = ++requestId.current;
-      const offset = loadedOptions.length;
+      const offset = currentPage.nextOffset;
       setExternalLoading(true);
       setLoadError(undefined);
-      void loadOptions({ search: debouncedSearch, limit: relationPageSize, offset })
+      void loadOptions({ search, limit: relationPageSize, offset })
         .then((result) => {
-          if (currentRequestId !== requestId.current) return;
-          setLoadedOptions((current) => mergeRelationOptions(current, result.options));
-          setHasMore(result.hasMore);
+          const latestPage = loadedPages.current.get(search) ?? currentPage;
+          const nextPage: LoadedRelationPage = {
+            options: mergeRelationOptions(latestPage.options, result.options),
+            hasMore: result.hasMore,
+            nextOffset: offset + result.options.length,
+          };
+          loadedPages.current.set(search, nextPage);
           rememberOptions(result.options);
+          if (currentRequestId !== requestId.current) return;
+          setLoadedOptions(nextPage.options);
+          setHasMore(nextPage.hasMore);
         })
         .catch((caught: unknown) => {
           if (currentRequestId !== requestId.current) return;
           setLoadError(caught instanceof Error ? caught.message : "Could not load related records.");
         })
         .finally(() => {
+          loadingMore.current = false;
           if (currentRequestId === requestId.current) setExternalLoading(false);
         });
       return;
     }
-    if (localHasMore) setPage((current) => current + 1);
-  }, [debouncedSearch, externalLoading, hasMore, loadOptions, loadedOptions.length, localHasMore, rememberOptions]);
+    if (localHasMore && !localLoadingMore.current) {
+      localLoadingMore.current = true;
+      setPage((current) => current + 1);
+    }
+  }, [debouncedSearch, externalLoading, hasMore, loadOptions, loadedOptions, localHasMore, rememberOptions]);
+
+  const onOptionsScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollHeight - element.scrollTop - element.clientHeight <= 48) loadMore();
+  }, [loadMore]);
 
   const placeholder = disabled
     ? "Assigned automatically when saved"
@@ -354,26 +424,20 @@ export function RelationInput({
       value={value}
       inputValue={inputValue}
       open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (nextOpen) {
-          setInputSearch("");
-          setDebouncedSearch("");
-          setPage(0);
-        } else {
-          setInputSearch("");
-        }
-      }}
+      onOpenChange={setOpen}
       onInputValueChange={(nextValue) => {
         if (!open) return;
         setInputSearch(nextValue);
         setPage(0);
+        localLoadingMore.current = false;
       }}
       onValueChange={(nextValue) => {
         onChange(typeof nextValue === "string" && nextValue ? nextValue : null);
         onBlur();
         setOpen(false);
         setInputSearch("");
+        setDebouncedSearch("");
+        setPage(0);
       }}
       itemToStringLabel={(id) => optionLabels.get(String(id)) ?? String(id)}
       disabled={disabled}
@@ -385,11 +449,12 @@ export function RelationInput({
           <Combobox.Input
             id={`field-${field.name}`}
             ref={inputRef}
+            data-slot="input"
             aria-label={field.label}
             aria-required={field.required || undefined}
             onBlur={onBlur}
             placeholder={placeholder}
-            className="h-10 w-full min-w-0 border border-transparent border-b-input bg-transparent px-0 py-1 pr-14 text-sm outline-none transition-[color,border-color] placeholder:text-muted-foreground focus-visible:border-b-ring disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+            className={cn(inputBaseClassName, "pr-14")}
           />
           {!disabled && <ChevronDown aria-hidden="true" size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />}
         </div>
@@ -403,7 +468,7 @@ export function RelationInput({
               <span className="sr-only">Search</span>
               <p className="text-xs">Search {field.label.toLocaleLowerCase()}</p>
             </div>
-            <Combobox.List className="max-h-64 overflow-y-auto p-1.5">
+            <Combobox.List className="max-h-64 overflow-y-auto p-1.5" onScroll={onOptionsScroll}>
               {availableOptions.map((option, index) => <Combobox.Item key={option.id} value={option.id} index={index} className="relative flex w-full cursor-default items-center gap-2.5 rounded-none py-2 pr-8 pl-3 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground">
                 <span className="flex-1">{option.name}</span>
                 {option.id === value && <Check aria-hidden="true" size={14} className="absolute right-2" />}

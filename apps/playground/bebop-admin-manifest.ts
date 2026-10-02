@@ -616,13 +616,6 @@ export const bebopAdminManifest = {
           "relationTo": "users"
         },
         {
-          "name": "authorName",
-          "storageName": "authorName",
-          "label": "Author Name",
-          "kind": "text",
-          "required": true
-        },
-        {
           "name": "parentEntry",
           "storageName": "parentEntryId",
           "label": "Parent Entry",

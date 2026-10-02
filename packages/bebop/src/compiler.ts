@@ -327,7 +327,7 @@ function compileAdminManifestFromModel(model: NormalizedConfig): string {
           label: field.label,
           kind: field.kind,
           required: field.required,
-          ...(Object.hasOwn(field, "defaultValue") ? { defaultValue: field.defaultValue } : {}),
+          ...("defaultValue" in field ? { defaultValue: field.defaultValue } : {}),
           ...(field.admin ? { admin: field.admin } : {}),
           ...("options" in field && field.options ? { options: field.options } : {}),
           ...("optionLabels" in field && field.optionLabels ? { optionLabels: field.optionLabels } : {}),

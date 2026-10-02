@@ -3,6 +3,7 @@ import { useAll } from "jazz-tools/react";
 import { useForm } from "react-hook-form";
 import { ArrowUp, ArrowUpRight, Check, Hash, LockKeyhole, MessageSquareText, Paperclip, Pencil, Plus, Search, Settings, Smile, Sparkles } from "lucide-react";
 import { Button, Card, Input, Label, Textarea, Toaster, useToastManager } from "@bebopdev/admin";
+import { app } from "../bebop-generated-schema.js";
 import type { StreamClient } from "./stream-client.js";
 import { AuthDialog, type AuthIntent } from "./AuthDialog.tsx";
 
@@ -207,6 +208,9 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const { data: workspaceMemberships } = useAll(activeWorkspaceId
     ? client.workspaceMemberships.query({ where: { workspaceId: activeWorkspaceId, status: "active" } })
     : undefined);
+  const workspaceMembershipIdsKey = workspaceMemberships === undefined
+    ? undefined
+    : workspaceMemberships.map((membership) => membership.userId).sort().join("\u0000");
 
   useEffect(() => {
     const closeMenusOutside = (event: PointerEvent) => {
@@ -231,7 +235,12 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   const searchedChannels = orderedChannels.filter((channel) => !searchText || channel.name.toLocaleLowerCase().includes(searchText) || (channel.content ?? "").toLocaleLowerCase().includes(searchText));
 
   const { data: entries } = useAll(activeChannel?.streamId
-    ? client.entries.query({ where: { streamId: activeChannel.streamId }, orderBy: { field: "$createdAt", direction: "asc" }, includeTimestamps: true })
+    ? client.entries.query({
+      where: { streamId: activeChannel.streamId },
+      orderBy: { field: "$createdAt", direction: "asc" },
+      includeTimestamps: true,
+    })
+      .include({ author: app.better_auth_user.select("id", "name") })
     : undefined);
   const { data: streamMemberships } = useAll(activeChannel?.streamId
     ? client.streamMemberships.query({ where: { streamId: activeChannel.streamId } })
@@ -297,14 +306,17 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
   }, [activeWorkspace?.id, activeWorkspace?.name]);
 
   useEffect(() => {
-    setWorkspaceMembers([]);
-    setWorkspaceMembersError("");
     if (!activeWorkspaceId) {
       setWorkspaceMembersLoading(false);
       return;
     }
+    if (workspaceMembershipIdsKey === undefined) {
+      setWorkspaceMembersLoading(true);
+      return;
+    }
     const controller = new AbortController();
     setWorkspaceMembersLoading(true);
+    setWorkspaceMembersError("");
     void fetch(`/api/bebop/workspaces/${encodeURIComponent(activeWorkspaceId)}/members`, {
       credentials: "same-origin",
       signal: controller.signal,
@@ -322,7 +334,12 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
         }
       });
     return () => controller.abort();
-  }, [activeWorkspaceId, client]);
+  }, [activeWorkspaceId, client, workspaceMembershipIdsKey]);
+
+  useEffect(() => {
+    setWorkspaceMembers([]);
+    setWorkspaceMembersError("");
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!client) return;
@@ -538,7 +555,7 @@ function LivePlaygroundWidget(props: Extract<PlaygroundWidgetProps, { mode: "liv
                     <div className="max-h-[440px] min-h-[250px] flex-1 overflow-y-auto px-6 py-5" id="live-channel-messages-panel" role="tabpanel" aria-labelledby="live-channel-messages-tab" aria-live="polite">
                       {!entries?.length ? <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 py-10 text-center"><Sparkles className="size-6 text-[#b45d7e]" aria-hidden="true" /><h3 className="mt-3 text-lg font-semibold">{isCurrentChannelMember ? "Start the conversation" : "No messages yet"}</h3><p className="mt-1 max-w-xs text-sm text-slate-500">{isCurrentChannelMember ? `Send the first message in #${activeChannel.name}.` : `There are no messages in #${activeChannel.name} yet.`}</p></div> : (entries ?? []).map((entry) => <article className="mb-6 grid grid-cols-[40px_minmax(0,1fr)] gap-2" key={entry.id}>
                         <div className="size-10 rounded-[14px] bg-[#d9d9d9]" aria-hidden="true" />
-                        <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-slate-400">{entry.$createdAt ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{entry.content}</p></div>
+                        <div className="min-w-0"><header className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><strong className="text-sm">{entry.author?.name ?? memberNames.get(entry.authorId) ?? "Workspace member"}</strong><time className="text-xs text-slate-400">{"$createdAt" in entry && entry.$createdAt instanceof Date ? dateTimeFormatter.format(entry.$createdAt) : "Just now"}</time></header><p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{entry.content}</p></div>
                       </article>)}
                     </div>
                     {streamMemberships === undefined ? <div className="mx-4 mb-4 mt-auto rounded-xl border border-slate-200 px-4 py-4 text-xs text-slate-500" role="status">Checking channel membership…</div> : isCurrentChannelMember ? <MessageComposer value={message} onChange={setMessage} onSubmit={sendMessage} placeholder={`Message #${activeChannel.name}`} ariaLabel={`Message #${activeChannel.name}`} submitLabel="Send message" /> : <JoinChannelPrompt channelName={activeChannel.name} onJoin={() => void joinChannel()} isJoining={joiningChannelId === activeChannel.id} />}

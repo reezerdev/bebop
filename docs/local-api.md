@@ -27,21 +27,21 @@ const page = await client.channels.find({
 const channel = await client.channels.findById("channel-id");
 ```
 
-`query()` returns the collection's typed Jazz query, suitable for Jazz React's `useAll` subscription. Bebop validates the options passed to `query()`, then the result exposes Jazz's fluent query methods, including `where`, `select`, `include`, `requireIncludes`, `orderBy`, `limit`, `offset`, `includeDeleted`, `hopTo`, and `gather`. Includes accept either `true` for the related row or another Jazz query to select and filter its fields:
+Each `client.<collection>` combines the generated Jazz table query API with Bebop's collection methods. You can start a read with the same fluent API as `app.<collection>`; the query is suitable for Jazz React's `useAll` subscription. It exposes `where`, `select`, `include`, `requireIncludes`, `orderBy`, `limit`, `offset`, `includeDeleted`, `hopTo`, and `gather`. Includes accept either `true` for the related row or another Jazz query to select and filter its fields:
 
 ```ts
 import { app } from "./bebop-generated-schema.js";
 
-const entriesWithAuthors = client.entries.query({
-  where: { type: "message" },
-  orderBy: { field: "$createdAt", direction: "asc" },
-}).include({
+const entriesWithAuthors = client.entries
+  .where({ type: "message" })
+  .orderBy("$createdAt", "asc")
+  .include({
   author: app.better_auth_user.select("id", "name"),
   parentEntry: app.entries.select("id", "content"),
 });
 ```
 
-The relation names and selected fields are checked against the generated Jazz schema. `find()` executes the base collection query through the supplied `Db`; `findById()` returns the local document or `null`. Use limits for interactive lists; `find()` without a limit reads every matching document.
+The relation names and selected fields are checked against the generated Jazz schema. Bebop's `query({...})` is also available as a convenience that validates its filter/sort options before returning a Jazz query; `find()` executes that query through the supplied `Db`, and `findById()` returns the local document or `null`. Direct Jazz-style queries use Jazz's schema typing without Bebop's additional option validation. Use limits for interactive lists; `find()` without a limit reads every matching document.
 
 Filters accept exact values or operator objects:
 

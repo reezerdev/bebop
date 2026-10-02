@@ -56,14 +56,14 @@ function SignedOutPage() {
 }
 
 function JazzLoading() {
-  return <main className="bebop-admin grid min-h-svh place-items-center bg-white px-6 text-slate-600"><p role="status">Opening your Bebop account…</p></main>;
+  return <main className="bebop-admin grid min-h-svh place-items-center bg-card px-6 text-muted-foreground"><p role="status">Opening your Bebop account…</p></main>;
 }
 
 function JazzError({ retry, error }: { retry: () => Promise<void>; error?: Error }) {
   return (
-    <main className="bebop-admin grid min-h-svh place-items-center gap-4 bg-white px-6 text-slate-600">
+    <main className="bebop-admin grid min-h-svh place-items-center gap-4 bg-card px-6 text-muted-foreground">
       <p role="alert">Could not open your Bebop account: {error?.message}</p>
-      <Button className="rounded-md bg-[#b45d7e] normal-case tracking-normal text-white hover:bg-[#9e4b6b]" type="button" onClick={() => void retry()}>Try again ↗</Button>
+      <Button className="rounded-none bg-primary normal-case tracking-normal text-primary-foreground hover:bg-primary/80" type="button" onClick={() => void retry()}>Try again ↗</Button>
     </main>
   );
 }

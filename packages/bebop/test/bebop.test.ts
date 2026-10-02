@@ -885,6 +885,14 @@ test("shared collection queries validate fields and expose Jazz pagination", asy
   const config = defineConfig({ collections: [{ slug: "posts", fields: [{ name: "title", type: "text" }] }] });
   const fake = createFakeDb();
   const client = createBebopClient({ app: fake.app as never, config, db: fake.db });
+  assert.deepEqual(client.posts.where({ title: "hello" }), { table: "posts", condition: { title: "hello" } });
+  const directQuery = client.posts.select("title").where({ title: "hello" }).orderBy("title", "asc").limit(10);
+  assert.deepEqual((directQuery as unknown as { operations: unknown[][] }).operations, [
+    ["select", "title"],
+    ["where", { title: "hello" }],
+    ["orderBy", "title", "asc"],
+    ["limit", 10],
+  ]);
   const query = client.posts.query({ where: { title: "hello" }, orderBy: { field: "title", direction: "desc" }, limit: 10, offset: 20, includeTimestamps: true });
   assert.deepEqual((query as unknown as { operations: unknown[][] }).operations, [
     ["select", "*", "$createdAt", "$updatedAt"],

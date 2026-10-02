@@ -17,3 +17,13 @@ export function entriesWithAuthorsQuery(client: ReturnType<typeof createBebopCli
     })
     .requireIncludes();
 }
+
+export function directJazzEntriesQuery(client: ReturnType<typeof createBebopClient>) {
+  return client.entries.where({ type: "message" })
+    .orderBy("$createdAt", "asc")
+    .include({
+      author: app.better_auth_user.select("id", "name"),
+      parentEntry: app.entries.select("id", "content"),
+    })
+    .requireIncludes();
+}

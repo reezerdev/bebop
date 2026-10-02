@@ -145,6 +145,11 @@ type JazzCollectionQuery<TApp, TCollection extends string, TFallback extends Que
       ? TApp[TCollection] extends QueryBuilder<unknown> ? TApp[TCollection] : TFallback
       : TFallback;
 
+type JazzCollectionTable<TApp, TCollection extends string> =
+  TCollection extends keyof TApp
+    ? TApp[TCollection] extends QueryBuilder<unknown> ? TApp[TCollection] : object
+    : object;
+
 export type BebopCollectionClient<
   TFields extends Fields,
   TUpload extends boolean = false,
@@ -170,7 +175,7 @@ type ClientCollection<TApp, TCollection> = TCollection extends {
   slug: infer TSlug extends string;
   fields: infer TFields extends Fields;
 }
-  ? BebopCollectionClient<
+  ? JazzCollectionTable<TApp, TSlug> & BebopCollectionClient<
       TFields,
       TCollection extends { upload: true | object } ? true : false,
       JazzCollectionQuery<
@@ -378,7 +383,7 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
       return result as QueryBuilder<CollectionDocument<Fields>>;
     };
 
-    collections[collectionName] = {
+    const collectionClient: BebopCollectionClient<Fields> & { readFile(id: string): Promise<Blob | null> } = {
       query,
       search: searchPage,
       searchIds,
@@ -563,6 +568,14 @@ export function createBebopClient<const TConfig extends BebopConfig, const TApp 
         return new Blob(chunks, { type: media.mimeType ?? "application/octet-stream" });
       },
     };
+
+    collections[collectionName] = new Proxy(collectionClient, {
+      get(target, property, receiver) {
+        if (Reflect.has(target, property)) return Reflect.get(target, property, receiver);
+        const jazzMember = Reflect.get(table, property, table);
+        return typeof jazzMember === "function" ? jazzMember.bind(table) : jazzMember;
+      },
+    });
   }
 
   return {

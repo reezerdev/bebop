@@ -1,6 +1,6 @@
 {
   "name": "@bebopdev/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generate Jazz schemas from Bebop collections and run the Bebop development server.",
   "license": "MIT",
   "repository": {

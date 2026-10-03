@@ -10,7 +10,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@bebopdev/core": "0.1.0",
+    "@bebopdev/core": "0.1.1",
     "expo": "~57.0.26",
     "expo-crypto": "~57.0.3",
     "expo-dev-client": "~57.0.19",

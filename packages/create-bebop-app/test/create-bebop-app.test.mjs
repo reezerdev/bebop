@@ -44,13 +44,15 @@ test("creates the TanStack Start and Expo pnpm monorepo", async () => {
     const webManifest = JSON.parse(await readFile(path.join(destination, "apps/web/package.json"), "utf8"));
     const mobileManifest = JSON.parse(await readFile(path.join(destination, "apps/mobile/package.json"), "utf8"));
     assert.equal(webManifest.dependencies["@tanstack/react-start"], "1.168.60");
-    assert.equal(webManifest.dependencies["@bebopdev/admin"], "0.1.0");
+    assert.equal(webManifest.dependencies["@bebopdev/admin"], "0.1.1");
+    assert.equal(webManifest.dependencies["@bebopdev/core"], "0.1.1");
+    assert.equal(webManifest.devDependencies["@bebopdev/cli"], "0.1.1");
     assert.equal(mobileManifest.dependencies.expo, "~57.0.26");
     assert.equal(mobileManifest.dependencies["expo-secure-store"], "~57.0.4");
     assert.equal(mobileManifest.dependencies["expo-dev-client"], "~57.0.19");
     assert.equal(mobileManifest.dependencies["react-native"], "0.86.3");
     assert.equal(mobileManifest.dependencies["jazz-rn"], "2.0.0-alpha.58");
-    assert.equal(mobileManifest.dependencies["@bebopdev/core"], "0.1.0");
+    assert.equal(mobileManifest.dependencies["@bebopdev/core"], "0.1.1");
     assert.equal(mobileManifest.scripts.dev, "expo start --dev-client --port 8081");
     assert.equal(mobileManifest.main, "index.js");
     assert.ok((await readdir(path.join(destination, "apps/mobile"))).includes("index.js"));

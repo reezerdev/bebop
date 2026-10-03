@@ -32,7 +32,7 @@ To delete the playground's local Jazz server database, stop `pnpm dev` and run `
 
 ## Define collections
 
-Edit [`apps/playground/bebop.config.ts`](./apps/playground/bebop.config.ts), then run `pnpm generate` or let `pnpm dev` regenerate the outputs. A collection config combines fields, admin settings, and explicit Jazz permissions:
+Here is a complete, minimal `bebop.config.ts` file. It combines fields, admin settings, defaults, and explicit Jazz permissions. For a larger example with Workspaces, Channels, Entries, Streams, uploads, auth, and lifecycle hooks, see the [playground config](./apps/playground/bebop.config.ts).
 
 ```ts
 import { defineConfig } from "@bebopdev/core";
@@ -60,6 +60,8 @@ export default defineConfig({
   }],
 });
 ```
+
+Save this as `bebop.config.ts`, then run `pnpm generate` or let `pnpm dev` regenerate the outputs.
 
 Collection and field configs follow the supported Payload object shape. Supported stored field types include `text`, `number`, `checkbox`, `date`, `json`, `select`, `relationship`, and `upload`; `join` is a virtual reverse relation. Relationship fields store IDs as `<fieldName>Id`. Defaults are applied before validation and appear in the admin create form. Text fields support `minLength`/`maxLength`; numeric fields support `min`/`max` and `integer`; both support a typed custom `validate` callback. This is a focused subset of Payload's complete API.
 

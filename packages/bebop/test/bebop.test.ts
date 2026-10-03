@@ -1232,6 +1232,7 @@ test("upload client streams one Media row, excludes bytes from list reads, and p
       return write(undefined);
     },
     delete: (table: { name: string }, id: string) => { rows.delete(`${table.name}:${id}`); return write(undefined); },
+    getAuthState: () => ({ session: { claims: { sub: "test-user" } } }),
     onMutationError: () => () => {},
   };
   const config = defineConfig({ upload: { limits: { fileSize: 3_000_000 } }, collections: [{

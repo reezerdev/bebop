@@ -9,9 +9,9 @@ allowBuilds:
   protobufjs@8.0.1: true
 
 minimumReleaseAgeExclude:
-  - '@bebopdev/admin@0.1.0-beta.0 || 0.1.0'
-  - '@bebopdev/cli@0.1.0-beta.0 || 0.1.0'
-  - '@bebopdev/core@0.1.0-beta.0 || 0.1.0'
+  - '@bebopdev/admin@0.1.0-beta.0 || 0.1.0 || 0.1.1'
+  - '@bebopdev/cli@0.1.0-beta.0 || 0.1.0 || 0.1.1'
+  - '@bebopdev/core@0.1.0-beta.0 || 0.1.0 || 0.1.1'
   - '@garden-co/jazz-napi-darwin-arm64@2.0.0-alpha.58'
   - '@garden-co/jazz-napi-darwin-x64@2.0.0-alpha.58'
   - '@garden-co/jazz-napi-linux-arm64-gnu@2.0.0-alpha.58'

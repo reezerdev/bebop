@@ -1,6 +1,6 @@
 {
   "name": "@bebopdev/admin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "First-party React admin UI for Bebop collections on Jazz.",
   "license": "MIT",
   "repository": {

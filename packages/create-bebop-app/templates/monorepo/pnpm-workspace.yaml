@@ -8,5 +8,6 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@bebopdev/admin@0.1.1'
+  - '@bebopdev/admin@0.1.2'
   - '@bebopdev/cli@0.1.1'
   - '@bebopdev/core@0.1.1'

@@ -31,6 +31,10 @@ test("creates the TanStack Start and Expo pnpm monorepo", async () => {
     assert.equal(manifest.devDependencies.turbo, "2.11.4");
     assert.equal(manifest.scripts.dev, "turbo run dev");
     assert.equal(manifest.scripts["dev:web"], "turbo run dev --filter=web");
+    const webViteConfig = await readFile(path.join(destination, "apps/web/vite.config.ts"), "utf8");
+    const mobileApp = await readFile(path.join(destination, "apps/mobile/App.tsx"), "utf8");
+    assert.match(webViteConfig, /appId: "bebop-my-tasks-app"/);
+    assert.match(mobileApp, /appId="bebop-my-tasks-app"/);
 
     const readme = await readFile(path.join(destination, "README.md"), "utf8");
     assert.match(readme, /^# My Tasks App/m);
@@ -39,13 +43,19 @@ test("creates the TanStack Start and Expo pnpm monorepo", async () => {
 
     const files = await readdir(destination);
     assert.ok(files.includes("apps"));
+    assert.ok(files.includes(".gitignore"));
     assert.ok(files.includes("pnpm-workspace.yaml"));
     assert.ok(files.includes("turbo.json"));
+    const gitignore = await readFile(path.join(destination, ".gitignore"), "utf8");
+    for (const ignoredEntry of ["node_modules/", ".turbo/", ".expo/", ".output/", "apps/mobile/android/", "apps/mobile/ios/", ".env.*", "!.env.example", "*.tsbuildinfo", ".DS_Store"]) {
+      assert.ok(gitignore.includes(ignoredEntry), `expected .gitignore to include ${ignoredEntry}`);
+    }
     const webManifest = JSON.parse(await readFile(path.join(destination, "apps/web/package.json"), "utf8"));
     const mobileManifest = JSON.parse(await readFile(path.join(destination, "apps/mobile/package.json"), "utf8"));
     assert.equal(webManifest.dependencies["@tanstack/react-start"], "1.168.60");
-    assert.equal(webManifest.dependencies["@bebopdev/admin"], "0.1.1");
+    assert.equal(webManifest.dependencies["@bebopdev/admin"], "0.1.2");
     assert.equal(webManifest.dependencies["@bebopdev/core"], "0.1.1");
+    assert.equal(webManifest.dependencies["better-auth"], "1.7.1");
     assert.equal(webManifest.devDependencies["@bebopdev/cli"], "0.1.1");
     assert.equal(mobileManifest.dependencies.expo, "~57.0.26");
     assert.equal(mobileManifest.dependencies["expo-secure-store"], "~57.0.4");
@@ -60,6 +70,24 @@ test("creates the TanStack Start and Expo pnpm monorepo", async () => {
     assert.ok((await readdir(path.join(destination, "apps/web"))).includes("bebop.config.ts"));
     assert.ok((await readdir(path.join(destination, "apps/web"))).includes("bebop-generated-schema.ts"));
     assert.ok((await readdir(path.join(destination, "apps/web/src/routes/admin"))).includes("index.tsx"));
+    assert.ok((await readdir(path.join(destination, "apps/web/src/routes/api/auth"))).includes("$.ts"));
+    assert.ok((await readdir(path.join(destination, "apps/web/src/routes/api/bebop"))).includes("admin-access.ts"));
+    const adminRoute = await readFile(path.join(destination, "apps/web/src/ui/admin-route.tsx"), "utf8");
+    assert.match(adminRoute, /BebopAdminLogin/);
+    assert.match(adminRoute, /\/api\/bebop\/admin-access/);
+    assert.doesNotMatch(adminRoute, /canAccessAdmin\s*\/>/);
+    const rootRoute = await readFile(path.join(destination, "apps/web/src/routes/__root.tsx"), "utf8");
+    assert.doesNotMatch(rootRoute, /JazzProvider/);
+    const playgroundRoute = await readFile(path.join(destination, "apps/web/src/routes/index.tsx"), "utf8");
+    assert.match(playgroundRoute, /JazzProvider/);
+    const startTypes = await readFile(path.join(destination, "apps/web/src/tanstack-start.d.ts"), "utf8");
+    assert.match(startTypes, /@tanstack\/react-start/);
+    const appStyles = await readFile(path.join(destination, "apps/web/src/styles.css"), "utf8");
+    assert.doesNotMatch(appStyles, /^h1\s*\{/m);
+    assert.doesNotMatch(appStyles, /^button\s*\{/m);
+    const localEnv = await readFile(path.join(destination, "apps/web/.env"), "utf8");
+    assert.match(localEnv, /^BETTER_AUTH_URL=http:\/\/127\.0\.0\.1:3000$/m);
+    assert.match(localEnv, /^BETTER_AUTH_SECRET=[A-Za-z0-9_-]{43}$/m);
     assert.ok(!files.includes("package-lock.json"));
     assert.ok(!files.includes("node_modules"));
     assert.ok(!files.includes(".env"));

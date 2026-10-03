@@ -1,9 +1,24 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { useAll, useDb } from "jazz-tools/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute } from "@tanstack/react-router";
+import { JazzProvider, useAll, useDb } from "jazz-tools/react";
 import { createBebopClient } from "../../bebop-generated-client.js";
+import { BebopProviderFallback } from "../ui/provider-fallback.js";
 
-export const Route = createFileRoute("/")({ component: Playground });
+export const Route = createFileRoute("/")({ component: PlaygroundRoute });
+
+function PlaygroundRoute() {
+  return (
+    <ClientOnly fallback={<BebopProviderFallback />}>
+      <JazzProvider
+        appId={import.meta.env.VITE_JAZZ_APP_ID}
+        serverUrl={import.meta.env.VITE_JAZZ_SERVER_URL}
+        autoAttachDevTools={false}
+      >
+        <Playground />
+      </JazzProvider>
+    </ClientOnly>
+  );
+}
 
 function Playground() {
   const db = useDb();
@@ -26,7 +41,7 @@ function Playground() {
   }
 
   return (
-    <main className="page-shell">
+    <main className="playground-app page-shell">
       <header className="site-header"><a className="brand" href="/">bebop</a><a href="/admin">Open admin</a></header>
       <section className="intro">
         <p className="eyebrow">TANSTACK START · EXPO · JAZZ</p>

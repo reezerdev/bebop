@@ -194,7 +194,7 @@ export function CollectionList({ app, client, collection, manifest, relationOpti
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-none bg-muted/50 p-2 max-md:items-stretch max-md:[&>div:first-child]:basis-full max-md:[&>div:last-child]:ml-auto">
         {collection.listSearchableFields.length > 0 && <div className="relative min-w-0 flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="h-8 pl-10 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search by ${searchLabel}`} className="bebop-admin-search-input h-8 text-[13px] focus-visible:bg-background" aria-label={`Search by ${searchLabel}`} />
         </div>}
         <div className="flex shrink-0 items-center gap-2">
           <details className="relative [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">

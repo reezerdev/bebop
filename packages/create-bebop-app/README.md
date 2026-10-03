@@ -16,6 +16,8 @@ You can also use npx @bebopdev/create-bebop-app@beta my-app. The generator insta
 
 The starter puts the Bebop config, generated Jazz schema, typed client, and admin manifest in apps/web. It serves the simple playground at / and Bebop Admin at /admin. apps/mobile is an Expo native app using the same schema and client. The apps run from a single pnpm workspace and are orchestrated with Turborepo.
 
+The web admin uses Better Auth. The initializer creates a random local secret in `apps/web/.env`; open `/admin` and create the first admin account on a new project. Set `BETTER_AUTH_URL` and `BETTER_AUTH_SECRET` in the deployment environment before deploying, and use `BETTER_AUTH_ADMIN_USER_IDS` to grant admin access to existing accounts.
+
 Jazz uses its native module on iOS and Android, so Expo Go is not supported. Use pnpm ios or pnpm android to create and launch a development build.
 
 ## Options

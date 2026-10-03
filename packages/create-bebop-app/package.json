@@ -1,6 +1,6 @@
 {
   "name": "@bebopdev/create-bebop-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Create a pnpm monorepo with TanStack Start, Expo React Native, Bebop, and Jazz.",
   "license": "MIT",
   "repository": {

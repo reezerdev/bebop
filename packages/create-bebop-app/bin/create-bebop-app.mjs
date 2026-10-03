@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -70,6 +71,14 @@ async function setProjectDetails(directory, displayName, packageManager) {
   manifest.name = packageNameFor(displayName);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
+  const jazzAppSuffix = manifest.name.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "app";
+  const jazzAppId = `bebop-${jazzAppSuffix}`;
+  for (const relativePath of ["apps/web/vite.config.ts", "apps/mobile/App.tsx"]) {
+    const filePath = path.join(directory, relativePath);
+    const source = await readFile(filePath, "utf8");
+    await writeFile(filePath, source.replaceAll('"bebop-starter"', JSON.stringify(jazzAppId)));
+  }
+
   const readmePath = path.join(directory, "README.md");
   let readme = await readFile(readmePath, "utf8");
   const title = displayName.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -80,6 +89,16 @@ async function setProjectDetails(directory, displayName, packageManager) {
     readme = readme.replace("npm install\nnpm run dev", "pnpm install\npnpm dev");
   }
   await writeFile(readmePath, readme);
+}
+
+async function writeLocalAuthSecret(directory) {
+  const webDirectory = path.join(directory, "apps", "web");
+  const secret = randomBytes(32).toString("base64url");
+  await writeFile(
+    path.join(webDirectory, ".env"),
+    `BETTER_AUTH_URL=http://127.0.0.1:3000\nBETTER_AUTH_SECRET=${secret}\n`,
+    { flag: "wx", mode: 0o600 },
+  );
 }
 
 function installDependencies(directory, packageManager) {
@@ -110,6 +129,7 @@ async function main() {
 
   const packageManager = options.packageManager ?? inferPackageManager();
   await setProjectDetails(destination, path.basename(requestedDirectory), packageManager);
+  await writeLocalAuthSecret(destination);
 
   if (options.install) {
     console.log(`Installing dependencies with ${packageManager}...`);

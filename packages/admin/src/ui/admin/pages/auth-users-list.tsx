@@ -172,7 +172,7 @@ export function AuthUsersList({ collection, authClient, canManageUsers }: {
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             placeholder={`Search by ${searchableField === "name" ? "name" : "email"}`}
             aria-label="Search users"
-            className="h-8 pl-10 text-[13px] focus-visible:bg-background"
+            className="bebop-admin-search-input h-8 text-[13px] focus-visible:bg-background"
           />
         </div>}
         <div className="ml-auto flex shrink-0 items-center gap-2">

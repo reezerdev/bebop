@@ -162,6 +162,12 @@
   }
 }
 
+/* The input reset uses a more specific selector than Tailwind's padding utilities.
+   Give icon-led search inputs an explicit inset so their text clears the icon. */
+.bebop-admin .bebop-admin-search-input {
+  padding-inline-start: 2.5rem;
+}
+
 @layer base {
   body:has(.bebop-admin) {
     margin: 0;

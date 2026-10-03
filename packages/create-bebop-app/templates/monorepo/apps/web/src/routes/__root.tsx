@@ -1,6 +1,4 @@
-import { ClientOnly, HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
-import { JazzProvider } from "jazz-tools/react";
-import { BebopProviderFallback } from "../ui/provider-fallback.js";
+import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -19,15 +17,7 @@ function RootDocument() {
     <html lang="en">
       <head><HeadContent /></head>
       <body>
-        <ClientOnly fallback={<BebopProviderFallback />}>
-          <JazzProvider
-            appId={import.meta.env.VITE_JAZZ_APP_ID}
-            serverUrl={import.meta.env.VITE_JAZZ_SERVER_URL}
-            autoAttachDevTools={false}
-          >
-            <Outlet />
-          </JazzProvider>
-        </ClientOnly>
+        <Outlet />
         <Scripts />
       </body>
     </html>

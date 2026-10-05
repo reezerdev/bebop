@@ -1,0 +1,30 @@
+{
+  "name": "@bebopdev/create-bebop-app",
+  "version": "0.1.2",
+  "description": "Create a pnpm monorepo with TanStack Start, Expo React Native, Bebop, and Jazz.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reezerdev/bebop.git",
+    "directory": "packages/create-bebop-app"
+  },
+  "homepage": "https://github.com/reezerdev/bebop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "templates",
+    "README.md"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "create-bebop-app": "bin/create-bebop-app.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

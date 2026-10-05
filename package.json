@@ -1,0 +1,23 @@
+{
+  "name": "bebop-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": "12.6.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @bebopdev/core run build && pnpm --filter @bebopdev/admin build && turbo run dev --filter=@bebopdev/admin --filter=@bebopdev/playground",
+    "db:reset": "node scripts/reset-playground-db.mjs",
+    "build": "turbo run build",
+    "example": "pnpm --filter @bebopdev/example-basic dev",
+    "example:check": "pnpm --filter @bebopdev/example-basic check",
+    "generate": "turbo run generate --filter=@bebopdev/playground",
+    "validate:schema": "turbo run validate:schema --filter=@bebopdev/playground",
+    "test:packages": "node scripts/test-package-tarballs.mjs"
+  },
+  "devDependencies": {
+    "turbo": "2.11.4"
+  }
+}

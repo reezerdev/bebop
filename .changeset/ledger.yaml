@@ -1,0 +1,24 @@
+"@bebopdev/admin@0.1.0":
+  dir: packages/admin
+  intents:
+    - warm-fireants-boil
+"@bebopdev/admin@0.1.1":
+  dir: packages/admin
+  intents:
+    - tidy-bebop-defaults
+"@bebopdev/cli@0.1.0":
+  dir: packages/cli
+  intents:
+    - big-sheep-add
+"@bebopdev/core@0.1.0":
+  dir: packages/bebop
+  intents:
+    - brave-teeth-nail
+"@bebopdev/core@0.1.1":
+  dir: packages/bebop
+  intents:
+    - tidy-bebop-defaults
+"@bebopdev/create-bebop-app@0.1.1":
+  dir: packages/create-bebop-app
+  intents:
+    - weak-dogs-design

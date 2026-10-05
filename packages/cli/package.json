@@ -1,0 +1,35 @@
+{
+  "name": "@bebopdev/cli",
+  "version": "0.1.1",
+  "description": "Generate Jazz schemas from Bebop collections and run the Bebop development server.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reezerdev/bebop.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/reezerdev/bebop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "bebop": "./bin/bebop.mjs"
+  },
+  "dependencies": {
+    "@bebopdev/core": "workspace:*",
+    "auth": "1.7.1",
+    "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

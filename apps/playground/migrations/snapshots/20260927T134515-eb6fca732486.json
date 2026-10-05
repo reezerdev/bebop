@@ -1,0 +1,39 @@
+{
+  "posts": {
+    "columns": [
+      {
+        "name": "title",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": false
+      },
+      {
+        "name": "body",
+        "column_type": {
+          "type": "Text"
+        },
+        "nullable": true
+      },
+      {
+        "name": "published",
+        "column_type": {
+          "type": "Boolean"
+        },
+        "nullable": true
+      },
+      {
+        "name": "category",
+        "column_type": {
+          "type": "Enum",
+          "variants": [
+            "announcement",
+            "guide",
+            "story"
+          ]
+        },
+        "nullable": true
+      }
+    ]
+  }
+}

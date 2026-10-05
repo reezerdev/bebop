@@ -1,0 +1,54 @@
+{
+  "name": "@bebopdev/core",
+  "version": "0.1.1",
+  "description": "Payload-style collection configuration and Jazz schema compilation for Bebop.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reezerdev/bebop.git",
+    "directory": "packages/bebop"
+  },
+  "homepage": "https://github.com/reezerdev/bebop#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./auth-client": {
+      "types": "./dist/auth-client.d.ts",
+      "import": "./dist/auth-client.js"
+    }
+  },
+  "peerDependencies": {
+    "jazz-tools": "2.0.0-alpha.58"
+  },
+  "dependencies": {
+    "better-auth": "1.7.1",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "jazz-tools": "2.0.0-alpha.58",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.types.json",
+    "prepack": "pnpm run build",
+    "test": "tsx --test test/*.test.ts"
+  }
+}

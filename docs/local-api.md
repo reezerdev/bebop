@@ -1,0 +1,103 @@
+# Bebop Local API
+
+`bebop-generated-client.ts` exports a typed `createBebopClient(db, options?)` factory. This is Bebop's v1 Local API: an app-level interface over the current Jazz replica, with generated collection names, stored fields, select values, required create fields, filters, sorting, pagination, relationships, and mutation durability represented in TypeScript.
+
+The API follows the pinned `jazz-tools@2.0.0-alpha.58` query and write behavior. Keep Jazz-specific upgrades behind the Bebop compiler/client boundary and verify the contract again when changing the pin.
+
+## Reading documents
+
+Each collection exposes:
+
+```ts
+client.channels.query({
+  where: { visibility: { in: ["public", "private"] } },
+  orderBy: { field: "$updatedAt", direction: "desc" },
+  limit: 20,
+  offset: 0,
+  includeTimestamps: true,
+});
+
+const page = await client.channels.find({
+  where: { workspaceId: "workspace-id" },
+  orderBy: { field: "name", direction: "asc" },
+  limit: 20,
+  offset: 40,
+});
+
+const channel = await client.channels.findById("channel-id");
+```
+
+Each `client.<collection>` combines the generated Jazz table query API with Bebop's collection methods. You can start a read with the same fluent API as `app.<collection>`; the query is suitable for Jazz React's `useAll` subscription. It exposes `where`, `select`, `include`, `requireIncludes`, `orderBy`, `limit`, `offset`, `includeDeleted`, `hopTo`, and `gather`. Includes accept either `true` for the related row or another Jazz query to select and filter its fields:
+
+```ts
+import { app } from "./bebop-generated-schema.js";
+
+const entriesWithAuthors = client.entries
+  .where({ type: "message" })
+  .orderBy("$createdAt", "asc")
+  .include({
+    author: app.better_auth_user.select("id", "name"),
+    parentEntry: app.entries.select("id", "content"),
+  });
+```
+
+The relation names and selected fields are checked against the generated Jazz schema. Bebop's `query({...})` is also available as a convenience that validates its filter/sort options before returning a Jazz query; `find()` executes that query through the supplied `Db`, and `findById()` returns the local document or `null`. Direct Jazz-style queries use Jazz's schema typing without Bebop's additional option validation. Use limits for interactive lists; `find()` without a limit reads every matching document.
+
+Filters accept exact values or operator objects:
+
+| Field type | Operators |
+| --- | --- |
+| Any stored field | `eq`, `ne`, `in`, `notIn` |
+| Text | `contains` |
+| Number and date | `gt`, `gte`, `lt`, `lte` |
+
+An `id` filter is also supported. Sort fields include configured stored fields, `id`, `$createdAt`, and `$updatedAt`. `limit` and `offset` must be non-negative safe integers. Relations use their stored ID field in filters and sort options: `author` is queried as `authorId`.
+
+## Search and pagination
+
+Set `admin.listSearchableFields` to text fields. The client exposes `search()` and `searchIds()`:
+
+```ts
+const results = await db.all(client.channels.search({
+  search: "release",
+  fields: ["name", "content"],
+  where: { visibility: "public" },
+  orderBy: { field: "$updatedAt", direction: "desc" },
+  limit: 20,
+  offset: 0,
+}));
+```
+
+`search()` creates one Jazz `contains` query per field, applies common filters inside each arm, combines the arms with Jazz `union()`, then orders and paginates the combined result. `searchIds()` returns ID-only queries for callers that need an exact count across multiple fields; merge/deduplicate those IDs. The admin uses the union query for the requested page of full documents and ID-only subscriptions for counts. It does not fetch every matching document to search in JavaScript.
+
+The v1 supported target is up to 10,000 documents per collection for admin lists and configured text search. That target assumes bounded document pages; the exact-count path observes matching IDs. It is not a performance guarantee for arbitrary filters, slow networks, or very large document bodies. If you expect larger collections, add application-specific indexes/query boundaries and measure with representative data before choosing Bebop.
+
+Jazz query subscriptions are evaluated upstream and synchronized to the local replica. A local replica can display cached query results immediately and continue serving them offline. A subscription may update as more data becomes available or a write synchronizes.
+
+## Relationships and joins
+
+A `relationship` field stores the target document ID in `<fieldName>Id`. Relationship fields do not automatically populate the target document; query the target collection or use Jazz includes as supported by the installed Jazz API.
+
+A `join` field is virtual reverse metadata. It generates no stored column and cannot be sent in create/update data. Jazz reverse relations can be read with its `include()` query API. The admin uses the generated join metadata to render a related table. See the [Join Field guide](./architecture.md) and the playground's Workspaces config.
+
+## Mutations and durability
+
+The collection client exposes `create`, `update`, and `delete`. Direct mode returns after the local optimistic mutation and reports `durability: "local"`:
+
+```ts
+const result = await client.channels.create({ name: "release-updates", workspaceId: "workspace-id" });
+// Local replica is updated here.
+await result.waitForGlobal(); // Rejects if Jazz does not confirm global durability.
+```
+
+For a direct collection with lifecycle hooks, Bebop runs its hook pipeline inside one local-first Jazz transaction. Each hook receives an optional transaction-scoped `client` with `find`, `findById`, `create`, `update`, and `delete` methods, plus the authenticated `userId` when the Jazz session has a `sub` claim. Nested writes run validation and their own hooks in that transaction and return their staged document; only the outer mutation returns the durability handle. A hook or nested validation error rolls the local transaction back. Read-only fields can be supplied by a `beforeChange` hook, then Bebop validates the final document. Command hooks run on the host and upload writes cannot stage nested mutations in a Jazz transaction, so their hook contexts do not include this client.
+
+`client.onMutationError(listener)` reports later Jazz rejections. These callbacks are client-side behavior and can be bypassed by direct Jazz writes.
+
+Command-mode mutations use `commandTransport`, run on the host through `createBebopHandler`, and are returned only after the handler confirms Jazz global durability. They report `durability: "global"`. See [access control and server writes](./access-control.md#command-collections).
+
+Upload-enabled collections expose `create({ file })`, `update(id, { file })`, and `readFile(id)`. Bebop streams the file into a hidden `s.bytes()` column on the collection row; Jazz's large-value storage handles its internal chunking. Bebop does not generate separate file or file-part tables. Normal `query`, `search`, and `findById` reads select collection fields and upload metadata without downloading the bytes. `readFile()` fetches byte pages and assembles a `Blob`. Upload writes are local-first and return the same mutation result and `waitForGlobal()` behavior as other direct writes. Command mode currently rejects upload-enabled collections.
+
+## Stable behavior for v1
+
+The v1 contract covers typed query construction, `find`/`findById`, filter operators above, sort fields, offset/limit pagination, relationship ID storage, virtual joins, create/update/delete, direct versus command durability, and transaction-scoped nested mutations from direct lifecycle hooks. It does not promise REST or GraphQL, server pagination for arbitrary host queries, full-text ranking, drafts or revisions, or a generic plugin API.

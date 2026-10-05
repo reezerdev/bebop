@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bebopdev/core check
+      - run: pnpm --filter @bebopdev/core test
+      - run: pnpm --filter @bebopdev/core build
+      - run: pnpm --filter @bebopdev/admin check
+      - run: pnpm --filter @bebopdev/admin test
+      - run: pnpm --filter @bebopdev/cli test
+      - run: pnpm generate
+      - run: pnpm --filter @bebopdev/playground validate:schema
+      - run: pnpm --filter @bebopdev/playground exec tsc --noEmit
+      - run: pnpm --filter @bebopdev/playground build
+      - run: pnpm --filter @bebopdev/playground test
+      - run: pnpm --filter @bebopdev/playground exec playwright install --with-deps chromium
+      - run: pnpm --filter @bebopdev/playground test:e2e
+      - run: pnpm test:packages
